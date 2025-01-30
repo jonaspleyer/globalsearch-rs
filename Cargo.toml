@@ -1,0 +1,22 @@
+[package]
+name = "globalsearch-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Germán Martín Heim <german.martin.heim@gmail.com>"]
+license = "MIT"
+description = "Global optimization with scatter search and local NLP solvers written in Rust using argmin"
+readme = "README.md"
+repository = "https://github.com/GermanHeim/globalsearch-rs"
+keywords = ["optimization", "math", "science"]
+categories = ["science", "mathematics"]
+exclude = []
+
+[dependencies]
+argmin = { version = "*" }
+argmin-math = { version = "*", features = ["ndarray_latest-nolinalg"] }
+argmin-observer-slog = { version = "*" }
+argmin_testfunctions = { version = "*" }
+ndarray = "0.15.6"
+rayon = "1.5.3"
+anyhow = "1.0.71"
+rand = "0.9.0"
