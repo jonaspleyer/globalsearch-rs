@@ -1,7 +1,7 @@
 <p align="center">
     <img
         width="500"
-        src="./media/logo.png"
+        src="https://raw.githubusercontent.com/GermanHeim/globalsearch-rs/main/media/logo.png"
         alt="GlobalSearch-rs"
     />
     <p align="center">
@@ -75,10 +75,12 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
     }
    ```
 
+   > 🔴 **Note:** Variable bounds are only used in the scatter search phase of the algorithm. The local solver is unconstrained (See [argmin issue #137](https://github.com/argmin-rs/argmin/issues/137)) and therefor can return solutions out of the bounds.
+
 2. Set OQNLP parameters
 
    ```rust
-    use globalsearch_rs::types::{LocalSolverType, OQNLPParams};
+   use globalsearch_rs::types::{LocalSolverType, OQNLPParams};
 
     let params: OQNLPParams = OQNLPParams {
         total_iterations: 1000,
@@ -177,12 +179,12 @@ If you have a suggestion that would make this better, please fork the repo and c
 
 ## License
 
-Distributed under the MIT License. See [`LICENSE.txt`](/LICENSE.txt) for more information.
+Distributed under the MIT License. See [`LICENSE.txt`](https://github.com/GermanHeim/globalsearch-rs/blob/main/LICENSE.txt) for more information.
 
 ## References
 
-[1] Zsolt Ugray, Leon Lasdon, John Plummer, Fred Glover, James Kelly, Rafael Martí, (2007) Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization. INFORMS Journal on Computing 19(3):328-340. http://dx.doi.org/10.1287/ijoc.1060.0175
+[1] Zsolt Ugray, Leon Lasdon, John Plummer, Fred Glover, James Kelly, Rafael Martí, (2007) Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization. INFORMS Journal on Computing 19(3):328-340. <http://dx.doi.org/10.1287/ijoc.1060.0175>
 
-[2] GlobalSearch. The MathWorks, Inc. Available at: https://www.mathworks.com/help/gads/globalsearch.html (Accessed: 27 January 2025)
+[2] GlobalSearch. The MathWorks, Inc. Available at: <https://www.mathworks.com/help/gads/globalsearch.html> (Accessed: 27 January 2025)
 
-[3] Kroboth, S. argmin{}. Available at: https://argmin-rs.org/ (Accessed: 25 January 2025)
+[3] Kroboth, S. argmin{}. Available at: <https://argmin-rs.org/> (Accessed: 25 January 2025)
