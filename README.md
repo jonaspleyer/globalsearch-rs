@@ -1,14 +1,15 @@
 <p align="center">
     <img
-        width="400"
+        width="500"
         src="./media/logo.png"
+        alt="GlobalSearch-rs"
     />
     <p align="center">
         Global optimization with scatter search and local NLP solvers written in Rust
     </p>
 </p>
 
-`globalsearch-rs`: Rust implementation of the _OQNLP_ (_OptQuest/NLP_) algorithm from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). Combines scatter search metaheuristics with gradient-based local optimization for global optimization of nonlinear problems.
+`globalsearch-rs`: Rust implementation of the _OQNLP_ (_OptQuest/NLP_) algorithm from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). Combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
 
 Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
 
@@ -41,7 +42,7 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
 1. Define a problem by implementing the `Problem` trait.
 
    ```rust
-    use ndarray::{Array1, Array2};
+    use ndarray::{array, Array1, Array2};
     use globalsearch_rs::problem::Problem;
 
     pub struct MinimizeProblem;
@@ -59,7 +60,7 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
     }
 
     fn variable_bounds(&self) -> Array2<f64> {
-        array![[..., ...]] // Lower and upper bounds for each variable
+        array![[..., ...]. [..., ...]] // Lower and upper bounds for each variable
     }
    }
    ```
@@ -67,14 +68,54 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
    Where the `Problem` trait is defined as:
 
    ```rust
-       pub trait Problem {
+    pub trait Problem {
         fn objective(&self, x: &Array1<f64>) -> Result<f64>;
         fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>>;
         fn variable_bounds(&self) -> Array2<f64>;
     }
    ```
 
-2. Run the optimizer
+2. Set OQNLP parameters
+
+   ```rust
+    use globalsearch_rs::types::{LocalSolverType, OQNLPParams};
+
+    let params: OQNLPParams = OQNLPParams {
+        total_iterations: 1000,
+        stage_1_iterations: 200,
+        wait_cycle: 20,
+        threshold_factor: 0.2,
+        distance_factor: 0.75,
+        population_size: 10,
+        solver_type: LocalSolverType::SteepestDescent,
+    };
+   ```
+
+   Where `OQNLPParams` is defined as:
+
+   ```rust
+    pub struct OQNLPParams {
+        pub total_iterations: usize,
+        pub stage_1_iterations: usize,
+        pub wait_cycle: usize,
+        pub threshold_factor: f64,
+        pub distance_factor: f64,
+        pub population_size: usize,
+        pub solver_type: LocalSolverType,
+    }
+   ```
+
+   And `LocalSolverType` is defined as:
+
+   ```rust
+    pub enum LocalSolverType {
+        LBFGS,
+        NelderMead,
+        SteepestDescent,
+    }
+   ```
+
+3. Run the optimizer
 
    ```rust
    use oqnlp::{OQNLP, OQNLPParams};
