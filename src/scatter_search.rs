@@ -1,3 +1,7 @@
+//! # Scatter Search module
+//!
+//! This module contains the implementation of the Scatter Search algorithm.
+
 use crate::problem::Problem;
 use crate::types::{OQNLPParams, Result};
 use ndarray::{Array1, Axis};

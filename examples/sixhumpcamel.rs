@@ -3,6 +3,7 @@
 /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 27-28. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
 use anyhow::Result;
 use globalsearch_rs::problem::Problem;
+use globalsearch_rs::types::SteepestDescentBuilder;
 use globalsearch_rs::{
     oqnlp::OQNLP,
     types::{LocalSolution, LocalSolverType, OQNLPParams},
@@ -43,7 +44,8 @@ fn main() -> Result<()> {
         threshold_factor: 0.2,
         distance_factor: 0.75,
         population_size: 10,
-        solver_type: LocalSolverType::SteepestDescent,
+        local_solver_type: LocalSolverType::SteepestDescent,
+        local_solver_config: SteepestDescentBuilder::default().build(),
     };
 
     let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params)?;

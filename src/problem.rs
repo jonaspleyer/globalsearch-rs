@@ -1,9 +1,39 @@
+//! # Optimization problem trait module
+//!
+//! This module contains the `Problem` trait, which defines the methods that an optimization problem must implement, including the objective function, gradient and variable bounds.
+//!
+//! ## Example
+//! ```rust
+//! /// References:
+//! ///
+//! /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 11-12. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
+//!
+//! use globalsearch_rs::problem::Problem;
+//! use ndarray::{array, Array1, Array2};
+//!
+//! #[derive(Debug, Clone)]
+//! pub struct OneDGriewank;
+//!
+//! impl Problem for OneDGriewank {
+//!    fn objective(&self, x: &Array1<f64>) -> Result<f64> {
+//!       Ok(1.0 + x[0].powi(2) / 4000.0 - x[0].cos())
+//!    }
+//!
+//!    // Calculated analytically, reference didn't provide gradient
+//!    fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>> {
+//!        Ok(array![x[0] / 2000.0 + x[0].sin()])
+//!    }
+//!
+//!    fn variable_bounds(&self) -> Array2<f64> {
+//!        array![[-600.0, 600.0]]
+//!    }
+//! }
 use crate::types::Result;
 use ndarray::{Array1, Array2};
 
 /// Trait for optimization problems
 ///
-/// This trait defines the methods that an optimization problem must implement, including the objective function, gradient, variable bounds, and dimension.
+/// This trait defines the methods that an optimization problem must implement, including the objective function, gradient and variable bounds.
 pub trait Problem {
     /// Objective function to minimize, given at point x (`Array1<f64>`)
     ///
@@ -15,12 +45,12 @@ pub trait Problem {
     /// Returns a `Result<Array1<f64>>` of the gradient of the objective function at x
     fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>>;
 
-    // TODO: Should variable bounds be optional? Also, just set it as an array, not function (struct?)
-    // The variable bounds is only being used in the scatter search
-    // and not in the minimization algorithm; this should either be explained or changed
-
     /// Variable bounds for the optimization problem
     ///
-    /// Returns a `Result<Array2<f64>>` of the variable bounds for the optimization problem
+    /// Returns a `Result<Array2<f64>>` of the variable bounds for the optimization problem.
+    ///
+    /// This bounds are only used in the scatter search phase of the algorithm.
+    /// The local solver is unconstrained (See [argmin issue #137](https://github.com/argmin-rs/argmin/issues/137)) and therefor can return solutions out of the bounds.
+    /// You may be able to guide your solutions to your desired bounds/constraints by using a penalty method.
     fn variable_bounds(&self) -> Array2<f64>;
 }

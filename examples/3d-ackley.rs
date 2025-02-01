@@ -5,7 +5,7 @@ use anyhow::Result;
 use globalsearch_rs::problem::Problem;
 use globalsearch_rs::{
     oqnlp::OQNLP,
-    types::{LocalSolution, LocalSolverType, OQNLPParams},
+    types::{LocalSolution, LocalSolverType, OQNLPParams, SteepestDescentBuilder},
 };
 use ndarray::{array, Array1, Array2};
 
@@ -70,7 +70,8 @@ fn main() -> Result<()> {
         threshold_factor: 0.2,
         distance_factor: 0.75,
         population_size: 100,
-        solver_type: LocalSolverType::SteepestDescent,
+        local_solver_type: LocalSolverType::SteepestDescent,
+        local_solver_config: SteepestDescentBuilder::default().build(),
     };
 
     let mut oqnlp: OQNLP<ThreeDAckley> = OQNLP::new(problem, params)?;

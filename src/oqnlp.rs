@@ -1,9 +1,18 @@
+//! # OQNLP module
+//!
+//! The OQNLP (OptQuest/NLP) algorithm is a global optimization algorithm that combines scatter search with local optimization methods.
+
 use crate::filters::{DistanceFilter, MeritFilter};
 use crate::local_solver::LocalSolver;
 use crate::problem::Problem;
 use crate::scatter_search::ScatterSearch;
 use crate::types::{LocalSolution, OQNLPParams, Result};
 use rayon::prelude::*;
+
+// TODO: Set penalty functions?
+// How should we do this? Two different OQNLP implementations?
+// -> UnconstrainedOQNLP
+// -> ConstrainedOQNLP
 
 /// The main struct for the OQNLP algorithm.
 ///
@@ -39,7 +48,6 @@ pub struct OQNLP<P: Problem + Clone> {
 }
 
 // TODO: Check implementation with the paper
-// TODO: Add penalty weights to problem
 impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// Create a new OQNLP instance with the given problem and parameters
     pub fn new(problem: P, params: OQNLPParams) -> Result<Self> {
@@ -55,7 +63,11 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             scatter_search: ScatterSearch::new(problem.clone(), params.clone()),
             merit_filter: MeritFilter::new(filter_params.clone()),
             distance_filter: DistanceFilter::new(filter_params),
-            local_solver: LocalSolver::new(problem, params.solver_type.clone()),
+            local_solver: LocalSolver::new(
+                problem,
+                params.local_solver_type.clone(),
+                params.local_solver_config.clone(),
+            ),
             best_solution: None,
         })
     }

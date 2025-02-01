@@ -1,3 +1,7 @@
+//! # Filters module
+//!
+//! This module contains the implementation of the filters used in the OQNLP algorithm. The filters are used to maintain diversity among solutions and to check if a solution is below a certain threshold.
+
 use crate::types::{FilterParams, LocalSolution};
 use ndarray::Array1;
 
