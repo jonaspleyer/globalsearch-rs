@@ -47,21 +47,21 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
 
     pub struct MinimizeProblem;
     impl Problem for MinimizeProblem {
-    fn objective(&self, x: &Array1<f64>) -> Result<f64> {
-        Ok(
-            ..., // Your objective function here
-        )
-    }
+        fn objective(&self, x: &Array1<f64>) -> Result<f64> {
+            Ok(
+                ..., // Your objective function here
+            )
+        }
 
-    fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>> {
-        Ok(array![
-            ..., // Gradient of your objective function here
-        ])
-    }
+        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>> {
+            Ok(array![
+                ..., // Gradient of your objective function here
+            ])
+        }
 
-    fn variable_bounds(&self) -> Array2<f64> {
-        array![[..., ...]. [..., ...]] // Lower and upper bounds for each variable
-    }
+        fn variable_bounds(&self) -> Array2<f64> {
+            array![[..., ...]. [..., ...]] // Lower and upper bounds for each variable
+        }
    }
    ```
 
@@ -75,12 +75,12 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
     }
    ```
 
-   > 🔴 **Note:** Variable bounds are only used in the scatter search phase of the algorithm. The local solver is unconstrained (See [argmin issue #137](https://github.com/argmin-rs/argmin/issues/137)) and therefor can return solutions out of the bounds.
+   > 🔴 **Note:** Variable bounds are only used in the scatter search phase of the algorithm. The local solver is unconstrained (See [argmin issue #137](https://github.com/argmin-rs/argmin/issues/137)) and therefor can return solutions out of bounds.
 
 2. Set OQNLP parameters
 
    ```rust
-   use globalsearch_rs::types::{LocalSolverType, OQNLPParams};
+    use globalsearch_rs::types::{LocalSolverType, OQNLPParams, SteepestDescentBuilder};
 
     let params: OQNLPParams = OQNLPParams {
         total_iterations: 1000,
@@ -89,7 +89,8 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
         threshold_factor: 0.2,
         distance_factor: 0.75,
         population_size: 10,
-        solver_type: LocalSolverType::SteepestDescent,
+        local_solver_type: LocalSolverType::SteepestDescent,
+        local_solver_config: SteepestDescentBuilder::default().build(),
     };
    ```
 
@@ -103,7 +104,8 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
         pub threshold_factor: f64,
         pub distance_factor: f64,
         pub population_size: usize,
-        pub solver_type: LocalSolverType,
+        pub local_solver_type: LocalSolverType,
+        pub local_solver_config: LocalSolverConfig,
     }
    ```
 
@@ -116,6 +118,8 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
         SteepestDescent,
     }
    ```
+
+   You can also modify the local solver configuration for each type of local solver. See `types.rs` for more details.
 
 3. Run the optimizer
 
@@ -131,7 +135,8 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
                 threshold_factor: 0.2,
                 distance_factor: 0.75,
                 population_size: 10,
-                solver_type: LocalSolverType::SteepestDescent,
+                local_solver_type: LocalSolverType::SteepestDescent,
+                local_solver_config: SteepestDescentBuilder::default().build(),
             };
 
         let mut optimizer = OQNLP::new(problem, params)?;
