@@ -11,13 +11,13 @@
 
 `globalsearch-rs`: Rust implementation of the _OQNLP_ (_OptQuest/NLP_) algorithm from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). Combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
 
-Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
+Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
 
 ## Features
 
 - 🎯 Multistart heuristic framework for global optimization
 
-- 📦 Local optimization using the argmin crate [3]
+- 📦 Local optimization using the argmin crate \[3\]
 
 - 🚀 Parallel execution of initial stage using Rayon
 
@@ -91,6 +91,7 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
         population_size: 10,
         local_solver_type: LocalSolverType::SteepestDescent,
         local_solver_config: SteepestDescentBuilder::default().build(),
+        seed: 0,
     };
    ```
 
@@ -106,6 +107,7 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
         pub population_size: usize,
         pub local_solver_type: LocalSolverType,
         pub local_solver_config: LocalSolverConfig,
+        seed: u64,
     }
    ```
 
@@ -137,6 +139,7 @@ Similar to MATLAB's `GlobalSearch` [2], using argmin, rayon and ndarray.
                 population_size: 10,
                 local_solver_type: LocalSolverType::SteepestDescent,
                 local_solver_config: SteepestDescentBuilder::default().build(),
+                seed: 0,
             };
 
         let mut optimizer = OQNLP::new(problem, params)?;
@@ -188,8 +191,8 @@ Distributed under the MIT License. See [`LICENSE.txt`](https://github.com/German
 
 ## References
 
-[1] Zsolt Ugray, Leon Lasdon, John Plummer, Fred Glover, James Kelly, Rafael Martí, (2007) Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization. INFORMS Journal on Computing 19(3):328-340. <http://dx.doi.org/10.1287/ijoc.1060.0175>
+\[1\] Zsolt Ugray, Leon Lasdon, John Plummer, Fred Glover, James Kelly, Rafael Martí, (2007) Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization. INFORMS Journal on Computing 19(3):328-340. <http://dx.doi.org/10.1287/ijoc.1060.0175>
 
-[2] GlobalSearch. The MathWorks, Inc. Available at: <https://www.mathworks.com/help/gads/globalsearch.html> (Accessed: 27 January 2025)
+\[2\] GlobalSearch. The MathWorks, Inc. Available at: <https://www.mathworks.com/help/gads/globalsearch.html> (Accessed: 27 January 2025)
 
-[3] Kroboth, S. argmin{}. Available at: <https://argmin-rs.org/> (Accessed: 25 January 2025)
+\[3\] Kroboth, S. argmin{}. Available at: <https://argmin-rs.org/> (Accessed: 25 January 2025)
