@@ -1,3 +1,13 @@
+/// 3-D Ackley function
+/// The 3-D Ackley function is defined as:
+///
+/// $ f(x) = -a \exp(-b \sqrt{\frac{\sum_{i=1}^{3} x_i^2}{3}}) - \exp(\frac{1}{3} \sum_{i=1}^{3} \cos(cx_i)) + a + exp(1) $
+///
+/// With $a = 20$, $b = 0.2$ and $c = 2 pi$.
+/// The function is defined on the hypercube `[-32.768, 32.768]`.
+/// The function has a global minimum at `x = [0, 0, 0]` with `f(x) = 0`.
+/// The function is a multimodal continuous, differentiable and non-convex.
+///
 /// References:
 ///
 /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 15-16. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
@@ -5,9 +15,13 @@ use anyhow::Result;
 use globalsearch_rs::problem::Problem;
 use globalsearch_rs::{
     oqnlp::OQNLP,
-    types::{LocalSolution, LocalSolverType, OQNLPParams, SteepestDescentBuilder},
+    types::{HagerZhangBuilder, LBFGSBuilder, LocalSolution, LocalSolverType, OQNLPParams},
 };
 use ndarray::{array, Array1, Array2};
+
+/// IMPORTANT: For some reason, this example doesn't work using steepest descent or LBFGS.
+/// The local solver gets stuck trying to minimize in the stage 1 if I don't pass HagerZhangBuilder (default is MoreThuente).
+/// We have to check this implementation. I believe this is a problem with the implementation of argmin.
 
 #[derive(Debug, Clone)]
 pub struct ThreeDAckley {
@@ -63,15 +77,19 @@ fn main() -> Result<()> {
     let c: f64 = 2.0 * std::f64::consts::PI;
 
     let problem = ThreeDAckley::new(a, b, c);
+
     let params: OQNLPParams = OQNLPParams {
-        total_iterations: 10000,
-        stage_1_iterations: 500,
+        total_iterations: 500,
+        stage_1_iterations: 100,
         wait_cycle: 20,
         threshold_factor: 0.2,
         distance_factor: 0.75,
-        population_size: 100,
-        local_solver_type: LocalSolverType::SteepestDescent,
-        local_solver_config: SteepestDescentBuilder::default().build(),
+        population_size: 15,
+        local_solver_type: LocalSolverType::LBFGS,
+        local_solver_config: LBFGSBuilder::default()
+            .line_search_params(HagerZhangBuilder::default().build())
+            .build(),
+        seed: 0,
     };
 
     let mut oqnlp: OQNLP<ThreeDAckley> = OQNLP::new(problem, params)?;

@@ -1,3 +1,5 @@
+use criterion::{criterion_group, criterion_main, Criterion};
+
 /// Six-Hump Camel Back Function
 /// The Six-Hump Camel Back function is defined as follows:
 ///
@@ -44,7 +46,7 @@ impl Problem for SixHumpCamel {
     }
 }
 
-fn main() -> Result<()> {
+fn six_hump_camel() -> Result<LocalSolution, anyhow::Error> {
     let problem: SixHumpCamel = SixHumpCamel;
     let params: OQNLPParams = OQNLPParams {
         total_iterations: 500,
@@ -58,12 +60,19 @@ fn main() -> Result<()> {
         seed: 0,
     };
 
-    let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params)?.verbose();
+    let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params)?;
     let solution: LocalSolution = oqnlp.run()?;
 
-    println!("Best solution found:");
-    println!("Point: {:?}", solution.point);
-    println!("Objective: {}", solution.objective);
-
-    Ok(())
+    Ok(solution)
 }
+
+fn run_six_hump_camel(c: &mut Criterion) {
+    c.bench_function("six_hump_camel", |b| b.iter(|| six_hump_camel()));
+}
+
+criterion_group! {
+    name = benches;
+    config = Criterion::default().sample_size(500).measurement_time(std::time::Duration::from_secs(200));
+    targets = run_six_hump_camel
+}
+criterion_main!(benches);

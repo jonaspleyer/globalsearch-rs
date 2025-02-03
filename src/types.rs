@@ -18,22 +18,35 @@ use ndarray::{array, Array1};
 pub struct OQNLPParams {
     /// Total number of iterations for the optimization process
     ///
-    /// The main loop is defined as `total_iterations - stage_1_iterations`
+    /// The second stage is defined as `total_iterations - stage_1_iterations`
     pub total_iterations: usize,
+
     /// Number of iterations for stage 1
     pub stage_1_iterations: usize,
-    /// Number of iterations to wait before updating the threshold criteria
+
+    /// Number of iterations to wait before updating the threshold criteria and reference set
+    ///
+    /// This is used to determine the number of iterations to wait before updating the
+    /// threshold criteria (Stage 2) and the reference set (Stage 1).
     pub wait_cycle: usize,
+
     /// Threshold factor
     pub threshold_factor: f64,
+
     /// Factor that influences the minimum required distance between candidate solutions
     pub distance_factor: f64,
-    /// Number of candidate solutions considered in each iteration (population size)
+
+    /// Number of candidate solutions considered in each iteration (equal to reference set size)
     pub population_size: usize,
+
     /// Type of local solver to use from argmin
     pub local_solver_type: LocalSolverType,
+
     /// Configuration for the local solver
     pub local_solver_config: LocalSolverConfig,
+
+    /// Random seed for the algorithm
+    pub seed: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +109,7 @@ pub enum LocalSolverConfig {
         tolerance_cost: f64,
         /// Number of previous iterations to store in the history
         history_size: usize,
+
         // l1_regularization: f64, Should this be included? As bool? https://docs.rs/argmin/0.10.0/argmin/solver/quasinewton/struct.LBFGS.html
         /// Line search parameters for the L-BFGS local solver
         line_search_params: LineSearchParams,

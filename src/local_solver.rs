@@ -166,7 +166,7 @@ impl<P: Problem> LocalSolver<P> {
             };
         } else {
             Err(anyhow::anyhow!(
-                "Invalid LocalSolverConfig for LBFGS solver"
+                "Invalid LocalSolverConfig for L-BFGS solver"
             ))
         }
     }
@@ -235,7 +235,7 @@ impl<P: Problem> LocalSolver<P> {
             })
         } else {
             Err(anyhow::anyhow!(
-                "Invalid LocalSolverConfig for NelderMead solver"
+                "Invalid LocalSolverConfig for Nelder-Mead solver"
             ))
         }
     }
@@ -345,7 +345,7 @@ impl<P: Problem> LocalSolver<P> {
             };
         } else {
             Err(anyhow::anyhow!(
-                "Invalid LocalSolverConfig for LBFGS solver"
+                "Invalid LocalSolverConfig for Steepest Descent solver"
             ))
         }
     }

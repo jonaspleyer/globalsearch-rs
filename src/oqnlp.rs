@@ -7,7 +7,20 @@ use crate::local_solver::LocalSolver;
 use crate::problem::Problem;
 use crate::scatter_search::ScatterSearch;
 use crate::types::{LocalSolution, OQNLPParams, Result};
-use rayon::prelude::*;
+
+// TODO: Where can we use rayon?
+// use rayon::prelude::*;
+
+use ndarray::Array1;
+
+// TODO: Implement Rayon
+
+// TODO: Save multiple global optimums; For an example of this check Cross in Tray problem:
+//
+// Stage 2, iter 97: Improved local solution found with objective = -2.0626118708227397
+// x0 = [-1.3494066142838494, -1.3494066186040463], shape=[2], strides=[1], layout=CFcf (0xf), const ndim=1
+// Stage 2, iter 97: Improved local solution found with objective = -2.0626118708227392
+// x0 = [1.3494066219800123, -1.3494066169687304], shape=[2], strides=[1], layout=CFcf (0xf), const ndim=1
 
 // TODO: Set penalty functions?
 // How should we do this? Two different OQNLP implementations?
@@ -45,6 +58,7 @@ pub struct OQNLP<P: Problem + Clone> {
     ///
     /// This is updated as better solutions are discovered. If no solution has been found yet, it remains `None`.
     best_solution: Option<LocalSolution>,
+    verbose: bool,
 }
 
 // TODO: Check implementation with the paper
@@ -60,7 +74,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         Ok(Self {
             problem: problem.clone(),
             params: params.clone(),
-            scatter_search: ScatterSearch::new(problem.clone(), params.clone()),
+            scatter_search: ScatterSearch::new(problem.clone(), params.clone())?,
             merit_filter: MeritFilter::new(filter_params.clone()),
             distance_filter: DistanceFilter::new(filter_params),
             local_solver: LocalSolver::new(
@@ -69,66 +83,111 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 params.local_solver_config.clone(),
             ),
             best_solution: None,
+            verbose: false,
         })
     }
 
     /// Run the OQNLP algorithm and return the best solution found
     pub fn run(&mut self) -> Result<LocalSolution> {
-        // Stage 1: Generate initial points
+        // Stage 1: Initial ScatterSearch iterations and first local call
+        if self.verbose {
+            println!("Starting Stage 1");
+        }
+        let scatter_candidate = self.scatter_search.run()?;
+        let local_sol = self.local_solver.solve(&scatter_candidate)?;
 
-        // TODO: This is wrong, this should take population size and run it for stage 1 iterations
-        // Save best solutions in array and run local solver on all of them
-        let stage_1_points = self
-            .scatter_search
-            .generate_trial_points(self.params.stage_1_iterations)?;
+        // TODO: Check this threshold implementation, should it do objective?
+        // Why even pass threshold then?
+        let mut current_threshold = local_sol.objective;
+        self.process_local_solution(local_sol.clone())?;
 
-        let best_stage_1 = stage_1_points
-            .into_par_iter()
-            .map(|point| {
-                let obj: f64 = self.problem.objective(&point)?;
-                Ok((point, obj))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(point, _)| point)
-            .ok_or_else(|| anyhow::anyhow!("No stage 1 points"))?;
+        if self.verbose {
+            println!(
+                "Stage 1: Local solution found with objective = {}",
+                local_sol.objective
+            );
 
-        // Run local solver on best stage 1 point
-        let solution: LocalSolution = self.local_solver.solve(&best_stage_1)?;
-        let objective: f64 = solution.objective.clone();
-        self.best_solution = Some(solution.clone());
-        self.distance_filter.add_solution(solution);
-        self.merit_filter.update_threshold(objective);
+            println!("Starting Stage 2");
+        }
 
-        // Stage 2: Main loop
-        for _ in 0..(self.params.total_iterations - self.params.stage_1_iterations) {
-            let points = self.scatter_search.generate_trial_points(1)?;
-            let point = points[0].clone(); // TODO: Remove this
+        // Stage 2: Main iterative loop
+        let stage_2_iterations = self.params.total_iterations - self.params.stage_1_iterations;
+        let mut unchanged_cycles: usize = 0;
+        for iter in 0..stage_2_iterations {
+            let trial_points = self.scatter_search.generate_trial_points()?;
+            for trial in trial_points {
+                let obj = self.problem.objective(&trial)?;
+                if self.should_start_local(&trial, obj)? {
+                    current_threshold = obj;
+                    let local_trial = self.local_solver.solve(&trial)?;
+                    self.process_local_solution(local_trial.clone())?;
 
-            // TODO: If new solution has +-eps same objective as best solution, save it as well (two global optimum)
-            if self.merit_filter.check(self.problem.objective(&point)?)
-                && self.distance_filter.check(&point)
-            {
-                match self.local_solver.solve(&point) {
-                    Ok(solution) => {
-                        if self
-                            .best_solution
-                            .as_ref()
-                            .map(|s| solution.objective < s.objective)
-                            .unwrap_or(true)
-                        {
-                            self.best_solution = Some(solution.clone());
-                        }
-                        self.distance_filter.add_solution(solution);
+                    if self.verbose {
+                        println!(
+                            "Stage 2, iter {}: Improved local solution found with objective = {}",
+                            iter, local_trial.objective
+                        );
+                        println!("x0 = {:?}", local_trial.point);
                     }
-                    Err(e) => anyhow::bail!("Local solver failed: {}", e),
+                } else {
+                    // If the trial solution does not pass the filters
+                    // and the waitcycle is reached, adjust the threshold
+                    unchanged_cycles += 1;
+                    if unchanged_cycles >= self.params.wait_cycle {
+                        if self.verbose {
+                            println!(
+                                "Stage 2, iter {}: Adjusting threshold from {} to {}",
+                                iter,
+                                current_threshold,
+                                current_threshold + 0.1 * current_threshold.abs()
+                            );
+                        }
+                        self.adjust_threshold(current_threshold);
+                        unchanged_cycles = 0;
+                    }
                 }
             }
         }
 
         self.best_solution
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("No solution found"))
+            .ok_or_else(|| anyhow::anyhow!("No feasible solution found"))
+    }
+
+    // Helper methods
+    /// Check if a local search should be started based on the merit and distance filters
+    fn should_start_local(&self, point: &Array1<f64>, obj: f64) -> Result<bool> {
+        let passes_merit = obj <= self.merit_filter.threshold;
+        let passes_distance = self.distance_filter.check(point);
+        Ok(passes_merit && passes_distance)
+    }
+
+    /// Process a local solution, updating the best solution and filters
+    fn process_local_solution(&mut self, solution: LocalSolution) -> Result<()> {
+        // Update best solution
+        if self
+            .best_solution
+            .as_ref()
+            .map_or(true, |best| solution.objective < best.objective)
+        {
+            self.best_solution = Some(solution.clone());
+            self.merit_filter.update_threshold(solution.objective);
+        }
+        self.distance_filter.add_solution(solution);
+        Ok(())
+    }
+
+    /// Enable verbose output for the OQNLP algorithm
+    ///
+    /// This will print additional information about the optimization process.
+    pub fn verbose(mut self) -> Self {
+        self.verbose = true;
+        self
+    }
+
+    /// Adjust the threshold for the merit filter
+    fn adjust_threshold(&mut self, current_threshold: f64) {
+        let new_threshold = current_threshold + 0.1 * current_threshold.abs();
+        self.merit_filter.update_threshold(new_threshold);
     }
 }

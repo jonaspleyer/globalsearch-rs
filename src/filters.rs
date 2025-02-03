@@ -6,7 +6,7 @@ use crate::types::{FilterParams, LocalSolution};
 use ndarray::Array1;
 
 pub struct MeritFilter {
-    threshold: f64,
+    pub threshold: f64,
     params: FilterParams,
 }
 
@@ -40,9 +40,16 @@ impl DistanceFilter {
     /// Create a new DistanceFilter with the given parameters
     pub fn new(params: FilterParams) -> Self {
         Self {
-            solutions: Vec::new(),
+            solutions: Vec::new(), // Use ndarray?
             params,
         }
+    }
+
+    pub fn min_distance(&self, point: &Array1<f64>) -> f64 {
+        self.solutions
+            .iter()
+            .map(|s| euclidean_distance(point, &s.point))
+            .fold(f64::INFINITY, |a, b| a.min(b))
     }
 
     /// Add a solution to DistanceFilter

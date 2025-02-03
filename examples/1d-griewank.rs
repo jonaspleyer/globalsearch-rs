@@ -1,3 +1,12 @@
+/// 1-D Griewank function
+/// The 1-D Griewank function is defined as:
+///
+/// $ f(x) = 1 + \frac{x^2}{4000} - \cos(x) $
+///
+/// The function is defined on the domain `[-600, 600]`.
+/// The function has a global minimum at `x = 0` with `f(x) = 0`.
+/// The function is continuous, differentiable and non-convex.
+///
 /// References:
 ///
 /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 11-12. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
@@ -34,12 +43,13 @@ fn main() -> Result<()> {
     let params: OQNLPParams = OQNLPParams {
         total_iterations: 500,
         stage_1_iterations: 100,
-        wait_cycle: 10,
+        wait_cycle: 20,
         threshold_factor: 0.1,
         distance_factor: 0.75,
-        population_size: 5,
+        population_size: 10,
         local_solver_type: LocalSolverType::LBFGS,
         local_solver_config: LBFGSBuilder::default().build(),
+        seed: 0,
     };
 
     let mut oqnlp: OQNLP<OneDGriewank> = OQNLP::new(problem.clone(), params)?;
@@ -62,6 +72,7 @@ fn main() -> Result<()> {
             .history_size(15)
             .line_search_params(HagerZhangBuilder::default().build())
             .build(),
+        seed: 0,
     };
 
     let mut modified_oqnlp: OQNLP<OneDGriewank> = OQNLP::new(problem, modified_params)?;

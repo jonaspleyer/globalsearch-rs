@@ -10,6 +10,7 @@ repository = "https://github.com/GermanHeim/globalsearch-rs"
 keywords = ["optimization", "math", "science"]
 categories = ["science", "mathematics"]
 exclude = []
+build = "build.rs"
 
 [dependencies]
 argmin = { version = "*" }
@@ -17,6 +18,19 @@ argmin-math = { version = "*", features = ["ndarray_latest-nolinalg"] }
 argmin-observer-slog = { version = "*" }
 argmin_testfunctions = { version = "*" }
 ndarray = "0.15.6"
-rayon = "1.5.3"
+rayon = { version = "1.5.3", optional = true }
 anyhow = "1.0.71"
 rand = "0.9.0"
+
+[features]
+default = []
+rayon = ["dep:rayon"]
+
+[dev-dependencies]
+criterion = { git = "https://github.com/bheisler/criterion.rs", features = [
+    "html_reports",
+] }
+
+[[bench]]
+name = "six_hump_camel"
+harness = false
