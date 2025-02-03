@@ -107,7 +107,7 @@ Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
         pub population_size: usize,
         pub local_solver_type: LocalSolverType,
         pub local_solver_config: LocalSolverConfig,
-        seed: u64,
+        pub seed: u64,
     }
    ```
 
