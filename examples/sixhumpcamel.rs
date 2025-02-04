@@ -62,7 +62,7 @@ fn main() -> Result<()> {
     let solution: LocalSolution = oqnlp.run()?;
 
     println!("Best solution found:");
-    println!("Point: {:?}", solution.point);
+    println!("Point: {}", solution.point);
     println!("Objective: {}", solution.objective);
 
     Ok(())
