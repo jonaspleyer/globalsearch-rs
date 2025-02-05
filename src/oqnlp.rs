@@ -100,7 +100,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             println!("Starting Stage 1");
         }
         let scatter_candidate = self.scatter_search.run()?;
-        let local_sol: LocalSolution = self.local_solver.solve(&scatter_candidate)?;
+        let local_sol: LocalSolution = self.local_solver.solve(scatter_candidate)?;
 
         // TODO: Check this threshold implementation, should it do objective?
         // Why even pass threshold then?
@@ -129,7 +129,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 let obj: f64 = self.problem.objective(&trial)?;
                 if self.should_start_local(&trial, obj)? {
                     self.merit_filter.update_threshold(obj);
-                    let local_trial = self.local_solver.solve(&trial)?;
+                    let local_trial = self.local_solver.solve(trial)?;
                     self.process_local_solution(local_trial.clone())?;
 
                     if self.verbose {

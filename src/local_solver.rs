@@ -37,7 +37,7 @@ impl<P: Problem> LocalSolver<P> {
     /// Solve the optimization problem using the local solver
     ///
     /// This function uses a match to select the local solver function to use based on the `LocalSolverType` enum.
-    pub fn solve(&self, initial_point: &Array1<f64>) -> Result<LocalSolution> {
+    pub fn solve(&self, initial_point: Array1<f64>) -> Result<LocalSolution> {
         match self.local_solver_type {
             LocalSolverType::LBFGS => self.solve_lbfgs(initial_point, &self.local_solver_config),
             LocalSolverType::NelderMead => {
@@ -52,7 +52,7 @@ impl<P: Problem> LocalSolver<P> {
     /// Solve the optimization problem using the L-BFGS local solver
     fn solve_lbfgs(
         &self,
-        initial_point: &Array1<f64>,
+        initial_point: Array1<f64>,
         solver_config: &LocalSolverConfig,
     ) -> Result<LocalSolution> {
         struct ProblemCost<'a, P: Problem> {
@@ -173,7 +173,7 @@ impl<P: Problem> LocalSolver<P> {
 
     fn solve_nelder_mead(
         &self,
-        initial_point: &Array1<f64>,
+        initial_point: Array1<f64>,
         solver_config: &LocalSolverConfig,
     ) -> Result<LocalSolution> {
         struct ProblemCost<'a, P: Problem> {
@@ -242,7 +242,7 @@ impl<P: Problem> LocalSolver<P> {
 
     fn solve_steepestdescent(
         &self,
-        initial_point: &Array1<f64>,
+        initial_point: Array1<f64>,
         solver_config: &LocalSolverConfig,
     ) -> Result<LocalSolution> {
         struct ProblemCost<'a, P: Problem> {
