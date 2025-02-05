@@ -6,7 +6,7 @@ use crate::filters::{DistanceFilter, MeritFilter};
 use crate::local_solver::LocalSolver;
 use crate::problem::Problem;
 use crate::scatter_search::ScatterSearch;
-use crate::types::{LocalSolution, OQNLPParams, Result};
+use crate::types::{FilterParams, LocalSolution, OQNLPParams, Result};
 
 // TODO: Where can we use rayon?
 // use rayon::prelude::*;
@@ -65,7 +65,7 @@ pub struct OQNLP<P: Problem + Clone> {
 impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// Create a new OQNLP instance with the given problem and parameters
     pub fn new(problem: P, params: OQNLPParams) -> Result<Self> {
-        let filter_params = crate::types::FilterParams {
+        let filter_params: FilterParams = FilterParams {
             distance_factor: params.distance_factor,
             wait_cycle: params.wait_cycle,
             threshold_factor: params.threshold_factor,
@@ -89,16 +89,22 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
     /// Run the OQNLP algorithm and return the best solution found
     pub fn run(&mut self) -> Result<LocalSolution> {
+        if self.params.total_iterations <= self.params.stage_1_iterations {
+            return Err(anyhow::anyhow!(
+                "Error: Total iterations must be greater than Stage 1 iterations"
+            ));
+        }
+
         // Stage 1: Initial ScatterSearch iterations and first local call
         if self.verbose {
             println!("Starting Stage 1");
         }
         let scatter_candidate = self.scatter_search.run()?;
-        let local_sol = self.local_solver.solve(&scatter_candidate)?;
+        let local_sol: LocalSolution = self.local_solver.solve(&scatter_candidate)?;
 
         // TODO: Check this threshold implementation, should it do objective?
         // Why even pass threshold then?
-        let mut current_threshold = local_sol.objective;
+        self.merit_filter.update_threshold(local_sol.objective);
         self.process_local_solution(local_sol.clone())?;
 
         if self.verbose {
@@ -111,14 +117,18 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         }
 
         // Stage 2: Main iterative loop
-        let stage_2_iterations = self.params.total_iterations - self.params.stage_1_iterations;
+        let stage_2_iterations: usize =
+            self.params.total_iterations - self.params.stage_1_iterations;
+
         let mut unchanged_cycles: usize = 0;
+
         for iter in 0..stage_2_iterations {
             let trial_points = self.scatter_search.generate_trial_points()?;
+
             for trial in trial_points {
-                let obj = self.problem.objective(&trial)?;
+                let obj: f64 = self.problem.objective(&trial)?;
                 if self.should_start_local(&trial, obj)? {
-                    current_threshold = obj;
+                    self.merit_filter.update_threshold(obj);
                     let local_trial = self.local_solver.solve(&trial)?;
                     self.process_local_solution(local_trial.clone())?;
 
@@ -127,7 +137,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                             "Stage 2, iter {}: Improved local solution found with objective = {}",
                             iter, local_trial.objective
                         );
-                        println!("x0 = {:?}", local_trial.point);
+                        println!("x0 = {}", local_trial.point);
                     }
                 } else {
                     // If the trial solution does not pass the filters
@@ -136,13 +146,14 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     if unchanged_cycles >= self.params.wait_cycle {
                         if self.verbose {
                             println!(
-                                "Stage 2, iter {}: Adjusting threshold from {} to {}",
+                                "Stage 2, iteration {}: Adjusting threshold from {} to {}",
                                 iter,
-                                current_threshold,
-                                current_threshold + 0.1 * current_threshold.abs()
+                                self.merit_filter.threshold,
+                                self.merit_filter.threshold
+                                    + 0.1 * self.merit_filter.threshold.abs()
                             );
                         }
-                        self.adjust_threshold(current_threshold);
+                        self.adjust_threshold(self.merit_filter.threshold);
                         unchanged_cycles = 0;
                     }
                 }
@@ -157,8 +168,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     // Helper methods
     /// Check if a local search should be started based on the merit and distance filters
     fn should_start_local(&self, point: &Array1<f64>, obj: f64) -> Result<bool> {
-        let passes_merit = obj <= self.merit_filter.threshold;
-        let passes_distance = self.distance_filter.check(point);
+        let passes_merit: bool = obj <= self.merit_filter.threshold;
+        let passes_distance: bool = self.distance_filter.check(point);
         Ok(passes_merit && passes_distance)
     }
 

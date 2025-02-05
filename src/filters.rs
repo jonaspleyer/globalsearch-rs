@@ -16,8 +16,8 @@ impl MeritFilter {
     /// Create a new MeritFilter with the given parameters
     pub fn new(params: FilterParams) -> Self {
         Self {
-            threshold: f64::INFINITY, // TODO: Should this be params.threshold_factor? or is it updated later?
-            params,
+            threshold: params.threshold_factor,
+            params: params,
         }
     }
 
