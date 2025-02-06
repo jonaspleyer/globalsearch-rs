@@ -17,12 +17,16 @@ use ndarray::{array, Array1};
 /// the number of iterations for stage 1, the wait cycle, threshold factor, distance factor, and population size.
 pub struct OQNLPParams {
     /// Total number of iterations for the optimization process
-    ///
-    /// The second stage is defined as `total_iterations - stage_1_iterations`
-    pub total_iterations: usize,
+    pub iterations: usize,
 
-    /// Number of iterations for stage 1
-    pub stage_1_iterations: usize,
+    /// Number of population size
+    ///
+    /// Population size is the number of points in the reference set.
+    /// The reference set is created in Stage 1, where we optimize the best objective
+    /// function value found so far.
+    ///
+    /// In stage 2, we optimize random `iterations` points of the reference set.
+    pub population_size: usize,
 
     /// Number of iterations to wait before updating the threshold criteria and reference set
     ///
@@ -30,14 +34,13 @@ pub struct OQNLPParams {
     /// threshold criteria (Stage 2) and the reference set (Stage 1).
     pub wait_cycle: usize,
 
-    /// Threshold factor
+    /// Threshold factor multiplier
+    ///
+    /// The new threshold is calculated as `threshold = threshold + threshold_factor * (1 + abs(threshold))`
     pub threshold_factor: f64,
 
     /// Factor that influences the minimum required distance between candidate solutions
     pub distance_factor: f64,
-
-    /// Number of candidate solutions considered in each iteration (equal to reference set size)
-    pub population_size: usize,
 
     /// Type of local solver to use from argmin
     pub local_solver_type: LocalSolverType,

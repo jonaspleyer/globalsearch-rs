@@ -7,17 +7,13 @@ use ndarray::Array1;
 
 pub struct MeritFilter {
     pub threshold: f64,
-    params: FilterParams,
 }
 
-// TODO: Implement filters, use rayon? Update threshold?
-// Paper suggests (for waitcycle): threshold = threshold + threshold_factor * (1 + abs(threshold))
 impl MeritFilter {
     /// Create a new MeritFilter with the given parameters
-    pub fn new(params: FilterParams) -> Self {
+    pub fn new() -> Self {
         Self {
-            threshold: params.threshold_factor,
-            params: params,
+            threshold: std::f64::INFINITY,
         }
     }
 

@@ -67,39 +67,13 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         StdRng::seed_from_u64(new_seed)
     }
 
-    pub fn run(&mut self) -> Result<Array1<f64>> {
-        let mut unchanged_cycles = 0;
-
-        for _ in 0..self.params.stage_1_iterations {
-            let old_set = self.reference_set.clone();
-
-            let trial_points = self.generate_trial_points()?;
-            self.update_reference_set(trial_points)?;
-
-            if self.reference_set == old_set {
-                unchanged_cycles += 1;
-            } else {
-                unchanged_cycles = 0;
-            }
-
-            // If the reference set remains unchanged for a certain number of cycles, diversify.
-            if unchanged_cycles > self.params.wait_cycle {
-                self.reference_set.sort_by(|a, b| {
-                    self.problem
-                        .objective(a)
-                        .unwrap()
-                        .partial_cmp(&self.problem.objective(b).unwrap())
-                        .unwrap()
-                });
-
-                let half = self.reference_set.len() / 2;
-                let mut new_ref_set = self.reference_set[..half].to_vec();
-                self.diversify_reference_set(&mut new_ref_set)?;
-                self.reference_set = new_ref_set;
-                unchanged_cycles = 0;
-            }
-        }
-        self.best_solution()
+    /// Run the Scatter Search algorithm
+    ///
+    /// Returns the reference set and the best solution found
+    pub fn run(&mut self) -> Result<(Vec<Array1<f64>>, Array1<f64>)> {
+        let ref_set = self.reference_set.clone();
+        let best = self.best_solution()?;
+        Ok((ref_set, best))
     }
 
     pub fn initialize_reference_set(&mut self) -> Result<()> {
@@ -116,7 +90,8 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
     pub fn diversify_reference_set(&mut self, ref_set: &mut Vec<Array1<f64>>) -> Result<()> {
         // Generate candidate points using stratified sampling.
-        let mut candidates = self.generate_stratified_samples(self.params.stage_1_iterations)?;
+        let mut candidates = self.generate_stratified_samples(self.params.population_size)?;
+
         while ref_set.len() < self.params.population_size {
             let farthest = candidates
                 .iter()
@@ -125,7 +100,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
                         .partial_cmp(&self.min_distance(b, ref_set))
                         .unwrap()
                 })
-                .ok_or_else(|| anyhow::anyhow!("No candidates left"))?
+                .ok_or_else(|| anyhow::anyhow!("Error: No candidates left."))?
                 .clone();
 
             ref_set.push(farthest.clone());
