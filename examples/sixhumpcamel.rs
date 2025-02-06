@@ -47,12 +47,11 @@ impl Problem for SixHumpCamel {
 fn main() -> Result<()> {
     let problem: SixHumpCamel = SixHumpCamel;
     let params: OQNLPParams = OQNLPParams {
-        total_iterations: 500,
-        stage_1_iterations: 100,
-        wait_cycle: 20,
+        iterations: 50,
+        wait_cycle: 10,
         threshold_factor: 0.2,
         distance_factor: 0.75,
-        population_size: 25,
+        population_size: 150,
         local_solver_type: LocalSolverType::SteepestDescent,
         local_solver_config: SteepestDescentBuilder::default().build(),
         seed: 0,

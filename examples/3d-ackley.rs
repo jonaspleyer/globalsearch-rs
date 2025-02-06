@@ -79,12 +79,11 @@ fn main() -> Result<()> {
     let problem = ThreeDAckley::new(a, b, c);
 
     let params: OQNLPParams = OQNLPParams {
-        total_iterations: 500,
-        stage_1_iterations: 100,
-        wait_cycle: 20,
+        iterations: 30,
+        wait_cycle: 5,
         threshold_factor: 0.2,
         distance_factor: 0.75,
-        population_size: 15,
+        population_size: 150,
         local_solver_type: LocalSolverType::LBFGS,
         local_solver_config: LBFGSBuilder::default()
             .line_search_params(HagerZhangBuilder::default().build())

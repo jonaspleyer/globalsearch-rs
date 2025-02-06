@@ -41,12 +41,11 @@ fn main() -> Result<()> {
     let problem: OneDGriewank = OneDGriewank;
 
     let params: OQNLPParams = OQNLPParams {
-        total_iterations: 500,
-        stage_1_iterations: 100,
+        iterations: 50,
         wait_cycle: 20,
         threshold_factor: 0.1,
         distance_factor: 0.75,
-        population_size: 10,
+        population_size: 100,
         local_solver_type: LocalSolverType::LBFGS,
         local_solver_config: LBFGSBuilder::default().build(),
         seed: 0,
@@ -60,12 +59,11 @@ fn main() -> Result<()> {
     println!("Objective: {}", solution.objective);
 
     let modified_params = OQNLPParams {
-        total_iterations: 500,
-        stage_1_iterations: 100,
+        iterations: 100,
         wait_cycle: 10,
         threshold_factor: 0.1,
         distance_factor: 0.75,
-        population_size: 5,
+        population_size: 500,
         local_solver_type: LocalSolverType::LBFGS,
         local_solver_config: LBFGSBuilder::default()
             .max_iter(100)
