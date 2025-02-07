@@ -289,3 +289,111 @@ fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
         .sum::<f64>()
         .sqrt()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::OQNLPParams;
+    use crate::types::{LocalSolverType, SteepestDescentBuilder};
+    use ndarray::{array, Array2};
+
+    #[derive(Debug, Clone)]
+    pub struct SixHumpCamel;
+
+    impl Problem for SixHumpCamel {
+        fn objective(&self, x: &Array1<f64>) -> Result<f64> {
+            Ok(
+                (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+                    + x[0] * x[1]
+                    + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
+            )
+        }
+
+        // Calculated analytically, reference didn't provide gradient
+        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>> {
+            Ok(array![
+                (8.0 - 8.4 * x[0].powi(2) + 2.0 * x[0].powi(4)) * x[0] + x[1],
+                x[0] + (-8.0 + 16.0 * x[1].powi(2)) * x[1]
+            ])
+        }
+
+        fn variable_bounds(&self) -> Array2<f64> {
+            array![[-3.0, 3.0], [-2.0, 2.0]]
+        }
+    }
+
+    #[test]
+    /// Test if the population size is correctly set in the `ScatterSearch` struct
+    fn test_population_size() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 50,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 100,
+            local_solver_type: LocalSolverType::SteepestDescent,
+            local_solver_config: SteepestDescentBuilder::default().build(),
+            seed: 0,
+        };
+
+        let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        assert_eq!(ss.reference_set.len(), 100);
+    }
+
+    #[test]
+    /// Test if the bounds are correctly set in the `ScatterSearch` struct and
+    /// all the points in the reference set are within the bounds
+    fn test_bounds_in_reference_set() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 50,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 100,
+            local_solver_type: LocalSolverType::SteepestDescent,
+            local_solver_config: SteepestDescentBuilder::default().build(),
+            seed: 0,
+        };
+
+        let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let bounds: VariableBounds = ss.bounds;
+        let ref_set = ss.reference_set;
+
+        for point in ref_set {
+            for i in 0..point.len() {
+                assert!(point[i] >= bounds.lower[i]);
+                assert!(point[i] <= bounds.upper[i]);
+            }
+        }
+    }
+
+    #[test]
+    /// Test that, given the same seed and population size, the reference set
+    /// is the same for two different `ScatterSearch` instances
+    fn test_same_reference_set() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 50,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 100,
+            local_solver_type: LocalSolverType::SteepestDescent,
+            local_solver_config: SteepestDescentBuilder::default().build(),
+            seed: 0,
+        };
+
+        let ss1: ScatterSearch<SixHumpCamel> =
+            ScatterSearch::new(problem.clone(), params.clone()).unwrap();
+        let ss2: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+
+        let ref_set1 = ss1.reference_set.clone();
+        let ref_set2 = ss2.reference_set.clone();
+
+        for i in 0..ref_set1.len() {
+            assert_eq!(ref_set1[i], ref_set2[i]);
+        }
+    }
+}
