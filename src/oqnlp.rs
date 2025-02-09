@@ -54,10 +54,12 @@ pub struct OQNLP<P: Problem + Clone> {
     /// It applies a local optimization method, using argmin to find the best solution.
     local_solver: LocalSolver<P>,
 
-    /// The best solution found during the optimization process.
+    /// The set of best solutions found during the optimization process.
     ///
-    /// This is updated as better solutions are discovered. If no solution has been found yet, it remains `None`.
-    best_solution: Option<LocalSolution>,
+    /// If no solution has been found yet, it remains `None`.
+    solution_set: Option<Array1<LocalSolution>>,
+
+    /// Verbose flag to enable additional output during the optimization process.
     verbose: bool,
 }
 
@@ -81,13 +83,13 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 params.local_solver_type.clone(),
                 params.local_solver_config.clone(),
             ),
-            best_solution: None,
+            solution_set: None,
             verbose: false,
         })
     }
 
     /// Run the OQNLP algorithm and return the best solution found
-    pub fn run(&mut self) -> Result<LocalSolution> {
+    pub fn run(&mut self) -> Result<Array1<LocalSolution>> {
         if self.params.wait_cycle >= self.params.iterations {
             eprintln!(
                 "Warning: wait_cycle is greater than or equal to iterations. This may lead to suboptimal results."
@@ -162,7 +164,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             }
         }
 
-        self.best_solution
+        self.solution_set
             .clone()
             .ok_or_else(|| anyhow::anyhow!("No feasible solution found"))
     }
@@ -177,17 +179,45 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
     /// Process a local solution, updating the best solution and filters
     fn process_local_solution(&mut self, solution: LocalSolution) -> Result<()> {
-        // Update best solution
-        if self
-            .best_solution
-            .as_ref()
-            .map_or(true, |best| solution.objective < best.objective)
-        {
-            self.best_solution = Some(solution.clone());
-            self.merit_filter.update_threshold(solution.objective);
+        const EPS: f64 = 1e-6; // TODO: Should we let the user select this?
+        let sol_for_filter = solution.clone();
+        match &mut self.solution_set {
+            None => {
+                // First iteration: no solution in the set yet.
+                self.solution_set = Some(Array1::from(vec![solution.clone()]));
+                self.merit_filter.update_threshold(solution.objective);
+            }
+            Some(old_set) => {
+                // TODO: Can we avoid converting to vec?
+                let mut vec_sol = old_set.to_vec();
+                let current_best = &vec_sol[0];
+                if solution.objective < current_best.objective - EPS {
+                    // New best found, replace the solution set.
+                    vec_sol = vec![solution.clone()];
+                    self.merit_filter.update_threshold(solution.objective);
+                } else if (solution.objective - current_best.objective).abs() <= EPS {
+                    // If similar in objective, add it if not duplicate.
+                    if !self.is_duplicate_in_set(&solution, &Array1::from(vec_sol.clone())) {
+                        vec_sol.push(solution.clone());
+                    }
+                }
+                self.solution_set = Some(Array1::from(vec_sol));
+            }
         }
-        self.distance_filter.add_solution(solution);
+        self.distance_filter.add_solution(sol_for_filter);
         Ok(())
+    }
+
+    /// Check if a candidate solution is a duplicate in a set of solutions
+    fn is_duplicate_in_set(&self, candidate: &LocalSolution, set: &Array1<LocalSolution>) -> bool {
+        for s in set.iter() {
+            let diff = &candidate.point - &s.point;
+            let dist = diff.dot(&diff).sqrt();
+            if dist < self.params.distance_factor {
+                return true;
+            }
+        }
+        false
     }
 
     /// Enable verbose output for the OQNLP algorithm
