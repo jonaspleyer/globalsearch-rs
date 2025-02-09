@@ -1,14 +1,3 @@
-use anyhow::Result;
-use criterion::{criterion_group, criterion_main, Criterion};
-use globalsearch_rs::problem::Problem;
-use globalsearch_rs::types::SteepestDescentBuilder;
-use globalsearch_rs::{
-    oqnlp::OQNLP,
-    types::{LocalSolution, LocalSolverType, OQNLPParams},
-};
-use ndarray::{array, Array1, Array2};
-use std::hint::black_box;
-
 /// Six-Hump Camel Back Function
 /// The Six-Hump Camel Back function is defined as follows:
 ///
@@ -21,6 +10,16 @@ use std::hint::black_box;
 /// References:
 ///
 /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 27-28. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
+use anyhow::Result;
+use criterion::{criterion_group, criterion_main, Criterion};
+use globalsearch_rs::problem::Problem;
+use globalsearch_rs::types::SteepestDescentBuilder;
+use globalsearch_rs::{
+    oqnlp::OQNLP,
+    types::{LocalSolution, LocalSolverType, OQNLPParams},
+};
+use ndarray::{array, Array1, Array2};
+use std::hint::black_box;
 
 #[derive(Debug, Clone)]
 pub struct SixHumpCamel;
@@ -46,7 +45,7 @@ impl Problem for SixHumpCamel {
     }
 }
 
-fn six_hump_camel() -> Result<LocalSolution> {
+fn six_hump_camel() -> Result<Array1<LocalSolution>> {
     let problem: SixHumpCamel = SixHumpCamel;
     let params: OQNLPParams = OQNLPParams {
         iterations: 60,
@@ -60,7 +59,8 @@ fn six_hump_camel() -> Result<LocalSolution> {
     };
 
     let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params)?;
-    Ok(oqnlp.run()?)
+    let solutions = oqnlp.run()?;
+    Ok(solutions)
 }
 
 fn run_six_hump_camel(c: &mut Criterion) {

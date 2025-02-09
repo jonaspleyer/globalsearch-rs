@@ -109,22 +109,24 @@ fn main() -> Result<()> {
     let problem: CrossInTray = CrossInTray;
 
     let params: OQNLPParams = OQNLPParams {
-        iterations: 30,
+        iterations: 250,
         wait_cycle: 10,
         threshold_factor: 0.1,
         distance_factor: 0.75,
-        population_size: 100,
+        population_size: 350,
         local_solver_type: LocalSolverType::LBFGS,
         local_solver_config: LBFGSBuilder::default().build(),
         seed: 0,
     };
 
     let mut oqnlp: OQNLP<CrossInTray> = OQNLP::new(problem.clone(), params)?.verbose();
-    let solution: LocalSolution = oqnlp.run()?;
+    let solution_set: Array1<LocalSolution> = oqnlp.run()?;
 
     println!("Best solution found:");
-    println!("Point: {}", solution.point);
-    println!("Objective: {}", solution.objective);
+    for solution in solution_set.iter() {
+        println!("Point: {}", solution.point);
+        println!("Objective: {}", solution.objective);
+    }
 
     Ok(())
 }

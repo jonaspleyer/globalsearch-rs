@@ -52,11 +52,13 @@ fn main() -> Result<()> {
     };
 
     let mut oqnlp: OQNLP<OneDGriewank> = OQNLP::new(problem.clone(), params)?;
-    let solution: LocalSolution = oqnlp.run()?;
+    let solution_set: Array1<LocalSolution> = oqnlp.run()?;
 
     println!("Best solution found:");
-    println!("Point: {}", solution.point);
-    println!("Objective: {}", solution.objective);
+    for solution in solution_set.iter() {
+        println!("Point: {}", solution.point);
+        println!("Objective: {}", solution.objective);
+    }
 
     let modified_params = OQNLPParams {
         iterations: 100,
@@ -74,9 +76,13 @@ fn main() -> Result<()> {
     };
 
     let mut modified_oqnlp: OQNLP<OneDGriewank> = OQNLP::new(problem, modified_params)?;
-    let modified_solution: LocalSolution = modified_oqnlp.run()?;
-    println!("Best solution found with modified Steepest Descent:");
-    println!("Point: {}", modified_solution.point);
-    println!("Objective: {}", modified_solution.objective);
+    let modified_solution_set: Array1<LocalSolution> = modified_oqnlp.run()?;
+
+    println!("Best solution found:");
+    for solution in modified_solution_set.iter() {
+        println!("Point: {}", solution.point);
+        println!("Objective: {}", solution.objective);
+    }
+
     Ok(())
 }

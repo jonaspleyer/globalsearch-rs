@@ -58,11 +58,13 @@ fn main() -> Result<()> {
     };
 
     let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params)?.verbose();
-    let solution: LocalSolution = oqnlp.run()?;
+    let solution_set: Array1<LocalSolution> = oqnlp.run()?;
 
     println!("Best solution found:");
-    println!("Point: {}", solution.point);
-    println!("Objective: {}", solution.objective);
+    for solution in solution_set.iter() {
+        println!("Point: {}", solution.point);
+        println!("Objective: {}", solution.objective);
+    }
 
     Ok(())
 }
