@@ -130,17 +130,17 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         // TODO: Do we need to shuffle the reference set? Is this necessary?
         ref_set.shuffle(&mut rng);
 
-        for (iter, trial) in ref_set.into_iter().enumerate() {
+        for (iter, trial) in ref_set.iter().take(self.params.iterations).enumerate() {
             let trial = trial.clone();
             let obj: f64 = self.problem.objective(&trial)?;
             if self.should_start_local(&trial, obj)? {
                 self.merit_filter.update_threshold(obj);
                 let local_trial: LocalSolution = self.local_solver.solve(trial)?;
-                self.process_local_solution(local_trial.clone())?;
+                let added: bool = self.process_local_solution(local_trial.clone())?;
 
-                if self.verbose {
+                if self.verbose && added {
                     println!(
-                        "Stage 2, iteration {}: Improved local solution found with objective = {:.8}",
+                        "Stage 2, iteration {}: Added local solution found with objective = {:.8}",
                         iter, local_trial.objective
                     );
                     println!("x0 = {}", local_trial.point);
@@ -178,9 +178,10 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     }
 
     /// Process a local solution, updating the best solution and filters
-    fn process_local_solution(&mut self, solution: LocalSolution) -> Result<()> {
+    fn process_local_solution(&mut self, solution: LocalSolution) -> Result<bool> {
         const EPS: f64 = 1e-6; // TODO: Should we let the user select this?
         let sol_for_filter = solution.clone();
+        let mut added: bool = false;
         match &mut self.solution_set {
             None => {
                 // First iteration: no solution in the set yet.
@@ -199,13 +200,14 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     // If similar in objective, add it if not duplicate.
                     if !self.is_duplicate_in_set(&solution, &Array1::from(vec_sol.clone())) {
                         vec_sol.push(solution.clone());
+                        added = true;
                     }
                 }
                 self.solution_set = Some(Array1::from(vec_sol));
             }
         }
         self.distance_filter.add_solution(sol_for_filter);
-        Ok(())
+        Ok(added)
     }
 
     /// Check if a candidate solution is a duplicate in a set of solutions
