@@ -6,27 +6,48 @@ use crate::filters::{DistanceFilter, MeritFilter};
 use crate::local_solver::LocalSolver;
 use crate::problem::Problem;
 use crate::scatter_search::ScatterSearch;
-use crate::types::{FilterParams, LocalSolution, OQNLPParams, Result};
+use crate::types::{FilterParams, LocalSolution, OQNLPParams};
+use ndarray::Array1;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
+use thiserror::Error;
 
 // TODO: Where can we use rayon?
 // use rayon::prelude::*;
-
-use ndarray::Array1;
-
-// TODO: Save multiple global optimums; For an example of this check Cross in Tray problem:
-//
-// Stage 2, iter 97: Improved local solution found with objective = -2.0626118708227397
-// x0 = [-1.3494066142838494, -1.3494066186040463], shape=[2], strides=[1], layout=CFcf (0xf), const ndim=1
-// Stage 2, iter 97: Improved local solution found with objective = -2.0626118708227392
-// x0 = [1.3494066219800123, -1.3494066169687304], shape=[2], strides=[1], layout=CFcf (0xf), const ndim=1
 
 // TODO: Set penalty functions?
 // How should we do this? Two different OQNLP implementations?
 // -> UnconstrainedOQNLP
 // -> ConstrainedOQNLP
+
+/// Error to be thrown if an issue occurs during the OQNLP optimization process
+#[derive(Debug, Error)]
+pub enum OQNLPError {
+    /// Iterations should be less than or equal to population size
+    #[error("OQNLP Error: Iterations should be less than or equal to population size. OQNLP received `iterations`: {0}, `population size`: {1}")]
+    Iterations(usize, usize),
+
+    /// Error when the local solver fails to find a solution
+    #[error("OQNLP Error: Local solver failed to find a solution")]
+    LocalSolverError,
+
+    /// Error when OQNLP fails to find a feasible solution
+    #[error("OQNLP Error: No feasible solution found")]
+    NoFeasibleSolution,
+
+    /// Error when the objective function evaluation fails
+    #[error("OQNLP Error: Objective function evaluation failed")]
+    ObjectiveFunctionEvaluationFailed,
+
+    /// Error when creating a new ScatterSearch instance
+    #[error("OQNLP Error: Failed to create a new ScatterSearch instance")]
+    ScatterSearchError,
+
+    /// Error when running the ScatterSearch instance
+    #[error("OQNLP Error: Failed to run the ScatterSearch instance")]
+    ScatterSearchRunError,
+}
 
 /// The main struct for the OQNLP algorithm.
 ///
@@ -66,7 +87,7 @@ pub struct OQNLP<P: Problem + Clone> {
 // TODO: Check implementation with the paper
 impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// Create a new OQNLP instance with the given problem and parameters
-    pub fn new(problem: P, params: OQNLPParams) -> Result<Self> {
+    pub fn new(problem: P, params: OQNLPParams) -> Result<Self, OQNLPError> {
         let filter_params: FilterParams = FilterParams {
             distance_factor: params.distance_factor,
             wait_cycle: params.wait_cycle,
@@ -89,16 +110,17 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     }
 
     /// Run the OQNLP algorithm and return the best solution found
-    pub fn run(&mut self) -> Result<Array1<LocalSolution>> {
+    pub fn run(&mut self) -> Result<Array1<LocalSolution>, OQNLPError> {
         if self.params.wait_cycle >= self.params.iterations {
             eprintln!(
-                "Warning: wait_cycle is greater than or equal to iterations. This may lead to suboptimal results."
+                "Warning: `wait_cycle` is greater than or equal to `iterations`. This may lead to suboptimal results."
             );
         }
 
         if self.params.iterations > self.params.population_size {
-            return Err(anyhow::anyhow!(
-                "Error: Iterations should be less than or equal to population size."
+            return Err(OQNLPError::Iterations(
+                self.params.iterations,
+                self.params.population_size,
             ));
         }
 
@@ -108,9 +130,14 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         }
 
         let mut ss: ScatterSearch<P> =
-            ScatterSearch::new(self.problem.clone(), self.params.clone())?;
-        let (mut ref_set, scatter_candidate) = ss.run()?;
-        let local_sol: LocalSolution = self.local_solver.solve(scatter_candidate)?;
+            ScatterSearch::new(self.problem.clone(), self.params.clone())
+                .map_err(|_| OQNLPError::ScatterSearchError)?;
+        let (mut ref_set, scatter_candidate) =
+            ss.run().map_err(|_| OQNLPError::ScatterSearchRunError)?;
+        let local_sol: LocalSolution = self
+            .local_solver
+            .solve(scatter_candidate)
+            .map_err(|_| OQNLPError::LocalSolverError)?;
 
         self.merit_filter.update_threshold(local_sol.objective);
         self.process_local_solution(local_sol.clone())?;
@@ -132,10 +159,16 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
         for (iter, trial) in ref_set.iter().take(self.params.iterations).enumerate() {
             let trial = trial.clone();
-            let obj: f64 = self.problem.objective(&trial)?;
+            let obj: f64 = self
+                .problem
+                .objective(&trial)
+                .map_err(|_| OQNLPError::ObjectiveFunctionEvaluationFailed)?;
             if self.should_start_local(&trial, obj)? {
                 self.merit_filter.update_threshold(obj);
-                let local_trial: LocalSolution = self.local_solver.solve(trial)?;
+                let local_trial: LocalSolution = self
+                    .local_solver
+                    .solve(trial)
+                    .map_err(|_| OQNLPError::LocalSolverError)?;
                 let added: bool = self.process_local_solution(local_trial.clone())?;
 
                 if self.verbose && added {
@@ -166,19 +199,19 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
         self.solution_set
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("No feasible solution found"))
+            .ok_or_else(|| OQNLPError::NoFeasibleSolution)
     }
 
     // Helper methods
     /// Check if a local search should be started based on the merit and distance filters
-    fn should_start_local(&self, point: &Array1<f64>, obj: f64) -> Result<bool> {
+    fn should_start_local(&self, point: &Array1<f64>, obj: f64) -> Result<bool, OQNLPError> {
         let passes_merit: bool = obj <= self.merit_filter.threshold;
         let passes_distance: bool = self.distance_filter.check(point);
         Ok(passes_merit && passes_distance)
     }
 
     /// Process a local solution, updating the best solution and filters
-    fn process_local_solution(&mut self, solution: LocalSolution) -> Result<bool> {
+    fn process_local_solution(&mut self, solution: LocalSolution) -> Result<bool, OQNLPError> {
         const EPS: f64 = 1e-6; // TODO: Should we let the user select this?
         let sol_for_filter = solution.clone();
         let mut added: bool = false;
