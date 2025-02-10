@@ -11,11 +11,13 @@
 /// References:
 ///
 /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 15-16. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
-use anyhow::Result;
 use globalsearch_rs::problem::Problem;
 use globalsearch_rs::{
     oqnlp::OQNLP,
-    types::{HagerZhangBuilder, LBFGSBuilder, LocalSolution, LocalSolverType, OQNLPParams},
+    types::{
+        EvaluationError, HagerZhangBuilder, LBFGSBuilder, LocalSolution, LocalSolverType,
+        OQNLPParams,
+    },
 };
 use ndarray::{array, Array1, Array2};
 
@@ -37,7 +39,7 @@ impl ThreeDAckley {
 }
 
 impl Problem for ThreeDAckley {
-    fn objective(&self, x: &Array1<f64>) -> Result<f64> {
+    fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
         let norm = (x[0].powi(2) + x[1].powi(2) + x[2].powi(2)) / 3.0;
         let cos_sum = (x[0] * self.c).cos() + (x[1] * self.c).cos() + (x[2] * self.c).cos();
 
@@ -49,7 +51,7 @@ impl Problem for ThreeDAckley {
     }
 
     // Calculated analytically, reference didn't provide gradient
-    fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>> {
+    fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
         let norm = (x[0].powi(2) + x[1].powi(2) + x[2].powi(2)) / 3.0;
         let sqrt_norm = norm.sqrt();
         let exp_term1 = (-self.b * sqrt_norm).exp();
@@ -71,7 +73,7 @@ impl Problem for ThreeDAckley {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a: f64 = 20.0;
     let b: f64 = 0.2;
     let c: f64 = 2.0 * std::f64::consts::PI;

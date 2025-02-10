@@ -10,12 +10,11 @@
 ///
 /// References:
 /// Surjanovic, S. and Bingham, D. (no date) Virtual Library of Simulation Experiments: Test Functions and Datasets, Cross-in-Tray Function. Available at: https://www.sfu.ca/~ssurjano/crossit.html (Accessed: 02 February 2025).
-use anyhow::Result;
 use globalsearch_rs::problem::Problem;
 use globalsearch_rs::types::LBFGSBuilder;
 use globalsearch_rs::{
     oqnlp::OQNLP,
-    types::{LocalSolution, LocalSolverType, OQNLPParams},
+    types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams},
 };
 use ndarray::{array, Array1, Array2};
 
@@ -33,7 +32,7 @@ impl CrossInTray {
 }
 
 impl Problem for CrossInTray {
-    fn objective(&self, x: &Array1<f64>) -> Result<f64> {
+    fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
         let x_val = x[0];
         let y_val = x[1];
         let h = Self::h(x_val, y_val);
@@ -41,7 +40,7 @@ impl Problem for CrossInTray {
         Ok(val)
     }
 
-    fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>> {
+    fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
         let x_val = x[0];
         let y_val = x[1];
 
@@ -105,7 +104,7 @@ impl Problem for CrossInTray {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let problem: CrossInTray = CrossInTray;
 
     let params: OQNLPParams = OQNLPParams {
@@ -127,6 +126,5 @@ fn main() -> Result<()> {
         println!("Point: {}", solution.point);
         println!("Objective: {}", solution.objective);
     }
-
     Ok(())
 }
