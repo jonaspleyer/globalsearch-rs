@@ -9,11 +9,17 @@ pub struct MeritFilter {
     pub threshold: f64,
 }
 
+impl Default for MeritFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MeritFilter {
     /// Create a new MeritFilter with the given parameters
     pub fn new() -> Self {
         Self {
-            threshold: std::f64::INFINITY,
+            threshold: f64::INFINITY,
         }
     }
 

@@ -117,11 +117,11 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
                         .partial_cmp(&self.min_distance(b, ref_set))
                         .unwrap()
                 })
-                .ok_or_else(|| ScatterSearchError::NoCandidates)?
+                .ok_or(ScatterSearchError::NoCandidates)?
                 .clone();
 
             ref_set.push(farthest.clone());
-            candidates.retain(|c| c != &farthest);
+            candidates.retain(|c| c != farthest);
         }
         Ok(())
     }

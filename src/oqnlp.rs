@@ -199,7 +199,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
         self.solution_set
             .clone()
-            .ok_or_else(|| OQNLPError::NoFeasibleSolution)
+            .ok_or(OQNLPError::NoFeasibleSolution)
     }
 
     // Helper methods

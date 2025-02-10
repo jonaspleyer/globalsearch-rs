@@ -79,7 +79,7 @@ impl<P: Problem> LocalSolver<P> {
             problem: &'a P,
         }
 
-        impl<'a, P: Problem> CostFunction for ProblemCost<'a, P> {
+        impl<P: Problem> CostFunction for ProblemCost<'_, P> {
             type Param = Array1<f64>;
             type Output = f64;
 
@@ -90,7 +90,7 @@ impl<P: Problem> LocalSolver<P> {
             }
         }
 
-        impl<'a, P: Problem> Gradient for ProblemCost<'a, P> {
+        impl<P: Problem> Gradient for ProblemCost<'_, P> {
             type Param = Array1<f64>;
             type Gradient = Array1<f64>;
 
@@ -144,15 +144,15 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|_| LocalSolverError::RunFailed)?;
 
-                    return Ok(LocalSolution {
+                    Ok(LocalSolution {
                         point: res
                             .state()
                             .best_param
                             .as_ref()
-                            .ok_or_else(|| LocalSolverError::NoSolution)?
+                            .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    });
+                    })
                 }
                 LineSearchMethod::HagerZhang {
                     delta,
@@ -188,17 +188,17 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|_| LocalSolverError::RunFailed)?;
 
-                    return Ok(LocalSolution {
+                    Ok(LocalSolution {
                         point: res
                             .state()
                             .best_param
                             .as_ref()
-                            .ok_or_else(|| LocalSolverError::NoSolution)?
+                            .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    });
+                    })
                 }
-            };
+            }
         } else {
             Err(LocalSolverError::InvalidLBFGSConfig)
         }
@@ -213,7 +213,7 @@ impl<P: Problem> LocalSolver<P> {
             problem: &'a P,
         }
 
-        impl<'a, P: Problem> CostFunction for ProblemCost<'a, P> {
+        impl<P: Problem> CostFunction for ProblemCost<'_, P> {
             type Param = Array1<f64>;
             type Output = f64;
 
@@ -268,7 +268,7 @@ impl<P: Problem> LocalSolver<P> {
                     .state()
                     .best_param
                     .as_ref()
-                    .ok_or_else(|| LocalSolverError::NoSolution)?
+                    .ok_or(LocalSolverError::NoSolution)?
                     .clone(),
                 objective: res.state().best_cost,
             })
@@ -286,7 +286,7 @@ impl<P: Problem> LocalSolver<P> {
             problem: &'a P,
         }
 
-        impl<'a, P: Problem> CostFunction for ProblemCost<'a, P> {
+        impl<P: Problem> CostFunction for ProblemCost<'_, P> {
             type Param = Array1<f64>;
             type Output = f64;
 
@@ -297,7 +297,7 @@ impl<P: Problem> LocalSolver<P> {
             }
         }
 
-        impl<'a, P: Problem> Gradient for ProblemCost<'a, P> {
+        impl<P: Problem> Gradient for ProblemCost<'_, P> {
             type Param = Array1<f64>;
             type Gradient = Array1<f64>;
 
@@ -340,15 +340,15 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|_| LocalSolverError::RunFailed)?;
 
-                    return Ok(LocalSolution {
+                    Ok(LocalSolution {
                         point: res
                             .state()
                             .best_param
                             .as_ref()
-                            .ok_or_else(|| LocalSolverError::NoSolution)?
+                            .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    });
+                    })
                 }
                 LineSearchMethod::HagerZhang {
                     delta,
@@ -380,17 +380,17 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|_| LocalSolverError::RunFailed)?;
 
-                    return Ok(LocalSolution {
+                    Ok(LocalSolution {
                         point: res
                             .state()
                             .best_param
                             .as_ref()
-                            .ok_or_else(|| LocalSolverError::NoSolution)?
+                            .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    });
+                    })
                 }
-            };
+            }
         } else {
             Err(LocalSolverError::InvalidSteepestDescentConfig)
         }
