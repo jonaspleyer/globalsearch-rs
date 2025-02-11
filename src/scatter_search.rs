@@ -10,9 +10,6 @@ use rand::{Rng, SeedableRng};
 use std::sync::Mutex;
 use thiserror::Error;
 
-// TODO: For some reason, in my PC it runs faster without rayon (using bench)
-// What am I doing wrong? Is it overhead?
-
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
@@ -41,7 +38,7 @@ pub struct ScatterSearch<P: Problem> {
     params: OQNLPParams,
     reference_set: Vec<Array1<f64>>,
     bounds: VariableBounds,
-    rng: Mutex<StdRng>, // Wrapped in a Mutex for thread safety
+    rng: Mutex<StdRng>,
 }
 
 impl<P: Problem + Sync + Send> ScatterSearch<P> {
@@ -55,13 +52,13 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             .slice_axis(Axis(1), ndarray::Slice::from(1..2))
             .into_owned();
 
-        let bounds = VariableBounds {
+        let bounds: VariableBounds = VariableBounds {
             lower: lower.remove_axis(Axis(1)),
             upper: upper.remove_axis(Axis(1)),
         };
 
         let seed: u64 = params.seed;
-        let mut ss = Self {
+        let mut ss: ScatterSearch<P> = Self {
             problem,
             params,
             reference_set: Vec::new(),
@@ -71,14 +68,6 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
         ss.initialize_reference_set()?;
         Ok(ss)
-    }
-
-    /// Returns a new, thread-local RNG
-    /// I think this doesn't work as intended
-    fn local_rng(&self) -> StdRng {
-        let mut master_rng = self.rng.lock().unwrap();
-        let new_seed: u64 = master_rng.random();
-        StdRng::seed_from_u64(new_seed)
     }
 
     /// Run the Scatter Search algorithm
@@ -91,7 +80,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     }
 
     pub fn initialize_reference_set(&mut self) -> Result<(), ScatterSearchError> {
-        let mut ref_set = Vec::with_capacity(self.params.population_size);
+        let mut ref_set: Vec<Array1<f64>> = Vec::with_capacity(self.params.population_size);
 
         ref_set.push(self.bounds.lower.clone());
         ref_set.push(self.bounds.upper.clone());
@@ -106,23 +95,57 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         &mut self,
         ref_set: &mut Vec<Array1<f64>>,
     ) -> Result<(), ScatterSearchError> {
-        // Generate candidate points using stratified sampling.
         let mut candidates = self.generate_stratified_samples(self.params.population_size)?;
 
-        while ref_set.len() < self.params.population_size {
-            let farthest = candidates
-                .iter()
-                .max_by(|a, b| {
-                    self.min_distance(a, ref_set)
-                        .partial_cmp(&self.min_distance(b, ref_set))
-                        .unwrap()
-                })
-                .ok_or(ScatterSearchError::NoCandidates)?
-                .clone();
+        #[cfg(feature = "rayon")]
+        let mut min_dists: Vec<f64> = candidates
+            .par_iter()
+            .map(|c| self.min_distance(c, ref_set))
+            .collect();
 
-            ref_set.push(farthest.clone());
-            candidates.retain(|c| c != farthest);
+        #[cfg(not(feature = "rayon"))]
+        let mut min_dists: Vec<f64> = candidates
+            .iter()
+            .map(|c| self.min_distance(c, ref_set))
+            .collect();
+
+        while ref_set.len() < self.params.population_size {
+            let (max_idx, _) = min_dists
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .ok_or(ScatterSearchError::NoCandidates)?;
+
+            let farthest = candidates.swap_remove(max_idx);
+            min_dists.swap_remove(max_idx);
+            ref_set.push(farthest);
+
+            if ref_set.len() >= self.params.population_size {
+                break;
+            }
+
+            #[cfg(feature = "rayon")]
+            let updater_iter = candidates.par_iter().zip(min_dists.par_iter_mut());
+            #[cfg(not(feature = "rayon"))]
+            let updater_iter = candidates.iter().zip(min_dists.iter_mut());
+
+            #[cfg(feature = "rayon")]
+            updater_iter.for_each(|(c, current_min)| {
+                let dist = euclidean_distance(c, ref_set.last().unwrap());
+                if dist < *current_min {
+                    *current_min = dist;
+                }
+            });
+
+            #[cfg(not(feature = "rayon"))]
+            updater_iter.for_each(|(c, current_min)| {
+                let dist: f64 = euclidean_distance(c, ref_set.last().unwrap());
+                if dist < *current_min {
+                    *current_min = dist;
+                }
+            });
         }
+
         Ok(())
     }
 
@@ -130,14 +153,19 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         &self,
         n: usize,
     ) -> Result<Vec<Array1<f64>>, ScatterSearchError> {
-        let dim = self.bounds.lower.len();
+        let dim: usize = self.bounds.lower.len();
+
+        // Precompute seeds while holding the mutex once
+        let seeds: Vec<u64> = {
+            let mut rng = self.rng.lock().unwrap();
+            (0..n).map(|_| rng.random::<u64>()).collect::<Vec<_>>()
+        };
 
         #[cfg(feature = "rayon")]
-        let samples = (0..n)
+        let samples = seeds
             .into_par_iter()
-            .map(|_| {
-                // Create a thread-local RNG once per iteration.
-                let mut rng = self.local_rng();
+            .map(|seed| {
+                let mut rng = StdRng::seed_from_u64(seed);
                 Ok(Array1::from_shape_fn(dim, |i| {
                     rng.random_range(self.bounds.lower[i]..=self.bounds.upper[i])
                 }))
@@ -145,9 +173,10 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             .collect::<Result<Vec<_>, ScatterSearchError>>()?;
 
         #[cfg(not(feature = "rayon"))]
-        let samples = (0..n)
-            .map(|_| {
-                let mut rng = self.rng.lock().unwrap();
+        let samples = seeds
+            .into_iter()
+            .map(|seed: u64| {
+                let mut rng = StdRng::seed_from_u64(seed);
                 Ok(Array1::from_shape_fn(dim, |i| {
                     rng.random_range(self.bounds.lower[i]..=self.bounds.upper[i])
                 }))
@@ -180,23 +209,33 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             .flat_map(|i| ((i + 1)..self.reference_set.len()).map(move |j| (i, j)))
             .collect();
 
+        // Precompute seeds for each combine_points call
+        let seeds: Vec<u64> = {
+            let mut rng = self.rng.lock().unwrap();
+            (0..indices.len())
+                .map(|_| rng.random::<u64>())
+                .collect::<Vec<_>>()
+        };
+
         #[cfg(feature = "rayon")]
         let trial_points: Vec<Vec<Array1<f64>>> = indices
             .par_iter()
-            .map(|&(i, j)| {
+            .zip(seeds.par_iter())
+            .map(|(&(i, j), &seed)| {
                 let point1 = self.reference_set[i].clone();
                 let point2 = self.reference_set[j].clone();
-                self.combine_points(&point1, &point2)
+                self.combine_points(&point1, &point2, seed)
             })
             .collect::<Result<Vec<_>, ScatterSearchError>>()?;
 
         #[cfg(not(feature = "rayon"))]
         let trial_points: Vec<Vec<Array1<f64>>> = indices
             .iter()
-            .map(|&(i, j)| {
+            .zip(seeds.iter())
+            .map(|(&(i, j), &seed)| {
                 let point1 = self.reference_set[i].clone();
                 let point2 = self.reference_set[j].clone();
-                self.combine_points(&point1, &point2)
+                self.combine_points(&point1, &point2, seed)
             })
             .collect::<Result<Vec<_>, ScatterSearchError>>()?;
 
@@ -208,6 +247,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         &self,
         a: &Array1<f64>,
         b: &Array1<f64>,
+        seed: u64,
     ) -> Result<Vec<Array1<f64>>, ScatterSearchError> {
         let mut points = Vec::new();
 
@@ -219,9 +259,8 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             points.push(point);
         }
 
-        // Random perturbations using a thread-local RNG.
-        // Not sure this works as intended
-        let mut rng = self.local_rng();
+        // Random perturbations using the provided seed
+        let mut rng = StdRng::seed_from_u64(seed);
         for _ in 0..2 {
             let mut point = (a + b) / 2.0;
             point.iter_mut().enumerate().for_each(|(i, x)| {
@@ -246,7 +285,6 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     ) -> Result<(), ScatterSearchError> {
         #[cfg(feature = "rayon")]
         {
-            // Evaluate objective values in parallel.
             let mut evaluated: Vec<(Array1<f64>, f64)> = self
                 .reference_set
                 .iter()
@@ -293,14 +331,14 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     pub fn best_solution(&self) -> Result<Array1<f64>, ScatterSearchError> {
         #[cfg(feature = "rayon")]
         let best = self.reference_set.par_iter().min_by(|a, b| {
-            let obj_a = self.problem.objective(a).unwrap();
-            let obj_b = self.problem.objective(b).unwrap();
+            let obj_a: f64 = self.problem.objective(a).unwrap();
+            let obj_b: f64 = self.problem.objective(b).unwrap();
             obj_a.partial_cmp(&obj_b).unwrap()
         });
         #[cfg(not(feature = "rayon"))]
         let best = self.reference_set.iter().min_by(|a, b| {
-            let obj_a = self.problem.objective(a).unwrap();
-            let obj_b = self.problem.objective(b).unwrap();
+            let obj_a: f64 = self.problem.objective(a).unwrap();
+            let obj_b: f64 = self.problem.objective(b).unwrap();
             obj_a.partial_cmp(&obj_b).unwrap()
         });
         best.cloned().ok_or(ScatterSearchError::NoCandidates)
