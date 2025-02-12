@@ -11,8 +11,8 @@
 ///
 /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 27-28. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
 use criterion::{criterion_group, criterion_main, Criterion};
+use globalsearch_rs::local_solver::builders::SteepestDescentBuilder;
 use globalsearch_rs::problem::Problem;
-use globalsearch_rs::types::SteepestDescentBuilder;
 use globalsearch_rs::{
     oqnlp::OQNLP,
     types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams},

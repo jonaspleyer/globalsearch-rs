@@ -1,3 +1,4 @@
+use globalsearch_rs::local_solver::builders::SteepestDescentBuilder;
 /// Six-Hump Camel Back Function
 /// The Six-Hump Camel Back function is defined as follows:
 ///
@@ -11,7 +12,6 @@
 ///
 /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 27-28. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
 use globalsearch_rs::problem::Problem;
-use globalsearch_rs::types::SteepestDescentBuilder;
 use globalsearch_rs::{
     oqnlp::OQNLP,
     types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams},
@@ -46,11 +46,11 @@ impl Problem for SixHumpCamel {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let problem: SixHumpCamel = SixHumpCamel;
     let params: OQNLPParams = OQNLPParams {
-        iterations: 50,
+        iterations: 125,
         wait_cycle: 10,
         threshold_factor: 0.2,
         distance_factor: 0.75,
-        population_size: 150,
+        population_size: 250,
         local_solver_type: LocalSolverType::SteepestDescent,
         local_solver_config: SteepestDescentBuilder::default().build(),
         seed: 0,

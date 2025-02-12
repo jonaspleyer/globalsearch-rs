@@ -1,3 +1,4 @@
+use globalsearch_rs::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder};
 /// 1-D Griewank function
 /// The 1-D Griewank function is defined as:
 ///
@@ -11,7 +12,6 @@
 ///
 /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 11-12. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
 use globalsearch_rs::problem::Problem;
-use globalsearch_rs::types::{HagerZhangBuilder, LBFGSBuilder};
 use globalsearch_rs::{
     oqnlp::OQNLP,
     types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams},

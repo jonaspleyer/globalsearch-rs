@@ -1,3 +1,4 @@
+use globalsearch_rs::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder};
 /// 3-D Ackley function
 /// The 3-D Ackley function is defined as:
 ///
@@ -14,10 +15,7 @@
 use globalsearch_rs::problem::Problem;
 use globalsearch_rs::{
     oqnlp::OQNLP,
-    types::{
-        EvaluationError, HagerZhangBuilder, LBFGSBuilder, LocalSolution, LocalSolverType,
-        OQNLPParams,
-    },
+    types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams},
 };
 use ndarray::{array, Array1, Array2};
 
