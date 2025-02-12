@@ -7,19 +7,17 @@
 //! ```rust
 //! use globalsearch::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder};
 //!
-//! fn main() {
-//!     // L-BFGS local solver configuration
-//!     let lbfgs = LBFGSBuilder::default()
-//!                 .max_iter(300)
-//!                 .tolerance_grad(1e-8)
-//!                 .build();
+//! // L-BFGS local solver configuration
+//! let lbfgs = LBFGSBuilder::default()
+//!             .max_iter(300)
+//!             .tolerance_grad(1e-8)
+//!             .build();
 //!
-//!     // Hager-Zhang line search configuration
-//!     let hager_zhang = HagerZhangBuilder::default()
-//!                         .delta(0.1)
-//!                         .sigma(0.9)
-//!                         .build();
-//! }
+//! // Hager-Zhang line search configuration
+//! let hager_zhang = HagerZhangBuilder::default()
+//!                     .delta(0.1)
+//!                     .sigma(0.9)
+//!                     .build();
 //! ```
 use ndarray::{array, Array1};
 
