@@ -3,7 +3,7 @@
 //! The OQNLP (OptQuest/NLP) algorithm is a global optimization algorithm that combines scatter search with local optimization methods.
 
 use crate::filters::{DistanceFilter, MeritFilter};
-use crate::local_solver::LocalSolver;
+use crate::local_solver::runner::LocalSolver;
 use crate::problem::Problem;
 use crate::scatter_search::ScatterSearch;
 use crate::types::{FilterParams, LocalSolution, OQNLPParams};

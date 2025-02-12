@@ -1,9 +1,10 @@
-//! # Local solver module
+//! # Local Solver Runner module
 //!
-//! This module contains the implementation to interface with the local solver. The local solver is used to solve the optimization problem in the neighborhood of a given point. The local solver is implemented using the `argmin` crate.
+//! This module contains the implementation of the local solver runner, which is used to solve optimization problems locally.
 
+use crate::local_solver::builders::{LineSearchMethod, LocalSolverConfig};
 use crate::problem::Problem;
-use crate::types::{LineSearchMethod, LocalSolution, LocalSolverConfig, LocalSolverType};
+use crate::types::{LocalSolution, LocalSolverType};
 use argmin::core::{CostFunction, Error, Executor, Gradient};
 use argmin::solver::{
     gradientdescent::SteepestDescent,
@@ -234,6 +235,7 @@ impl<P: Problem> LocalSolver<P> {
         };
 
         if let LocalSolverConfig::NelderMead {
+            simplex_delta,
             sd_tolerance,
             max_iter,
             alpha,
@@ -243,11 +245,10 @@ impl<P: Problem> LocalSolver<P> {
         } = solver_config
         {
             // Generate initial simplex
-            // TODO: Set user settings for this
             let mut simplex = vec![initial_point.clone()];
             for i in 0..initial_point.len() {
                 let mut point = initial_point.clone();
-                point[i] += 0.1;
+                point[i] += simplex_delta;
                 simplex.push(point);
             }
 
@@ -427,9 +428,8 @@ impl<P: Problem> LocalSolver<P> {
 #[cfg(test)]
 mod tests_local_solvers {
     use super::*;
-    use crate::types::{
-        EvaluationError, HagerZhangBuilder, LBFGSBuilder, LocalSolverType, SteepestDescentBuilder,
-    };
+    use crate::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder, SteepestDescentBuilder};
+    use crate::types::{EvaluationError, LocalSolverType};
     use ndarray::{array, Array2};
 
     #[derive(Debug, Clone)]
@@ -460,6 +460,7 @@ mod tests_local_solvers {
             problem.clone(),
             LocalSolverType::NelderMead,
             LocalSolverConfig::NelderMead {
+                simplex_delta: 0.1,
                 sd_tolerance: 1e-6,
                 max_iter: 1000,
                 alpha: 1.0,

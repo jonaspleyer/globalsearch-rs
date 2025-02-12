@@ -358,10 +358,11 @@ fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_scatter_search {
     use super::*;
+    use crate::local_solver::builders::SteepestDescentBuilder;
     use crate::types::OQNLPParams;
-    use crate::types::{EvaluationError, LocalSolverType, SteepestDescentBuilder};
+    use crate::types::{EvaluationError, LocalSolverType};
     use ndarray::{array, Array2};
 
     #[derive(Debug, Clone)]
