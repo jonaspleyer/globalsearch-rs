@@ -16,25 +16,28 @@ use thiserror::Error;
 
 // TODO: Do not repeat code in the linesearch branch, use helper function?
 
-#[derive(Error, Debug)]
-/// Local solver error
+#[derive(Error, Debug, PartialEq)]
+/// Local solver error enum
 pub enum LocalSolverError {
-    #[error("Invalid LocalSolverConfig for L-BFGS solver")]
-    InvalidLBFGSConfig,
+    #[error("Local Solver Error: Invalid LocalSolverConfig for L-BFGS solver. {0}")]
+    InvalidLBFGSConfig(String),
 
-    #[error("Invalid LocalSolverConfig for Nelder-Mead solver")]
-    InvalidNelderMeadConfig,
+    #[error("Local Solver Error: Invalid LocalSolverConfig for Nelder-Mead solver. {0}")]
+    InvalidNelderMeadConfig(String),
 
-    #[error("Invalid LocalSolverConfig for Steepest Descent solver")]
-    InvalidSteepestDescentConfig,
+    #[error("Local Solver Error: Invalid LocalSolverConfig for Steepest Descent solver. {0}")]
+    InvalidSteepestDescentConfig(String),
 
-    #[error("Failed to run local solver")]
-    RunFailed,
+    #[error("Local Solver Error: Failed to run local solver. {0}")]
+    RunFailed(String),
 
-    #[error("No solution found")]
+    #[error("Local Solver Error: No solution found")]
     NoSolution,
 }
 
+/// Local solver struct
+///
+/// This struct contains the problem to solve and the local solver type and configuration.
 pub struct LocalSolver<P: Problem> {
     problem: P,
     local_solver_type: LocalSolverType,
@@ -127,22 +130,22 @@ impl<P: Problem> LocalSolver<P> {
                 } => {
                     let linesearch = MoreThuenteLineSearch::new()
                         .with_c(*c1, *c2)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_bounds(bounds[0], bounds[1])
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_width_tolerance(*width_tolerance)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?;
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
                     let solver = LBFGS::new(linesearch, *history_size)
                         .with_tolerance_cost(*tolerance_cost)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_tolerance_grad(*tolerance_grad)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?;
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
                     let res = Executor::new(cost, solver)
                         .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
                         .run()
-                        .map_err(|_| LocalSolverError::RunFailed)?;
+                        .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
                     Ok(LocalSolution {
                         point: res
@@ -165,28 +168,28 @@ impl<P: Problem> LocalSolver<P> {
                 } => {
                     let linesearch = HagerZhangLineSearch::new()
                         .with_delta_sigma(*delta, *sigma)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_epsilon(*epsilon)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_theta(*theta)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_gamma(*gamma)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_eta(*eta)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_bounds(bounds[0], bounds[1])
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?;
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
                     let solver = LBFGS::new(linesearch, *history_size)
                         .with_tolerance_cost(*tolerance_cost)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_tolerance_grad(*tolerance_grad)
-                        .map_err(|_| LocalSolverError::InvalidLBFGSConfig)?;
+                        .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
                     let res = Executor::new(cost, solver)
                         .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
                         .run()
-                        .map_err(|_| LocalSolverError::RunFailed)?;
+                        .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
                     Ok(LocalSolution {
                         point: res
@@ -200,7 +203,9 @@ impl<P: Problem> LocalSolver<P> {
                 }
             }
         } else {
-            Err(LocalSolverError::InvalidLBFGSConfig)
+            Err(LocalSolverError::InvalidLBFGSConfig(
+                "Error parsing solver config".to_string(),
+            ))
         }
     }
 
@@ -248,20 +253,20 @@ impl<P: Problem> LocalSolver<P> {
 
             let solver = NelderMead::new(simplex)
                 .with_sd_tolerance(*sd_tolerance)
-                .map_err(|_| LocalSolverError::InvalidNelderMeadConfig)?
+                .map_err(|e: Error| LocalSolverError::InvalidNelderMeadConfig(e.to_string()))?
                 .with_alpha(*alpha)
-                .map_err(|_| LocalSolverError::InvalidNelderMeadConfig)?
+                .map_err(|e: Error| LocalSolverError::InvalidNelderMeadConfig(e.to_string()))?
                 .with_gamma(*gamma)
-                .map_err(|_| LocalSolverError::InvalidNelderMeadConfig)?
+                .map_err(|e: Error| LocalSolverError::InvalidNelderMeadConfig(e.to_string()))?
                 .with_rho(*rho)
-                .map_err(|_| LocalSolverError::InvalidNelderMeadConfig)?
+                .map_err(|e: Error| LocalSolverError::InvalidNelderMeadConfig(e.to_string()))?
                 .with_sigma(*sigma)
-                .map_err(|_| LocalSolverError::InvalidNelderMeadConfig)?;
+                .map_err(|e: Error| LocalSolverError::InvalidNelderMeadConfig(e.to_string()))?;
 
             let res = Executor::new(cost, solver)
                 .configure(|state| state.max_iters(*max_iter))
                 .run()
-                .map_err(|_| LocalSolverError::RunFailed)?;
+                .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
             Ok(LocalSolution {
                 point: res
@@ -273,7 +278,9 @@ impl<P: Problem> LocalSolver<P> {
                 objective: res.state().best_cost,
             })
         } else {
-            Err(LocalSolverError::InvalidNelderMeadConfig)
+            Err(LocalSolverError::InvalidNelderMeadConfig(
+                "Error parsing solver configuration".to_string(),
+            ))
         }
     }
 
@@ -327,18 +334,24 @@ impl<P: Problem> LocalSolver<P> {
                 } => {
                     let linesearch = MoreThuenteLineSearch::new()
                         .with_c(*c1, *c2)
-                        .map_err(|_| LocalSolverError::InvalidSteepestDescentConfig)?
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
                         .with_bounds(bounds[0], bounds[1])
-                        .map_err(|_| LocalSolverError::InvalidSteepestDescentConfig)?
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
                         .with_width_tolerance(*width_tolerance)
-                        .map_err(|_| LocalSolverError::InvalidSteepestDescentConfig)?;
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?;
 
                     let solver = SteepestDescent::new(linesearch);
 
                     let res = Executor::new(cost, solver)
                         .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
                         .run()
-                        .map_err(|_| LocalSolverError::RunFailed)?;
+                        .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
                     Ok(LocalSolution {
                         point: res
@@ -361,24 +374,36 @@ impl<P: Problem> LocalSolver<P> {
                 } => {
                     let linesearch = HagerZhangLineSearch::new()
                         .with_delta_sigma(*delta, *sigma)
-                        .map_err(|_| LocalSolverError::InvalidSteepestDescentConfig)?
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
                         .with_epsilon(*epsilon)
-                        .map_err(|_| LocalSolverError::InvalidSteepestDescentConfig)?
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
                         .with_theta(*theta)
-                        .map_err(|_| LocalSolverError::InvalidSteepestDescentConfig)?
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
                         .with_gamma(*gamma)
-                        .map_err(|_| LocalSolverError::InvalidSteepestDescentConfig)?
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
                         .with_eta(*eta)
-                        .map_err(|_| LocalSolverError::InvalidSteepestDescentConfig)?
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
                         .with_bounds(bounds[0], bounds[1])
-                        .map_err(|_| LocalSolverError::InvalidSteepestDescentConfig)?;
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?;
 
                     let solver = SteepestDescent::new(linesearch);
 
                     let res = Executor::new(cost, solver)
                         .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
                         .run()
-                        .map_err(|_| LocalSolverError::RunFailed)?;
+                        .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
                     Ok(LocalSolution {
                         point: res
@@ -392,7 +417,9 @@ impl<P: Problem> LocalSolver<P> {
                 }
             }
         } else {
-            Err(LocalSolverError::InvalidSteepestDescentConfig)
+            Err(LocalSolverError::InvalidSteepestDescentConfig(
+                "Error parsing solver configuration".to_string(),
+            ))
         }
     }
 }
