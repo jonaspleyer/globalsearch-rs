@@ -8,8 +8,8 @@
 //! ///
 //! /// Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 11-12. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
 //!
-//! use globalsearch_rs::problem::Problem;
-//! use globalsearch_rs::types::EvaluationError;
+//! use globalsearch::problem::Problem;
+//! use globalsearch::types::EvaluationError;
 //! use ndarray::{array, Array1, Array2};
 //!
 //! #[derive(Debug, Clone)]
@@ -38,12 +38,14 @@ use ndarray::{Array1, Array2};
 pub trait Problem {
     /// Objective function to minimize, given at point x (`Array1<f64>`)
     ///
-    /// Returns a `Result<f64>` of the value of the objective function at x
-    fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError>;
+    /// Returns a `Result<f64, EvaluationError>` of the value of the objective function at x
+    fn objective(&self, _x: &Array1<f64>) -> Result<f64, EvaluationError> {
+        Err(EvaluationError::ObjectiveFunctionNotImplemented)
+    }
 
     /// Gradient of the objective function at point x (`Array1<f64>`)
     ///
-    /// Returns a `Result<Array1<f64>>` of the gradient of the objective function at x
+    /// Returns a `Result<Array1<f64>, EvaluationError>` of the gradient of the objective function at x
     ///
     /// The default implementation returns an error indicating the gradient is not implemented
     /// in case it is needed
@@ -53,9 +55,9 @@ pub trait Problem {
 
     /// Returns the Hessian at point x (`Array1<f64>`).
     ///
-    /// Returns a `Result<Array2<f64>>` of the hessian of the objective function at x
+    /// Returns a `Result<Array2<f64>, EvaluationError>` of the hessian of the objective function at x
     ///
-    /// The default implementation returns an error indicating the gradient is not implemented
+    /// The default implementation returns an error indicating the hessian is not implemented
     /// in case it is needed
     fn hessian(&self, _x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError> {
         Err(EvaluationError::HessianNotImplemented)

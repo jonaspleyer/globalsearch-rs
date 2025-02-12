@@ -5,7 +5,7 @@
 //!
 //! ## Example
 //! ```rust
-//! use globalsearch_rs::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder};
+//! use globalsearch::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder};
 //!
 //! fn main() {
 //!     // L-BFGS local solver configuration

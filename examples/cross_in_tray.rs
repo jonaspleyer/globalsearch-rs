@@ -1,4 +1,3 @@
-use globalsearch_rs::local_solver::builders::LBFGSBuilder;
 /// Cross-in-Tray function
 /// The Cross-in-Tray function is defined as:
 ///
@@ -11,8 +10,9 @@ use globalsearch_rs::local_solver::builders::LBFGSBuilder;
 ///
 /// References:
 /// Surjanovic, S. and Bingham, D. (no date) Virtual Library of Simulation Experiments: Test Functions and Datasets, Cross-in-Tray Function. Available at: https://www.sfu.ca/~ssurjano/crossit.html (Accessed: 02 February 2025).
-use globalsearch_rs::problem::Problem;
-use globalsearch_rs::{
+use globalsearch::local_solver::builders::LBFGSBuilder;
+use globalsearch::problem::Problem;
+use globalsearch::{
     oqnlp::OQNLP,
     types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams},
 };

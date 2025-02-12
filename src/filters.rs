@@ -5,6 +5,7 @@
 use crate::types::{FilterParams, LocalSolution};
 use ndarray::Array1;
 
+/// Merit filter
 pub struct MeritFilter {
     pub threshold: f64,
 }
@@ -33,6 +34,7 @@ impl MeritFilter {
     }
 }
 
+/// Distance filter
 pub struct DistanceFilter {
     solutions: Vec<LocalSolution>, // TODO: Change to ndarray?
     params: FilterParams,
