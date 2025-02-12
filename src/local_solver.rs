@@ -423,3 +423,132 @@ impl<P: Problem> LocalSolver<P> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests_local_solvers {
+    use super::*;
+    use crate::types::{
+        EvaluationError, HagerZhangBuilder, LBFGSBuilder, LocalSolverType, SteepestDescentBuilder,
+    };
+    use ndarray::{array, Array2};
+
+    #[derive(Debug, Clone)]
+    pub struct NoGradientSixHumpCamel;
+
+    impl Problem for NoGradientSixHumpCamel {
+        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+            Ok(
+                (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+                    + x[0] * x[1]
+                    + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
+            )
+        }
+
+        fn variable_bounds(&self) -> Array2<f64> {
+            array![[-3.0, 3.0], [-2.0, 2.0]]
+        }
+    }
+
+    #[test]
+    /// Test the Nelder-Mead local solver with a problem that doesn't
+    /// have a gradient. Since Nelder-Mead doesn't require a gradient,
+    /// the local solver should run without an error.
+    fn test_nelder_mead_no_gradient() {
+        let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
+
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::NelderMead,
+            LocalSolverConfig::NelderMead {
+                sd_tolerance: 1e-6,
+                max_iter: 1000,
+                alpha: 1.0,
+                gamma: 2.0,
+                rho: 0.5,
+                sigma: 0.5,
+            },
+        );
+
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+        let res: LocalSolution = local_solver.solve(initial_point).unwrap();
+        assert_eq!(res.objective, -1.0316278623977673);
+    }
+
+    #[test]
+    /// Test the Steepest Descent local solver with a problem that doesn't
+    /// have a gradient. Since Steepest Descent requires a gradient,
+    /// the local solver should return an error.
+    fn test_steepest_descent_no_gradient() {
+        let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
+
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::SteepestDescent,
+            SteepestDescentBuilder::default().build(),
+        );
+
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+        let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::RunFailed(
+                "Gradient not implemented and needed for local solver".to_string()
+            )
+        );
+    }
+
+    #[test]
+    /// Test the L-BFGS local solver with a problem that doesn't
+    /// have a gradient. Since L-BFGS requires a gradient,
+    /// the local solver should return an error.
+    fn test_lbfgs_no_gradient() {
+        let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
+
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem,
+            LocalSolverType::LBFGS,
+            LBFGSBuilder::default().build(),
+        );
+
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+        let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::RunFailed(
+                "Gradient not implemented and needed for local solver".to_string()
+            )
+        );
+    }
+
+    #[test]
+    /// Test creating a local solver with an invalid configuration
+    /// In this case, for HagerZhangLineSearch, delta must be in (0, 1) and we set it to 2.0
+    /// It should return the following error:
+    /// `HagerZhangLineSearch`: delta must be in (0, 1) and sigma must be in [delta, 1)
+    fn invalid_hagerzhang() {
+        let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
+
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem,
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: HagerZhangBuilder::default().delta(2.0).build(),
+            },
+        );
+
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+        let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
+
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`HagerZhangLineSearch`: delta must be in (0, 1) and sigma must be in [delta, 1).\""
+                    .to_string()
+            )
+        );
+    }
+}
