@@ -43,19 +43,26 @@ Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
 
    ```rust
     use ndarray::{array, Array1, Array2};
-    use globalsearch_rs::problem::Problem;
+    use globalsearch::problem::Problem;
+    use globalsearch::types::EvaluationError;
 
     pub struct MinimizeProblem;
     impl Problem for MinimizeProblem {
-        fn objective(&self, x: &Array1<f64>) -> Result<f64> {
+        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
             Ok(
                 ..., // Your objective function here
             )
         }
 
-        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>> {
+        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
             Ok(array![
-                ..., // Gradient of your objective function here
+                ..., // Optional: Gradient of your objective function here
+            ])
+        }
+
+        fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError> {
+            Ok(array![
+                ..., // Optional: Hessian of your objective function here
             ])
         }
 
@@ -69,18 +76,22 @@ Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
 
    ```rust
     pub trait Problem {
-        fn objective(&self, x: &Array1<f64>) -> Result<f64>;
-        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>>;
+        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError>;
+        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError>;
+        fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError>;
         fn variable_bounds(&self) -> Array2<f64>;
     }
    ```
+
+   Depending on your choice of local solver, you might need to implement the `gradient` and `hessian` methods. Learn more about the local solver configuration in the [argmin docs](https://docs.rs/argmin/latest/argmin/solver/index.html).
 
    > 🔴 **Note:** Variable bounds are only used in the scatter search phase of the algorithm. The local solver is unconstrained (See [argmin issue #137](https://github.com/argmin-rs/argmin/issues/137)) and therefor can return solutions out of bounds.
 
 2. Set OQNLP parameters
 
    ```rust
-    use globalsearch_rs::types::{LocalSolverType, OQNLPParams, SteepestDescentBuilder};
+    use globalsearch::types::{LocalSolverType, OQNLPParams};
+    use globalsearch::local_solver::builders::SteepestDescentBuilder;
 
     let params: OQNLPParams = OQNLPParams {
         total_iterations: 1000,
@@ -121,14 +132,14 @@ Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
     }
    ```
 
-   You can also modify the local solver configuration for each type of local solver. See `types.rs` for more details.
+   You can also modify the local solver configuration for each type of local solver. See [`builders.rs`](https://github.com/GermanHeim/globalsearch-rs/tree/main/src/local_solver/builders.rs) for more details.
 
 3. Run the optimizer
 
    ```rust
    use oqnlp::{OQNLP, OQNLPParams};
 
-   fn main() -> anyhow::Result<()> {
+   fn main() -> Result<(), Box<dyn std::error::Error>> {
         let problem = MinimizeProblem;
         let params: OQNLPParams = OQNLPParams {
                 total_iterations: 1000,
@@ -142,12 +153,16 @@ Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
                 seed: 0,
             };
 
-        let mut optimizer = OQNLP::new(problem, params)?;
-        let solution = optimizer.run()?;
+        let mut optimizer: OQNLP<MinimizeProblem> = OQNLP::new(problem, params)?;
+        let solution_set: Array1<LocalSolution> = optimizer.run()?;
 
-        println!("Best solution:");
-        println!("Point: {}", solution.point);
-        println!("Objective: {}", solution.objective);
+        // OQNLP returns a set of solutions
+        println!("Solution set:");
+        for solution in solution_set.iter() {
+            println!("Point: {}", solution.point);
+            println!("Objective: {}", solution.objective);
+        }
+
         Ok(())
    }
    ```
@@ -159,8 +174,10 @@ src/
 ├── lib.rs # Module declarations
 ├── oqnlp.rs # Core OQNLP algorithm implementation
 ├── scatter_search.rs # Scatter search component
+├── local_solver/
+│   ├── builders.rs # Local solver configuration builders
+│   ├── runner.rs # Local solver runner
 ├── filters.rs # Merit and distance filtering logic
-├── local_solver.rs # argmin-based local optimization
 ├── problem.rs # Problem trait
 ├── types.rs # Data structures and parameters
 ```
@@ -169,9 +186,10 @@ src/
 
 - [argmin](https://github.com/argmin-rs/argmin)
 - [ndarray](https://github.com/rust-ndarray/ndarray)
-- [rayon](https://github.com/rayon-rs/rayon)
+- [rayon](https://github.com/rayon-rs/rayon) [feature: `rayon`]
 - [rand](https://github.com/rust-random/rand)
-- [anyhow](https://github.com/dtolnay/anyhow)
+- [thiserror](https://github.com/dtolnay/thiserror)
+- [criterion.rs](https://github.com/bheisler/criterion.rs) [dev-dependency]
 
 ## License
 
