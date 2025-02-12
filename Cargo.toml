@@ -13,10 +13,8 @@ exclude = ["/media", ".github"]
 build = "build.rs"
 
 [dependencies]
-argmin = { version = "*" }
-argmin-math = { version = "*", features = ["ndarray_latest-nolinalg"] }
-argmin-observer-slog = { version = "*" }
-argmin_testfunctions = { version = "*" }
+argmin = { version = "0.10.0" }
+argmin-math = { version = "0.4.0", features = ["ndarray_latest-nolinalg"] }
 ndarray = "0.15.6"
 rayon = { version = "1.5.3", optional = true }
 thiserror = "2.0.11"
