@@ -7,9 +7,12 @@
     <p align="center">
         Global optimization with scatter search and local NLP solvers written in Rust
     </p>
+    <p align="center">
+        <a href="https://docs.rs/globalsearch/latest/globalsearch/">Docs</a> | <a href="https://github.com/GermanHeim/globalsearch-rs/tree/main/examples">Examples</a>
+    </p>
 </p>
 
-`globalsearch-rs`: Rust implementation of the _OQNLP_ (_OptQuest/NLP_) algorithm from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). Combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
+`globalsearch-rs`: Rust implementation of the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). Combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
 
 Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
 
@@ -23,18 +26,31 @@ Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
 
 ## Installation
 
+### Using as a dependency
+
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+globalsearch = "0.1.0"
+```
+
+Or use `cargo add globalsearch` in your project directory.
+
+### Building from source
+
 1. Install Rust toolchain using [rustup](https://rustup.rs/).
 2. Clone repository:
 
    ```bash
-    git clone https://github.com/GermanHeim/globalsearch-rs.git
-    cd globalsearch-rs
+   git clone https://github.com/GermanHeim/globalsearch-rs.git
+   cd globalsearch-rs
    ```
 
 3. Build the project:
 
    ```bash
-    cargo build --release
+   cargo build --release
    ```
 
 ## Usage
@@ -83,7 +99,7 @@ Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
     }
    ```
 
-   Depending on your choice of local solver, you might need to implement the `gradient` and `hessian` methods. Learn more about the local solver configuration in the [argmin docs](https://docs.rs/argmin/latest/argmin/solver/index.html).
+   Depending on your choice of local solver, you might need to implement the `gradient` and `hessian` methods. Learn more about the local solver configuration in the [argmin docs](https://docs.rs/argmin/latest/argmin/solver/index.html) or the [`LocalSolverType`](https://docs.rs/globalsearch/latest/globalsearch/types/enum.LocalSolverType.html).
 
    > 🔴 **Note:** Variable bounds are only used in the scatter search phase of the algorithm. The local solver is unconstrained (See [argmin issue #137](https://github.com/argmin-rs/argmin/issues/137)) and therefor can return solutions out of bounds.
 
