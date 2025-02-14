@@ -2,7 +2,7 @@
 //!
 //! This module contains the types and structs used in the OQNLP algorithm, including the parameters for the algorithm, filtering mechanisms, local solutions, local solver types, and local solver configurations.
 
-use crate::local_solver::builders::LocalSolverConfig;
+use crate::local_solver::builders::{LBFGSBuilder, LocalSolverConfig};
 use ndarray::Array1;
 use thiserror::Error;
 
@@ -50,6 +50,34 @@ pub struct OQNLPParams {
 
     /// Random seed for the algorithm
     pub seed: u64,
+}
+
+impl Default for OQNLPParams {
+    /// Default parameters for the OQNLP algorithm
+    ///
+    /// It is highly recommended to change these parameters based on the problem at hand.
+    ///
+    /// The default parameters are:
+    /// - `iterations`: 300
+    /// - `population_size`: 1000
+    /// - `wait_cycle`: 15
+    /// - `threshold_factor`: 0.2
+    /// - `distance_factor`: 0.75
+    /// - `local_solver_type`: `LocalSolverType::LBFGS`
+    /// - `local_solver_config`: `LBFGSBuilder::default().build()`
+    /// - `seed`: 0
+    fn default() -> Self {
+        Self {
+            iterations: 300,
+            population_size: 1000,
+            wait_cycle: 15,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            local_solver_type: LocalSolverType::LBFGS,
+            local_solver_config: LBFGSBuilder::default().build(),
+            seed: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
