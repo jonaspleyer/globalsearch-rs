@@ -73,17 +73,16 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     /// Run the Scatter Search algorithm
     ///
     /// Returns the reference set and the best solution found
-    pub fn run(&mut self) -> Result<(Vec<Array1<f64>>, Array1<f64>), ScatterSearchError> {
-        let ref_set = self.reference_set.clone();
+    pub fn run(self) -> Result<(Vec<Array1<f64>>, Array1<f64>), ScatterSearchError> {
         let best = self.best_solution()?;
-        Ok((ref_set, best))
+        Ok((self.reference_set, best))
     }
 
     pub fn initialize_reference_set(&mut self) -> Result<(), ScatterSearchError> {
         let mut ref_set: Vec<Array1<f64>> = Vec::with_capacity(self.params.population_size);
 
-        ref_set.push(self.bounds.lower.clone());
-        ref_set.push(self.bounds.upper.clone());
+        ref_set.push(self.bounds.lower.to_owned());
+        ref_set.push(self.bounds.upper.to_owned());
         ref_set.push((&self.bounds.lower + &self.bounds.upper) / 2.0);
 
         self.diversify_reference_set(&mut ref_set)?;
@@ -129,19 +128,14 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             #[cfg(not(feature = "rayon"))]
             let updater_iter = candidates.iter().zip(min_dists.iter_mut());
 
-            #[cfg(feature = "rayon")]
             updater_iter.for_each(|(c, current_min)| {
-                let dist = euclidean_distance(c, ref_set.last().unwrap());
-                if dist < *current_min {
-                    *current_min = dist;
-                }
-            });
-
-            #[cfg(not(feature = "rayon"))]
-            updater_iter.for_each(|(c, current_min)| {
-                let dist: f64 = euclidean_distance(c, ref_set.last().unwrap());
-                if dist < *current_min {
-                    *current_min = dist;
+                if let Some(last) = ref_set.last() {
+                    let dist: f64 = euclidean_distance(c, last);
+                    if dist < *current_min {
+                        *current_min = dist;
+                    }
+                } else {
+                    unreachable!("Reference set is empty");
                 }
             });
         }
@@ -222,9 +216,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             .par_iter()
             .zip(seeds.par_iter())
             .map(|(&(i, j), &seed)| {
-                let point1 = self.reference_set[i].clone();
-                let point2 = self.reference_set[j].clone();
-                self.combine_points(&point1, &point2, seed)
+                self.combine_points(&self.reference_set[i], &self.reference_set[j], seed)
             })
             .collect::<Result<Vec<_>, ScatterSearchError>>()?;
 
@@ -233,9 +225,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             .iter()
             .zip(seeds.iter())
             .map(|(&(i, j), &seed)| {
-                let point1 = self.reference_set[i].clone();
-                let point2 = self.reference_set[j].clone();
-                self.combine_points(&point1, &point2, seed)
+                self.combine_points(&self.reference_set[i], &self.reference_set[j], seed)
             })
             .collect::<Result<Vec<_>, ScatterSearchError>>()?;
 
@@ -252,15 +242,15 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         let mut points = Vec::new();
 
         // Linear combinations.
-        let directions = vec![0.25, 0.5, 0.75, 1.25];
+        let directions: Vec<f64> = vec![0.25, 0.5, 0.75, 1.25];
         for &alpha in &directions {
-            let mut point = a.clone() * alpha + b.clone() * (1.0 - alpha);
+            let mut point = a * alpha + b * (1.0 - alpha);
             self.apply_bounds(&mut point);
             points.push(point);
         }
 
         // Random perturbations using the provided seed
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng: StdRng = StdRng::seed_from_u64(seed);
         for _ in 0..2 {
             let mut point = (a + b) / 2.0;
             point.iter_mut().enumerate().for_each(|(i, x)| {
@@ -296,7 +286,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
                 })
                 .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
 
-            evaluated.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            evaluated.sort_by(|a, b| a.1.total_cmp(&b.1));
             self.reference_set = evaluated
                 .into_iter()
                 .take(self.params.population_size)
@@ -312,12 +302,12 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
                 .iter()
                 .chain(trials.iter())
                 .map(|point| {
-                    let obj = self.problem.objective(point)?;
+                    let obj: f64 = self.problem.objective(point)?;
                     Ok((point.clone(), obj))
                 })
                 .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
 
-            evaluated.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            evaluated.sort_by(|a, b| a.1.total_cmp(&b.1));
             self.reference_set = evaluated
                 .into_iter()
                 .take(self.params.population_size)
@@ -330,18 +320,33 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
     pub fn best_solution(&self) -> Result<Array1<f64>, ScatterSearchError> {
         #[cfg(feature = "rayon")]
-        let best = self.reference_set.par_iter().min_by(|a, b| {
-            let obj_a: f64 = self.problem.objective(a).unwrap();
-            let obj_b: f64 = self.problem.objective(b).unwrap();
-            obj_a.partial_cmp(&obj_b).unwrap()
-        });
+        {
+            let best = self
+                .reference_set
+                .par_iter()
+                .min_by(|a, b| {
+                    let obj_a: f64 = self.problem.objective(a).unwrap();
+                    let obj_b: f64 = self.problem.objective(b).unwrap();
+                    obj_a.partial_cmp(&obj_b).unwrap()
+                })
+                .ok_or(ScatterSearchError::NoCandidates)?;
+            Ok(best.clone())
+        }
         #[cfg(not(feature = "rayon"))]
-        let best = self.reference_set.iter().min_by(|a, b| {
-            let obj_a: f64 = self.problem.objective(a).unwrap();
-            let obj_b: f64 = self.problem.objective(b).unwrap();
-            obj_a.partial_cmp(&obj_b).unwrap()
-        });
-        best.cloned().ok_or(ScatterSearchError::NoCandidates)
+        {
+            let mut best_point: Option<(&Array1<f64>, f64)> = None;
+            for point in &self.reference_set {
+                let obj: f64 = self.problem.objective(point)?;
+                best_point = match best_point {
+                    None => Some((point, obj)),
+                    Some((_, best_obj)) if obj < best_obj => Some((point, obj)),
+                    Some(current) => Some(current),
+                };
+            }
+            best_point
+                .map(|(p, _)| p.clone())
+                .ok_or(ScatterSearchError::NoCandidates)
+        }
     }
 
     pub fn store_trial(&mut self, trial: Array1<f64>) {
@@ -457,8 +462,8 @@ mod tests_scatter_search {
             ScatterSearch::new(problem.clone(), params.clone()).unwrap();
         let ss2: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
 
-        let ref_set1 = ss1.reference_set.clone();
-        let ref_set2 = ss2.reference_set.clone();
+        let ref_set1 = ss1.reference_set;
+        let ref_set2 = ss2.reference_set;
 
         for i in 0..ref_set1.len() {
             assert_eq!(ref_set1[i], ref_set2[i]);

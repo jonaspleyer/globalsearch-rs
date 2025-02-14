@@ -109,7 +109,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         })
     }
 
-    /// Run the OQNLP algorithm and return the best solution found
+    /// Run the OQNLP algorithm and return the solution set
     pub fn run(&mut self) -> Result<Array1<LocalSolution>, OQNLPError> {
         if self.params.wait_cycle >= self.params.iterations {
             eprintln!(
@@ -129,9 +129,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             println!("Starting Stage 1");
         }
 
-        let mut ss: ScatterSearch<P> =
-            ScatterSearch::new(self.problem.clone(), self.params.clone())
-                .map_err(|_| OQNLPError::ScatterSearchError)?;
+        let ss: ScatterSearch<P> = ScatterSearch::new(self.problem.clone(), self.params.clone())
+            .map_err(|_| OQNLPError::ScatterSearchError)?;
         let (mut ref_set, scatter_candidate) =
             ss.run().map_err(|_| OQNLPError::ScatterSearchRunError)?;
         let local_sol: LocalSolution = self
@@ -140,7 +139,6 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             .map_err(|_| OQNLPError::LocalSolverError)?;
 
         self.merit_filter.update_threshold(local_sol.objective);
-        self.process_local_solution(local_sol.clone())?;
 
         if self.verbose {
             println!(
@@ -150,6 +148,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
             println!("Starting Stage 2");
         }
+
+        self.process_local_solution(local_sol)?;
 
         // Stage 2: Main iterative loop
         let mut unchanged_cycles: usize = 0;
