@@ -213,33 +213,36 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// Process a local solution, updating the best solution and filters
     fn process_local_solution(&mut self, solution: LocalSolution) -> Result<bool, OQNLPError> {
         const EPS: f64 = 1e-6; // TODO: Should we let the user select this?
-        let sol_for_filter = solution.clone();
-        let mut added: bool = false;
-        match &mut self.solution_set {
-            None => {
-                // First iteration: no solution in the set yet.
-                self.solution_set = Some(Array1::from(vec![solution.clone()]));
-                self.merit_filter.update_threshold(solution.objective);
-            }
-            Some(old_set) => {
-                // TODO: Can we avoid converting to vec?
-                let mut vec_sol = old_set.to_vec();
-                let current_best = &vec_sol[0];
-                if solution.objective < current_best.objective - EPS {
-                    // New best found, replace the solution set.
-                    vec_sol = vec![solution.clone()];
-                    self.merit_filter.update_threshold(solution.objective);
-                } else if (solution.objective - current_best.objective).abs() <= EPS {
-                    // If similar in objective, add it if not duplicate.
-                    if !self.is_duplicate_in_set(&solution, &Array1::from(vec_sol.clone())) {
-                        vec_sol.push(solution.clone());
-                        added = true;
-                    }
-                }
-                self.solution_set = Some(Array1::from(vec_sol));
-            }
-        }
-        self.distance_filter.add_solution(sol_for_filter);
+
+        let solutions = if let Some(existing) = &self.solution_set {
+            existing
+        } else {
+            // First solution, initialize solution set
+            self.solution_set = Some(Array1::from(vec![solution.clone()]));
+            self.merit_filter.update_threshold(solution.objective);
+            self.distance_filter.add_solution(solution);
+            return Ok(true);
+        };
+
+        let current_best: &LocalSolution = &solutions[0];
+        let obj_diff: f64 = solution.objective - current_best.objective;
+
+        let added: bool = if obj_diff < -EPS {
+            // Found new best solution
+            self.solution_set = Some(Array1::from(vec![solution.clone()]));
+            self.merit_filter.update_threshold(solution.objective);
+            false
+        } else if obj_diff.abs() <= EPS && !self.is_duplicate_in_set(&solution, solutions) {
+            // Similar objective value and not duplicate, add to set
+            let mut new_solutions = solutions.to_vec();
+            new_solutions.push(solution.clone());
+            self.solution_set = Some(Array1::from(new_solutions));
+            true
+        } else {
+            false
+        };
+
+        self.distance_filter.add_solution(solution);
         Ok(added)
     }
 
