@@ -234,7 +234,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             false
         } else if obj_diff.abs() <= EPS && !self.is_duplicate_in_set(&solution, solutions) {
             // Similar objective value and not duplicate, add to set
-            let mut new_solutions = solutions.to_vec();
+            let mut new_solutions: Vec<LocalSolution> = solutions.to_vec();
             new_solutions.push(solution.clone());
             self.solution_set = Some(Array1::from(new_solutions));
             true
@@ -274,5 +274,191 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         let new_threshold: f64 =
             current_threshold + self.params.threshold_factor * (1.0 + current_threshold.abs());
         self.merit_filter.update_threshold(new_threshold);
+    }
+}
+
+#[cfg(test)]
+mod tests_oqnlp {
+    use super::*;
+    use crate::types::EvaluationError;
+    use ndarray::{array, Array1, Array2};
+
+    // Dummy problem for testing, sum of variables with bounds from -5 to 5
+    #[derive(Clone)]
+    struct DummyProblem;
+    impl Problem for DummyProblem {
+        fn objective(&self, trial: &Array1<f64>) -> Result<f64, EvaluationError> {
+            Ok(trial.sum())
+        }
+
+        fn variable_bounds(&self) -> Array2<f64> {
+            array![[-5.0, 5.0], [-5.0, 5.0], [-5.0, 5.0]]
+        }
+    }
+
+    #[test]
+    /// Test processing a new local solution
+    fn test_process_local_solution_new() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams::default();
+        // Create an OQNLP instance manually.
+        let mut oqnlp: OQNLP<DummyProblem> = OQNLP::new(problem, params).unwrap();
+
+        let trial = Array1::from(vec![1.0, 2.0, 3.0]);
+        let ls: LocalSolution = LocalSolution {
+            objective: trial.sum(),
+            point: trial.clone(),
+        };
+
+        let added: bool = oqnlp.process_local_solution(ls.clone()).unwrap();
+        // For the first solution, no duplicate exists so added should be true
+        // and the solution set should contain one solution
+        assert!(added);
+
+        let sol_set = oqnlp.solution_set.unwrap();
+        assert_eq!(sol_set.len(), 1);
+        assert!((sol_set[0].objective - ls.objective).abs() < 1e-6);
+    }
+
+    #[test]
+    /// Test that processing a duplicate solution does not add it
+    fn test_process_local_solution_duplicate() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams::default();
+        let mut oqnlp: OQNLP<DummyProblem> = OQNLP::new(problem, params).unwrap();
+
+        let trial = Array1::from(vec![1.0, 2.0, 3.0]);
+        let ls: LocalSolution = LocalSolution {
+            objective: trial.sum(),
+            point: trial.clone(),
+        };
+
+        // Process the solution for the first time
+        oqnlp.process_local_solution(ls.clone()).unwrap();
+
+        // Process the duplicate solution, it should not be added
+        let added: bool = oqnlp.process_local_solution(ls.clone()).unwrap();
+        let sol_set = oqnlp.solution_set.unwrap();
+        assert_eq!(sol_set.len(), 1);
+        assert!(!added);
+    }
+
+    #[test]
+    /// Test that a better (lower objective) solution replaces the previous best.
+    fn test_process_local_solution_better() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams::default();
+        let mut oqnlp: OQNLP<DummyProblem> = OQNLP::new(problem, params).unwrap();
+
+        // First solution with objective 6.0
+        let trial1 = Array1::from(vec![2.0, 2.0, 2.0]);
+        let ls1: LocalSolution = LocalSolution {
+            objective: trial1.sum(),
+            point: trial1.clone(),
+        };
+        oqnlp.process_local_solution(ls1).unwrap();
+
+        // Second solution with objective 3.0 (better)
+        let trial2 = Array1::from(vec![1.0, 1.0, 1.0]);
+        let ls2: LocalSolution = LocalSolution {
+            objective: trial2.sum(),
+            point: trial2.clone(),
+        };
+        let added: bool = oqnlp.process_local_solution(ls2.clone()).unwrap();
+
+        // When a new best is found, the solution set is replaced
+        let sol_set = oqnlp.solution_set.unwrap();
+        assert_eq!(sol_set.len(), 1);
+        assert!((sol_set[0].objective - ls2.objective).abs() < 1e-6);
+
+        // The best solution replacement does not mark the solution as "added"
+        // since it changes the existing solution set
+        assert!(!added);
+    }
+
+    #[test]
+    /// Test the helper for deciding whether to start a local search or not
+    fn test_should_start_local() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams::default();
+
+        // Create a new OQNLP instance manually
+        let oqnlp: OQNLP<DummyProblem> = OQNLP {
+            problem: problem.clone(),
+            params: params.clone(),
+            merit_filter: {
+                let mut mf: MeritFilter = MeritFilter::new();
+                mf.update_threshold(10.0);
+                mf
+            },
+            distance_filter: {
+                // Add an existing solution to the distance filter
+                let mut df: DistanceFilter = DistanceFilter::new(FilterParams {
+                    distance_factor: params.distance_factor,
+                    wait_cycle: params.wait_cycle,
+                    threshold_factor: params.threshold_factor,
+                });
+                let dummy_sol: LocalSolution = LocalSolution {
+                    objective: 5.0,
+                    point: Array1::from(vec![0.0, 0.0, 5.0]),
+                };
+                df.add_solution(dummy_sol);
+                df
+            },
+            local_solver: LocalSolver::new(
+                problem.clone(),
+                params.local_solver_type.clone(),
+                params.local_solver_config.clone(),
+            ),
+            solution_set: None,
+            verbose: false,
+        };
+
+        // A trial far enough in space but with objective above the threshold
+        let trial = Array1::from(vec![10.0, 10.0, 10.0]);
+        let obj: f64 = trial.sum(); // 20.0 > 10.0 threshold
+        let start: bool = oqnlp.should_start_local(&trial, obj).unwrap();
+        assert!(!start);
+
+        // A trial with objective below threshold and spatially acceptable
+        let trial2 = Array1::from(vec![1.0, 1.0, 5.0]);
+        let obj2: f64 = trial2.sum(); // 2.0 < 10.0 threshold
+        let start2: bool = oqnlp.should_start_local(&trial2, obj2).unwrap();
+        assert!(start2);
+    }
+
+    #[test]
+    /// Test adjusting the merit filter threshold.
+    fn test_adjust_threshold() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams::default();
+
+        // Crate a new OQNLP instance manually
+        let mut oqnlp: OQNLP<DummyProblem> = OQNLP {
+            problem: problem.clone(),
+            params: params.clone(),
+            merit_filter: {
+                let mut mf: MeritFilter = MeritFilter::new();
+                mf.update_threshold(10.0);
+                mf
+            },
+            distance_filter: DistanceFilter::new(FilterParams {
+                distance_factor: params.distance_factor,
+                wait_cycle: params.wait_cycle,
+                threshold_factor: params.threshold_factor,
+            }),
+            local_solver: LocalSolver::new(
+                problem.clone(),
+                params.local_solver_type.clone(),
+                params.local_solver_config.clone(),
+            ),
+            solution_set: None,
+            verbose: false,
+        };
+
+        oqnlp.adjust_threshold(10.0);
+
+        // New threshold = 10.0 + 0.2*(1 + 10.0) = 12.2
+        assert!((oqnlp.merit_filter.threshold - 12.2).abs() < f64::EPSILON);
     }
 }
