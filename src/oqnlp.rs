@@ -29,8 +29,8 @@ pub enum OQNLPError {
     Iterations(usize, usize),
 
     /// Error when the local solver fails to find a solution
-    #[error("OQNLP Error: Local solver failed to find a solution")]
-    LocalSolverError,
+    #[error("OQNLP Error: Local solver failed to find a solution. {0}")]
+    LocalSolverError(String),
 
     /// Error when OQNLP fails to find a feasible solution
     #[error("OQNLP Error: No feasible solution found")]
@@ -80,11 +80,21 @@ pub struct OQNLP<P: Problem + Clone> {
     /// If no solution has been found yet, it remains `None`.
     solution_set: Option<Array1<LocalSolution>>,
 
+    /// Max time for the stage 2 of the OQNLP algorithm.
+    ///
+    /// If the time limit is reached, the algorithm will stop and return the
+    /// solution set found so far.
+    ///
+    /// The time limit is in seconds and it starts timing after the
+    /// first local search.
+    ///
+    /// It is optional and can be set to `None` to disable the time limit.
+    max_time: Option<f64>,
+
     /// Verbose flag to enable additional output during the optimization process.
     verbose: bool,
 }
 
-// TODO: Check implementation with the paper
 impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// Create a new OQNLP instance with the given problem and parameters
     pub fn new(problem: P, params: OQNLPParams) -> Result<Self, OQNLPError> {
@@ -105,6 +115,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 params.local_solver_config.clone(),
             ),
             solution_set: None,
+            max_time: None,
             verbose: false,
         })
     }
@@ -136,7 +147,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         let local_sol: LocalSolution = self
             .local_solver
             .solve(scatter_candidate)
-            .map_err(|_| OQNLPError::LocalSolverError)?;
+            .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
 
         self.merit_filter.update_threshold(local_sol.objective);
 
@@ -157,7 +168,19 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         // TODO: Do we need to shuffle the reference set? Is this necessary?
         ref_set.shuffle(&mut rng);
 
+        let start_timer: Option<std::time::Instant> =
+            self.max_time.map(|_| std::time::Instant::now());
+
         for (iter, trial) in ref_set.iter().take(self.params.iterations).enumerate() {
+            if let (Some(max_secs), Some(start)) = (self.max_time, start_timer) {
+                if start.elapsed().as_secs_f64() > max_secs {
+                    if self.verbose {
+                        println!("Timeout reached after {} seconds", max_secs);
+                    }
+                    break;
+                }
+            }
+
             let trial = trial.clone();
             let obj: f64 = self
                 .problem
@@ -168,7 +191,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 let local_trial: LocalSolution = self
                     .local_solver
                     .solve(trial)
-                    .map_err(|_| OQNLPError::LocalSolverError)?;
+                    .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
                 let added: bool = self.process_local_solution(local_trial.clone())?;
 
                 if self.verbose && added {
@@ -258,6 +281,18 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         false
     }
 
+    /// Set the maximum time for the stage 2 of the OQNLP algorithm and return self for chaining.
+    ///
+    /// If the time limit is reached, the algorithm will stop and return the
+    /// solution set found so far.
+    ///
+    /// The time limit is in seconds and it starts timing after the
+    /// first local search.
+    pub fn max_time(mut self, max_time: f64) -> Self {
+        self.max_time = Some(max_time);
+        self
+    }
+
     /// Enable verbose output for the OQNLP algorithm
     ///
     /// This will print additional information about the optimization process
@@ -268,7 +303,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
     /// Adjust the threshold for the merit filter
     ///
-    /// The threshold is adjusted using the formula:
+    /// The threshold is adjusted using the equation:
     /// `threshold = threshold + threshold_factor * (1 + abs(threshold))`
     fn adjust_threshold(&mut self, current_threshold: f64) {
         let new_threshold: f64 =
@@ -291,8 +326,36 @@ mod tests_oqnlp {
             Ok(trial.sum())
         }
 
+        fn gradient(&self, trial: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+            Ok(Array1::ones(trial.len()))
+        }
+
         fn variable_bounds(&self) -> Array2<f64> {
             array![[-5.0, 5.0], [-5.0, 5.0], [-5.0, 5.0]]
+        }
+    }
+
+    #[derive(Clone)]
+    struct SixHumpCamel;
+    impl Problem for SixHumpCamel {
+        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+            Ok(
+                (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+                    + x[0] * x[1]
+                    + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
+            )
+        }
+
+        // Calculated analytically, reference didn't provide gradient
+        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+            Ok(array![
+                (8.0 - 8.4 * x[0].powi(2) + 2.0 * x[0].powi(4)) * x[0] + x[1],
+                x[0] + (-8.0 + 16.0 * x[1].powi(2)) * x[1]
+            ])
+        }
+
+        fn variable_bounds(&self) -> Array2<f64> {
+            array![[-3.0, 3.0], [-2.0, 2.0]]
         }
     }
 
@@ -411,6 +474,7 @@ mod tests_oqnlp {
                 params.local_solver_config.clone(),
             ),
             solution_set: None,
+            max_time: None,
             verbose: false,
         };
 
@@ -453,6 +517,7 @@ mod tests_oqnlp {
                 params.local_solver_config.clone(),
             ),
             solution_set: None,
+            max_time: None,
             verbose: false,
         };
 
@@ -460,5 +525,66 @@ mod tests_oqnlp {
 
         // New threshold = 10.0 + 0.2*(1 + 10.0) = 12.2
         assert!((oqnlp.merit_filter.threshold - 12.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    /// Test max_time method for setting the time limit
+    fn test_max_time() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams::default();
+
+        // Create a new OQNLP instance manually
+        let oqnlp: OQNLP<DummyProblem> = OQNLP {
+            problem: problem.clone(),
+            params: params.clone(),
+            merit_filter: {
+                let mut mf: MeritFilter = MeritFilter::new();
+                mf.update_threshold(10.0);
+                mf
+            },
+            distance_filter: DistanceFilter::new(FilterParams {
+                distance_factor: params.distance_factor,
+                wait_cycle: params.wait_cycle,
+                threshold_factor: params.threshold_factor,
+            }),
+            local_solver: LocalSolver::new(
+                problem.clone(),
+                params.local_solver_type.clone(),
+                params.local_solver_config.clone(),
+            ),
+            solution_set: None,
+            max_time: None,
+            verbose: false,
+        };
+
+        // Test setting the time limit
+        let oqnlp: OQNLP<DummyProblem> = oqnlp.max_time(10.0);
+        assert_eq!(oqnlp.max_time, Some(10.0));
+
+        // Test using it in SixHumpCamel example
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 100,
+            population_size: 500,
+            ..Default::default()
+        };
+
+        // With normal time limits, the algorithm should find both solutions
+        let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .verbose()
+            .max_time(20.0);
+
+        let sol_set: Array1<LocalSolution> = oqnlp.run().unwrap();
+        assert!(sol_set.len() == 2);
+
+        // With a very low time limit, the algorithm should stop before finding both solutions
+        let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params)
+            .unwrap()
+            .verbose()
+            .max_time(0.000001);
+
+        let sol_set: Array1<LocalSolution> = oqnlp.run().unwrap();
+        assert!(sol_set.len() == 1);
     }
 }
