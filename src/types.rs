@@ -161,7 +161,7 @@ impl fmt::Display for SolutionSet {
         if len > 0 {
             // Since all the solutions have the same objective value (+- eps)
             // we can just print the first one
-            writeln!(f, "Objective value {:.8e}", self.solutions[0].objective)?;
+            writeln!(f, "Objective value: {:.8e}", self.solutions[0].objective)?;
         }
         writeln!(f, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")?;
 
