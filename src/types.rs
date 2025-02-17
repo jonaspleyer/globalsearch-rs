@@ -1,20 +1,26 @@
 //! # Types module
 //!
-//! This module contains the types and structs used in the OQNLP algorithm, including the parameters for the algorithm, filtering mechanisms, local solutions, local solver types, and local solver configurations.
+//! This module contains the types and structs used in the OQNLP algorithm,
+//! including the parameters for the algorithm, filtering mechanisms,
+//! solution set, local solutions, local solver types, and local solver configurations.
 
 use crate::local_solver::builders::{LBFGSBuilder, LocalSolverConfig};
 use ndarray::Array1;
+use std::fmt;
+use std::ops::Index;
 use thiserror::Error;
 
 // TODO: Implement SR1 when it is fixed in argmin (https://github.com/argmin-rs/argmin/issues/221)
+// Or add it now and print a warning that it is not working as expected in some cases
 
-// TODO: Implement methods with Hessians (How do we get the Hessian and how do we specify when we need it and when not?)
+// TODO: Implement methods with Hessians
 
 #[derive(Debug, Clone)]
 /// Parameters for the OQNLP algorithm
 ///
-/// These parameters control the behavior of the optimization process, including the total number of iterations,
-/// the number of iterations for stage 1, the wait cycle, threshold factor, distance factor, and population size.
+/// These parameters control the behavior of the optimization process,
+/// including the total number of iterations, the number of iterations for stage 1,
+/// the wait cycle, threshold factor, distance factor, and population size.
 pub struct OQNLPParams {
     /// Total number of iterations for the optimization process
     pub iterations: usize,
@@ -87,6 +93,11 @@ impl Default for OQNLPParams {
 /// The distance factor influences the minimum required distance between candidate solutions, the wait cycle determines the number of iterations to wait before updating the threshold criteria, and the threshold factor is used to update the threshold criteria.
 pub struct FilterParams {
     /// Factor that influences the minimum required distance between candidate solutions
+    ///
+    /// The distance factor is used to determine the minimum required distance between candidate solutions.
+    /// If the distance between two solutions is less than the distance factor, one of the solutions is removed.
+    ///
+    /// The distance factor is used in the `DistanceFilter` mechanism and it is a positive value or zero.
     pub distance_factor: f64,
     /// Number of iterations to wait before updating the threshold criteria
     pub wait_cycle: usize,
@@ -103,6 +114,69 @@ pub struct LocalSolution {
     pub point: Array1<f64>,
     /// The objective function value at the solution point
     pub objective: f64,
+}
+
+#[derive(Debug, Clone)]
+/// A set of local solutions
+///
+/// This struct represents a set of local solutions in the parameter space
+/// including the solution points and their corresponding objective function values.
+///
+/// The solutions are stored in an `Array1` of `LocalSolution` structs.
+///
+/// The `SolutionSet` struct implements the `Index` trait to allow indexing into
+/// the set and the `Display` trait to allow pretty printing.
+///
+/// It also provides a method to get the number of solutions stored in the set using `len(&self)`.
+pub struct SolutionSet {
+    pub solutions: Array1<LocalSolution>,
+}
+
+impl SolutionSet {
+    /// Returns the number of solutions stored in the set.
+    pub fn len(&self) -> usize {
+        self.solutions.len()
+    }
+
+    /// Returns true if the solution set contains no solutions.
+    pub fn is_empty(&self) -> bool {
+        self.solutions.is_empty()
+    }
+}
+
+impl Index<usize> for SolutionSet {
+    type Output = LocalSolution;
+
+    /// Returns the solution at the given index.
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.solutions[index]
+    }
+}
+
+impl fmt::Display for SolutionSet {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let len: usize = self.solutions.len();
+        writeln!(f, "━━━━━━━━━━━ Solution Set ━━━━━━━━━━━")?;
+        writeln!(f, "Total solutions: {}", self.solutions.len())?;
+        if len > 0 {
+            // Since all the solutions have the same objective value (+- eps)
+            // we can just print the first one
+            writeln!(f, "Objective value {:.8e}", self.solutions[0].objective)?;
+        }
+        writeln!(f, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")?;
+
+        for (i, solution) in self.solutions.iter().enumerate() {
+            writeln!(f, "Solution #{}", i + 1)?;
+            writeln!(f, "  Objective: {:.8e}", solution.objective)?;
+            writeln!(f, "  Parameters:")?;
+            writeln!(f, "    {:.8e}", solution.point)?;
+
+            if i < self.solutions.len() - 1 {
+                writeln!(f, "――――――――――――――――――――――――――――――――――――")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]

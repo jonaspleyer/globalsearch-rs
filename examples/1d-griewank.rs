@@ -14,7 +14,7 @@ use globalsearch::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder};
 use globalsearch::problem::Problem;
 use globalsearch::{
     oqnlp::OQNLP,
-    types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams},
+    types::{EvaluationError, LocalSolverType, OQNLPParams, SolutionSet},
 };
 use ndarray::{array, Array1, Array2};
 
@@ -50,14 +50,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         seed: 0,
     };
 
-    let mut oqnlp: OQNLP<OneDGriewank> = OQNLP::new(problem.clone(), params)?;
-    let solution_set: Array1<LocalSolution> = oqnlp.run()?;
+    println!("Running optimization with default local solver parameters");
 
-    println!("Best solution found:");
-    for solution in solution_set.iter() {
-        println!("Point: {}", solution.point);
-        println!("Objective: {}", solution.objective);
-    }
+    let mut oqnlp: OQNLP<OneDGriewank> = OQNLP::new(problem.clone(), params)?;
+    let solution_set: SolutionSet = oqnlp.run()?;
+
+    println!("{}", solution_set);
 
     let modified_params = OQNLPParams {
         iterations: 100,
@@ -74,14 +72,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         seed: 0,
     };
 
-    let mut modified_oqnlp: OQNLP<OneDGriewank> = OQNLP::new(problem, modified_params)?;
-    let modified_solution_set: Array1<LocalSolution> = modified_oqnlp.run()?;
+    println!("Running optimization with modified parameters");
 
-    println!("Best solution found:");
-    for solution in modified_solution_set.iter() {
-        println!("Point: {}", solution.point);
-        println!("Objective: {}", solution.objective);
-    }
+    let mut modified_oqnlp: OQNLP<OneDGriewank> = OQNLP::new(problem, modified_params)?;
+    let modified_solution_set: SolutionSet = modified_oqnlp.run()?;
+
+    println!("{}", modified_solution_set);
 
     Ok(())
 }

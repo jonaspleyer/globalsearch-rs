@@ -14,7 +14,7 @@ use globalsearch::local_solver::builders::SteepestDescentBuilder;
 use globalsearch::problem::Problem;
 use globalsearch::{
     oqnlp::OQNLP,
-    types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams},
+    types::{EvaluationError, LocalSolverType, OQNLPParams, SolutionSet},
 };
 use ndarray::{array, Array1, Array2};
 
@@ -57,13 +57,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params)?.verbose();
-    let solution_set: Array1<LocalSolution> = oqnlp.run()?;
+    let solution_set: SolutionSet = oqnlp.run()?;
 
-    println!("Best solution found:");
-    for solution in solution_set.iter() {
-        println!("Point: {}", solution.point);
-        println!("Objective: {}", solution.objective);
-    }
+    println!("{}", solution_set);
 
     Ok(())
 }

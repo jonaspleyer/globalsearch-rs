@@ -15,7 +15,7 @@ use globalsearch::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder};
 use globalsearch::problem::Problem;
 use globalsearch::{
     oqnlp::OQNLP,
-    types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams},
+    types::{EvaluationError, LocalSolverType, OQNLPParams, SolutionSet},
 };
 use ndarray::{array, Array1, Array2};
 
@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let b: f64 = 0.2;
     let c: f64 = 2.0 * std::f64::consts::PI;
 
-    let problem = ThreeDAckley::new(a, b, c);
+    let problem: ThreeDAckley = ThreeDAckley::new(a, b, c);
 
     let params: OQNLPParams = OQNLPParams {
         iterations: 30,
@@ -92,13 +92,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut oqnlp: OQNLP<ThreeDAckley> = OQNLP::new(problem, params)?;
-    let solution_set: Array1<LocalSolution> = oqnlp.run()?;
+    let solution_set: SolutionSet = oqnlp.run()?;
 
-    println!("Best solution found:");
-    for solution in solution_set.iter() {
-        println!("Point: {}", solution.point);
-        println!("Objective: {}", solution.objective);
-    }
+    println!("{}", solution_set);
 
     Ok(())
 }

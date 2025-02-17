@@ -6,7 +6,7 @@ use crate::filters::{DistanceFilter, MeritFilter};
 use crate::local_solver::runner::LocalSolver;
 use crate::problem::Problem;
 use crate::scatter_search::ScatterSearch;
-use crate::types::{FilterParams, LocalSolution, OQNLPParams};
+use crate::types::{FilterParams, LocalSolution, OQNLPParams, SolutionSet};
 use ndarray::Array1;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -24,10 +24,6 @@ use thiserror::Error;
 /// Error to be thrown if an issue occurs during the OQNLP optimization process
 #[derive(Debug, Error)]
 pub enum OQNLPError {
-    /// Iterations should be less than or equal to population size
-    #[error("OQNLP Error: Iterations should be less than or equal to population size. OQNLP received `iterations`: {0}, `population size`: {1}")]
-    Iterations(usize, usize),
-
     /// Error when the local solver fails to find a solution
     #[error("OQNLP Error: Local solver failed to find a solution. {0}")]
     LocalSolverError(String),
@@ -78,7 +74,7 @@ pub struct OQNLP<P: Problem + Clone> {
     /// The set of best solutions found during the optimization process.
     ///
     /// If no solution has been found yet, it remains `None`.
-    solution_set: Option<Array1<LocalSolution>>,
+    solution_set: Option<SolutionSet>,
 
     /// Max time for the stage 2 of the OQNLP algorithm.
     ///
@@ -98,6 +94,25 @@ pub struct OQNLP<P: Problem + Clone> {
 impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// Create a new OQNLP instance with the given problem and parameters
     pub fn new(problem: P, params: OQNLPParams) -> Result<Self, OQNLPError> {
+        assert!(
+            params.population_size > 3,
+            "Panic in OQNLP: Population size should be at least 3, got {}.\n 
+            Reference Set size should be at least 3, since it pushes the bounds and the midpoint.",
+            params.population_size
+        );
+
+        assert!(
+            params.iterations < params.population_size,
+            "Panic in OQNLP: Iterations should be less than or equal to population size. OQNLP received `iterations`: {0}, `population size`: {1}.",
+            params.iterations, params.population_size
+        );
+
+        if params.wait_cycle >= params.iterations {
+            eprintln!(
+                "Warning: `wait_cycle` is greater than or equal to `iterations`. This may lead to suboptimal results."
+            );
+        }
+
         let filter_params: FilterParams = FilterParams {
             distance_factor: params.distance_factor,
             wait_cycle: params.wait_cycle,
@@ -121,20 +136,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     }
 
     /// Run the OQNLP algorithm and return the solution set
-    pub fn run(&mut self) -> Result<Array1<LocalSolution>, OQNLPError> {
-        if self.params.wait_cycle >= self.params.iterations {
-            eprintln!(
-                "Warning: `wait_cycle` is greater than or equal to `iterations`. This may lead to suboptimal results."
-            );
-        }
-
-        if self.params.iterations > self.params.population_size {
-            return Err(OQNLPError::Iterations(
-                self.params.iterations,
-                self.params.population_size,
-            ));
-        }
-
+    pub fn run(&mut self) -> Result<SolutionSet, OQNLPError> {
         // Stage 1: Initial ScatterSearch iterations and first local call
         if self.verbose {
             println!("Starting Stage 1");
@@ -238,10 +240,12 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         const EPS: f64 = 1e-6; // TODO: Should we let the user select this?
 
         let solutions = if let Some(existing) = &self.solution_set {
-            existing
+            existing.solutions.clone()
         } else {
             // First solution, initialize solution set
-            self.solution_set = Some(Array1::from(vec![solution.clone()]));
+            self.solution_set = Some(SolutionSet {
+                solutions: Array1::from(vec![solution.clone()]),
+            });
             self.merit_filter.update_threshold(solution.objective);
             self.distance_filter.add_solution(solution);
             return Ok(true);
@@ -252,14 +256,18 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
         let added: bool = if obj_diff < -EPS {
             // Found new best solution
-            self.solution_set = Some(Array1::from(vec![solution.clone()]));
+            self.solution_set = Some(SolutionSet {
+                solutions: Array1::from(vec![solution.clone()]),
+            });
             self.merit_filter.update_threshold(solution.objective);
             false
-        } else if obj_diff.abs() <= EPS && !self.is_duplicate_in_set(&solution, solutions) {
+        } else if obj_diff.abs() <= EPS && !self.is_duplicate_in_set(&solution, &solutions) {
             // Similar objective value and not duplicate, add to set
             let mut new_solutions: Vec<LocalSolution> = solutions.to_vec();
             new_solutions.push(solution.clone());
-            self.solution_set = Some(Array1::from(new_solutions));
+            self.solution_set = Some(SolutionSet {
+                solutions: Array1::from(new_solutions),
+            });
             true
         } else {
             false
@@ -378,7 +386,7 @@ mod tests_oqnlp {
         // and the solution set should contain one solution
         assert!(added);
 
-        let sol_set = oqnlp.solution_set.unwrap();
+        let sol_set: SolutionSet = oqnlp.solution_set.unwrap();
         assert_eq!(sol_set.len(), 1);
         assert!((sol_set[0].objective - ls.objective).abs() < 1e-6);
     }
@@ -430,7 +438,7 @@ mod tests_oqnlp {
         let added: bool = oqnlp.process_local_solution(ls2.clone()).unwrap();
 
         // When a new best is found, the solution set is replaced
-        let sol_set = oqnlp.solution_set.unwrap();
+        let sol_set: SolutionSet = oqnlp.solution_set.unwrap();
         assert_eq!(sol_set.len(), 1);
         assert!((sol_set[0].objective - ls2.objective).abs() < 1e-6);
 
@@ -575,7 +583,7 @@ mod tests_oqnlp {
             .verbose()
             .max_time(20.0);
 
-        let sol_set: Array1<LocalSolution> = oqnlp.run().unwrap();
+        let sol_set: SolutionSet = oqnlp.run().unwrap();
         assert!(sol_set.len() == 2);
 
         // With a very low time limit, the algorithm should stop before finding both solutions
@@ -584,7 +592,7 @@ mod tests_oqnlp {
             .verbose()
             .max_time(0.000001);
 
-        let sol_set: Array1<LocalSolution> = oqnlp.run().unwrap();
+        let sol_set: SolutionSet = oqnlp.run().unwrap();
         assert!(sol_set.len() == 1);
     }
 }
