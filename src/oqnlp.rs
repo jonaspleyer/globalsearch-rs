@@ -109,7 +109,19 @@ pub struct OQNLP<P: Problem + Clone> {
 }
 
 impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
-    /// Create a new OQNLP instance with the given problem and parameters
+    /// # OQNLP Constructor
+    ///
+    /// This method creates a new OQNLP instance with the given optimization problem and parameters.
+    ///
+    /// ## Errors
+    ///
+    /// Returns an error if the population size is less than 3 or if the iterations are greater than the population size.
+    ///
+    /// Returns an error if the distance filter fails to be created.
+    ///
+    /// ## Warnings
+    ///
+    /// If the `wait_cycle` parameter is greater than or equal to the `iterations` parameter, a warning is printed.
     pub fn new(problem: P, params: OQNLPParams) -> Result<Self, OQNLPError> {
         if params.population_size <= 3 {
             return Err(OQNLPError::InvalidPopulationSize(params.population_size));
@@ -613,5 +625,18 @@ mod tests_oqnlp {
 
         let sol_set: SolutionSet = oqnlp.run().unwrap();
         assert!(sol_set.len() == 1);
+    }
+
+    #[test]
+    /// Test the invalid population size for the OQNLP algorithm
+    fn test_oqnlp_params_invalid_population_size() {
+        let problem: DummyProblem = DummyProblem {};
+        let params: OQNLPParams = OQNLPParams {
+            population_size: 1, // Population size must be greater or equal to 3
+            ..OQNLPParams::default()
+        };
+
+        let oqnlp = OQNLP::new(problem, params);
+        assert!(matches!(oqnlp, Err(OQNLPError::InvalidPopulationSize(1))));
     }
 }

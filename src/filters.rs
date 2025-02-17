@@ -99,3 +99,25 @@ fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
         .sum::<f64>()
         .sqrt()
 }
+
+#[cfg(test)]
+mod test_filters {
+    use super::*;
+    
+    #[test]
+    /// Test the invalid distance factor for the Distance Filter
+    fn test_filter_params_invalid_distance_factor() {
+        let params: FilterParams = FilterParams {
+            distance_factor: -0.5, // Distance Factor should be greater or equal to 0.0
+            wait_cycle: 10,
+            threshold_factor: 0.1,
+        };
+
+        let df: Result<DistanceFilter, FiltersErrors> = DistanceFilter::new(params);
+
+        assert!(matches!(
+            df,
+            Err(FiltersErrors::NegativeDistanceFactor(-0.5))
+        ));
+    }
+}

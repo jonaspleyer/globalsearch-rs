@@ -239,3 +239,107 @@ pub enum EvaluationError {
     #[error("Hessian evaluation failed")]
     HessianEvaluationFailed,
 }
+
+#[cfg(test)]
+mod tests_types {
+    use super::*;
+    use ndarray::array;
+
+    #[test]
+    /// Test the default parameters for the OQNLP algorithm
+    fn test_oqnlp_params_default() {
+        let params = OQNLPParams::default();
+        assert_eq!(params.iterations, 300);
+        assert_eq!(params.population_size, 1000);
+        assert_eq!(params.wait_cycle, 15);
+        assert_eq!(params.threshold_factor, 0.2);
+        assert_eq!(params.distance_factor, 0.75);
+        assert_eq!(params.seed, 0);
+    }
+
+    #[test]
+    /// Test the len method for the SolutionSet struct
+    fn test_solution_set_len() {
+        let solutions = Array1::from_vec(vec![
+            LocalSolution {
+                point: array![1.0, 2.0],
+                objective: -1.0,
+            },
+            LocalSolution {
+                point: array![3.0, 4.0],
+                objective: -2.0,
+            },
+        ]);
+        let solution_set: SolutionSet = SolutionSet { solutions };
+        assert_eq!(solution_set.len(), 2);
+    }
+
+    #[test]
+    /// Test the is_empty method for the SolutionSet struct
+    fn test_solution_set_is_empty() {
+        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![]);
+        let solution_set: SolutionSet = SolutionSet { solutions };
+        assert!(solution_set.is_empty());
+
+        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![LocalSolution {
+            point: array![1.0],
+            objective: -1.0,
+        }]);
+        let solution_set: SolutionSet = SolutionSet { solutions };
+        assert!(!solution_set.is_empty());
+    }
+
+    #[test]
+    /// Test indexing into the SolutionSet struct
+    fn test_solution_set_index() {
+        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![
+            LocalSolution {
+                point: array![1.0, 2.0],
+                objective: -1.0,
+            },
+            LocalSolution {
+                point: array![3.0, 4.0],
+                objective: -2.0,
+            },
+        ]);
+        let solution_set: SolutionSet = SolutionSet { solutions };
+
+        assert_eq!(solution_set[0].objective, -1.0);
+        assert_eq!(solution_set[1].objective, -2.0);
+    }
+
+    #[test]
+    /// Test the Display trait for the SolutionSet struct
+    fn test_solution_set_display() {
+        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![LocalSolution {
+            point: array![1.0],
+            objective: -1.0,
+        }]);
+        let solution_set: SolutionSet = SolutionSet { solutions };
+
+        let display_output: String = format!("{}", solution_set);
+        assert!(display_output.contains("Solution Set"));
+        assert!(display_output.contains("Total solutions: 1"));
+        assert!(display_output.contains("Objective value"));
+        assert!(display_output.contains("Solution #1"));
+    }
+
+    #[test]
+    /// Test the display of empty solution set
+    fn test_empty_solution_set_display() {
+        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![]);
+        let solution_set: SolutionSet = SolutionSet { solutions };
+
+        let display_output: String = format!("{}", solution_set);
+        assert!(display_output.contains("Solution Set"));
+        assert!(display_output.contains("Total solutions: 0"));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_solution_set_index_out_of_bounds() {
+        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![]);
+        let solution_set: SolutionSet = SolutionSet { solutions };
+        let _should_panic: LocalSolution = solution_set[0].clone();
+    }
+}
