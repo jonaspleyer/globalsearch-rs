@@ -210,6 +210,7 @@ impl<P: Problem> LocalSolver<P> {
         }
     }
 
+    /// Solve the optimization problem using the Nelder-Mead local solver
     fn solve_nelder_mead(
         &self,
         initial_point: Array1<f64>,
@@ -285,6 +286,7 @@ impl<P: Problem> LocalSolver<P> {
         }
     }
 
+    /// Solve the optimization problem using the Steepest Descent local solver
     fn solve_steepestdescent(
         &self,
         initial_point: Array1<f64>,
@@ -483,7 +485,7 @@ mod tests_local_solvers {
         let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
 
         let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
-            problem.clone(),
+            problem,
             LocalSolverType::SteepestDescent,
             SteepestDescentBuilder::default().build(),
         );

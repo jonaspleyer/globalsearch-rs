@@ -154,6 +154,7 @@ Or use `cargo add globalsearch` in your project directory.
 
    ```rust
    use oqnlp::{OQNLP, OQNLPParams};
+   use types::{SolutionSet}
 
    fn main() -> Result<(), Box<dyn std::error::Error>> {
         let problem = MinimizeProblem;
@@ -170,14 +171,10 @@ Or use `cargo add globalsearch` in your project directory.
             };
 
         let mut optimizer: OQNLP<MinimizeProblem> = OQNLP::new(problem, params)?;
-        let solution_set: Array1<LocalSolution> = optimizer.run()?;
 
-        // OQNLP returns a set of solutions
-        println!("Solution set:");
-        for solution in solution_set.iter() {
-            println!("Point: {}", solution.point);
-            println!("Objective: {}", solution.objective);
-        }
+        // OQNLP returns a solution set with the best solutions found
+        let solution_set: SolutionSet = optimizer.run()?;
+        println!("{}", solution_set)
 
         Ok(())
    }

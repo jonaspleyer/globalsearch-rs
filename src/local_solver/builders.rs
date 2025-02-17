@@ -44,7 +44,12 @@ pub enum LocalSolverConfig {
         /// Simplex delta
         ///
         /// Sets the step size for generating the simplex from a given point.
-        /// It generates the simplex such as `simplex_i = x_i + simplex_delta`
+        ///
+        /// We add the point as the first vertex of the simplex.
+        /// Then, for each dimension of the point, we create a new point by cloning the initial point and
+        /// then incrementing the value at the given index by the fixed offset, simplex_delta.
+        /// This results in a simplex with one vertex for each coordinate direction offset from the initial point.
+        ///
         /// The default value is 0.1.
         simplex_delta: f64,
         /// Sample standard deviation tolerance
@@ -81,9 +86,6 @@ impl LocalSolverConfig {
         SteepestDescentBuilder::default()
     }
 }
-
-// TODO: I think we need to move the builders of the local solvers to another module
-// Maybe a local_solvers module, with local_solver_runner and local_solver_builder
 
 #[derive(Debug, Clone)]
 /// L-BFGS builder struct
