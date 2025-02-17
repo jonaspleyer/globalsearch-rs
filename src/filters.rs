@@ -4,6 +4,14 @@
 
 use crate::types::{FilterParams, LocalSolution};
 use ndarray::Array1;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum FiltersErrors {
+    /// Distance factor must be positive or equal to zero
+    #[error("Distance factor must be positive or equal to zero, got {0}.")]
+    NegativeDistanceFactor(f64),
+}
 
 /// Merit filter
 pub struct MeritFilter {
@@ -17,7 +25,7 @@ impl Default for MeritFilter {
 }
 
 impl MeritFilter {
-    /// Create a new MeritFilter with the given parameters
+    /// Create a new MeritFilter
     pub fn new() -> Self {
         Self {
             threshold: f64::INFINITY,
@@ -41,14 +49,28 @@ pub struct DistanceFilter {
 }
 
 impl DistanceFilter {
-    /// Create a new DistanceFilter with the given parameters
-    pub fn new(params: FilterParams) -> Self {
-        Self {
+    /// # Create a new DistanceFilter with the given parameters
+    ///
+    /// Create a new DistanceFilter with the given parameters and an empty solution set
+    /// to store the solutions.
+    ///
+    /// ## Errors
+    ///
+    /// Returns an error if the distance factor is negative
+    pub fn new(params: FilterParams) -> Result<Self, FiltersErrors> {
+        if params.distance_factor < 0.0 {
+            return Err(FiltersErrors::NegativeDistanceFactor(
+                params.distance_factor,
+            ));
+        }
+
+        Ok(Self {
             solutions: Vec::new(), // Use ndarray?
             params,
-        }
+        })
     }
 
+    /// Get the minimum distance between the given point and all solutions in DistanceFilter
     pub fn min_distance(&self, point: &Array1<f64>) -> f64 {
         self.solutions
             .iter()
@@ -69,7 +91,7 @@ impl DistanceFilter {
     }
 }
 
-/// RefSet Euclidean distance
+/// Euclidean distance
 fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
     a.iter()
         .zip(b.iter())

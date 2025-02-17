@@ -43,6 +43,23 @@ pub enum OQNLPError {
     /// Error when running the ScatterSearch instance
     #[error("OQNLP Error: Failed to run the ScatterSearch instance")]
     ScatterSearchRunError,
+
+    /// Error when the population size is invalid
+    ///
+    /// Population size should be at least 3, since the reference set
+    /// pushes the bounds and the midpoint.
+    #[error("OQNLP Error: Population size should be at least 3, got {0}. Reference Set size should be at least 3, since it pushes the bounds and the midpoint.")]
+    InvalidPopulationSize(usize),
+
+    /// Error when the iterations are invalid
+    ///
+    /// Iterations should be less than or equal to the population size.
+    #[error("OQNLP Error: Iterations should be less than or equal to population size. OQNLP received `iterations`: {0}, `population size`: {1}.")]
+    InvalidIterations(usize, usize),
+
+    /// Error when creating the distance filter
+    #[error("OQNLP Error: Failed to create distance filter. {0}")]
+    DistanceFilterError(String),
 }
 
 /// The main struct for the OQNLP algorithm.
@@ -94,18 +111,16 @@ pub struct OQNLP<P: Problem + Clone> {
 impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// Create a new OQNLP instance with the given problem and parameters
     pub fn new(problem: P, params: OQNLPParams) -> Result<Self, OQNLPError> {
-        assert!(
-            params.population_size > 3,
-            "Panic in OQNLP: Population size should be at least 3, got {}.\n 
-            Reference Set size should be at least 3, since it pushes the bounds and the midpoint.",
-            params.population_size
-        );
+        if params.population_size <= 3 {
+            return Err(OQNLPError::InvalidPopulationSize(params.population_size));
+        }
 
-        assert!(
-            params.iterations < params.population_size,
-            "Panic in OQNLP: Iterations should be less than or equal to population size. OQNLP received `iterations`: {0}, `population size`: {1}.",
-            params.iterations, params.population_size
-        );
+        if params.iterations > params.population_size {
+            return Err(OQNLPError::InvalidIterations(
+                params.iterations,
+                params.population_size,
+            ));
+        }
 
         if params.wait_cycle >= params.iterations {
             eprintln!(
@@ -123,7 +138,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             problem: problem.clone(),
             params: params.clone(),
             merit_filter: MeritFilter::new(),
-            distance_filter: DistanceFilter::new(filter_params),
+            distance_filter: DistanceFilter::new(filter_params)
+                .map_err(|e| OQNLPError::DistanceFilterError(e.to_string()))?,
             local_solver: LocalSolver::new(
                 problem,
                 params.local_solver_type.clone(),
@@ -468,7 +484,8 @@ mod tests_oqnlp {
                     distance_factor: params.distance_factor,
                     wait_cycle: params.wait_cycle,
                     threshold_factor: params.threshold_factor,
-                });
+                })
+                .expect("Failed to create DistanceFilter");
                 let dummy_sol: LocalSolution = LocalSolution {
                     objective: 5.0,
                     point: Array1::from(vec![0.0, 0.0, 5.0]),
@@ -518,7 +535,8 @@ mod tests_oqnlp {
                 distance_factor: params.distance_factor,
                 wait_cycle: params.wait_cycle,
                 threshold_factor: params.threshold_factor,
-            }),
+            })
+            .unwrap(),
             local_solver: LocalSolver::new(
                 problem.clone(),
                 params.local_solver_type.clone(),
@@ -554,7 +572,8 @@ mod tests_oqnlp {
                 distance_factor: params.distance_factor,
                 wait_cycle: params.wait_cycle,
                 threshold_factor: params.threshold_factor,
-            }),
+            })
+            .unwrap(),
             local_solver: LocalSolver::new(
                 problem.clone(),
                 params.local_solver_type.clone(),
