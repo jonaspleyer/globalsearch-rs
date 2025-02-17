@@ -110,12 +110,11 @@ Or use `cargo add globalsearch` in your project directory.
     use globalsearch::local_solver::builders::SteepestDescentBuilder;
 
     let params: OQNLPParams = OQNLPParams {
-        total_iterations: 1000,
-        stage_1_iterations: 200,
-        wait_cycle: 20,
+        iterations: 125,
+        wait_cycle: 10,
         threshold_factor: 0.2,
         distance_factor: 0.75,
-        population_size: 10,
+        population_size: 250,
         local_solver_type: LocalSolverType::SteepestDescent,
         local_solver_config: SteepestDescentBuilder::default().build(),
         seed: 0,
@@ -126,8 +125,7 @@ Or use `cargo add globalsearch` in your project directory.
 
    ```rust
     pub struct OQNLPParams {
-        pub total_iterations: usize,
-        pub stage_1_iterations: usize,
+        pub iterations: usize,
         pub wait_cycle: usize,
         pub threshold_factor: f64,
         pub distance_factor: f64,
@@ -159,12 +157,11 @@ Or use `cargo add globalsearch` in your project directory.
    fn main() -> Result<(), Box<dyn std::error::Error>> {
         let problem = MinimizeProblem;
         let params: OQNLPParams = OQNLPParams {
-                total_iterations: 1000,
-                stage_1_iterations: 200,
-                wait_cycle: 20,
+                iterations: 125,
+                wait_cycle: 10,
                 threshold_factor: 0.2,
                 distance_factor: 0.75,
-                population_size: 10,
+                population_size: 250,
                 local_solver_type: LocalSolverType::SteepestDescent,
                 local_solver_config: SteepestDescentBuilder::default().build(),
                 seed: 0,
