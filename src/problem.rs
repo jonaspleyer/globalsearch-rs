@@ -39,9 +39,7 @@ pub trait Problem {
     /// Objective function to minimize, given at point x (`Array1<f64>`)
     ///
     /// Returns a `Result<f64, EvaluationError>` of the value of the objective function at x
-    fn objective(&self, _x: &Array1<f64>) -> Result<f64, EvaluationError> {
-        Err(EvaluationError::ObjectiveFunctionNotImplemented)
-    }
+    fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError>;
 
     /// Gradient of the objective function at point x (`Array1<f64>`)
     ///
