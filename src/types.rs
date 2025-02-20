@@ -198,6 +198,11 @@ pub enum LocalSolverType {
     ///
     /// Requires `CostFunction` and `Gradient`
     SteepestDescent,
+
+    /// Trust Region local solver
+    ///
+    /// Requires `CostFunction`, `Gradient` and `Hessian`
+    TrustRegion,
 }
 
 #[derive(Debug, Error)]

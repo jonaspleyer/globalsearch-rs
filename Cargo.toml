@@ -11,6 +11,7 @@ keywords = ["optimization", "math", "science"]
 categories = ["science", "mathematics"]
 exclude = ["/media", ".github"]
 build = "build.rs"
+rust-version = "1.78" # MSRV                                                                                  # MSRV
 
 [dependencies]
 argmin = { version = "0.10.0" }

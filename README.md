@@ -143,6 +143,7 @@ Or use `cargo add globalsearch` in your project directory.
         LBFGS,
         NelderMead,
         SteepestDescent,
+        TrustRegion,
     }
    ```
 

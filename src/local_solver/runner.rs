@@ -2,17 +2,18 @@
 //!
 //! This module contains the implementation of the local solver runner, which is used to solve optimization problems locally.
 
-use crate::local_solver::builders::{LineSearchMethod, LocalSolverConfig};
+use crate::local_solver::builders::{LineSearchMethod, LocalSolverConfig, TrustRegionRadiusMethod};
 use crate::problem::Problem;
 use crate::types::{LocalSolution, LocalSolverType};
-use argmin::core::{CostFunction, Error, Executor, Gradient};
+use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian};
 use argmin::solver::{
     gradientdescent::SteepestDescent,
     linesearch::{HagerZhangLineSearch, MoreThuenteLineSearch},
     neldermead::NelderMead,
     quasinewton::LBFGS,
+    trustregion::{CauchyPoint, Steihaug, TrustRegion},
 };
-use ndarray::Array1;
+use ndarray::{Array1, Array2};
 use thiserror::Error;
 
 // TODO: Do not repeat code in the linesearch branch, use helper function?
@@ -28,6 +29,9 @@ pub enum LocalSolverError {
 
     #[error("Local Solver Error: Invalid LocalSolverConfig for Steepest Descent solver. {0}")]
     InvalidSteepestDescentConfig(String),
+
+    #[error("Local Solver Error: Invalid LocalSolverConfig for Trust Region solver. {0}")]
+    InvalidTrustRegionConfig(String),
 
     #[error("Local Solver Error: Failed to run local solver. {0}")]
     RunFailed(String),
@@ -69,6 +73,9 @@ impl<P: Problem> LocalSolver<P> {
             }
             LocalSolverType::SteepestDescent => {
                 self.solve_steepestdescent(initial_point, &self.local_solver_config)
+            }
+            LocalSolverType::TrustRegion => {
+                self.solve_trust_region(initial_point, &self.local_solver_config)
             }
         }
     }
@@ -425,6 +432,130 @@ impl<P: Problem> LocalSolver<P> {
             ))
         }
     }
+
+    /// Solve the optimization problem using the Nelder-Mead local solver
+    fn solve_trust_region(
+        &self,
+        initial_point: Array1<f64>,
+        solver_config: &LocalSolverConfig,
+    ) -> Result<LocalSolution, LocalSolverError> {
+        struct ProblemCost<'a, P: Problem> {
+            problem: &'a P,
+        }
+
+        impl<P: Problem> CostFunction for ProblemCost<'_, P> {
+            type Param = Array1<f64>;
+            type Output = f64;
+
+            fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
+                self.problem
+                    .objective(param)
+                    .map_err(|e| Error::msg(e.to_string()))
+            }
+        }
+
+        impl<P: Problem> Gradient for ProblemCost<'_, P> {
+            type Param = Array1<f64>;
+            type Gradient = Array1<f64>;
+
+            fn gradient(&self, param: &Self::Param) -> std::result::Result<Self::Gradient, Error> {
+                self.problem
+                    .gradient(param)
+                    .map_err(|e| Error::msg(e.to_string()))
+            }
+        }
+
+        impl<P: Problem> Hessian for ProblemCost<'_, P> {
+            type Param = Array1<f64>;
+            type Hessian = Array2<f64>;
+
+            fn hessian(&self, param: &Self::Param) -> std::result::Result<Self::Hessian, Error> {
+                self.problem
+                    .hessian(param)
+                    .map_err(|e| Error::msg(e.to_string()))
+            }
+        }
+
+        let cost = ProblemCost {
+            problem: &self.problem,
+        };
+
+        if let LocalSolverConfig::TrustRegion {
+            trust_region_radius_method,
+            max_iter,
+            radius,
+            max_radius,
+            eta,
+        } = solver_config
+        {
+            match trust_region_radius_method {
+                TrustRegionRadiusMethod::Cauchy => {
+                    let subproblem = CauchyPoint::new();
+                    let solver = TrustRegion::new(subproblem)
+                        .with_radius(*radius)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidTrustRegionConfig(e.to_string())
+                        })?
+                        .with_max_radius(*max_radius)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidTrustRegionConfig(e.to_string())
+                        })?
+                        .with_eta(*eta)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidTrustRegionConfig(e.to_string())
+                        })?;
+                    let res = Executor::new(cost, solver)
+                        .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
+                        .run()
+                        .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
+
+                    Ok(LocalSolution {
+                        point: res
+                            .state()
+                            .best_param
+                            .as_ref()
+                            .ok_or(LocalSolverError::NoSolution)?
+                            .clone(),
+                        objective: res.state().best_cost,
+                    })
+                }
+                TrustRegionRadiusMethod::Steihaug => {
+                    let subproblem = Steihaug::new();
+                    let solver = TrustRegion::new(subproblem)
+                        .with_radius(*radius)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidTrustRegionConfig(e.to_string())
+                        })?
+                        .with_max_radius(*max_radius)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidTrustRegionConfig(e.to_string())
+                        })?
+                        .with_eta(*eta)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidTrustRegionConfig(e.to_string())
+                        })?;
+                    let res = Executor::new(cost, solver)
+                        .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
+                        .run()
+                        .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
+
+                    Ok(LocalSolution {
+                        point: res
+                            .state()
+                            .best_param
+                            .as_ref()
+                            .ok_or(LocalSolverError::NoSolution)?
+                            .clone(),
+                        objective: res.state().best_cost,
+                    })
+                }
+            }
+        } else {
+            Err(LocalSolverError::InvalidTrustRegionConfig(
+                "Error parsing solver configuration".to_string(),
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -551,6 +682,35 @@ mod tests_local_solvers {
             LocalSolverError::InvalidLBFGSConfig(
                 "Invalid parameter: \"`HagerZhangLineSearch`: delta must be in (0, 1) and sigma must be in [delta, 1).\""
                     .to_string()
+            )
+        );
+    }
+
+    #[test]
+    /// Test creating a Trust Region solver using an invalid eta value
+    /// In this case, eta must be in [0, 1/4) and we set it to 1.0
+    fn invalid_trust_region_eta() {
+        let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
+
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem,
+            LocalSolverType::TrustRegion,
+            LocalSolverConfig::TrustRegion {
+                trust_region_radius_method: TrustRegionRadiusMethod::Steihaug,
+                max_iter: 1000,
+                radius: 0.1,
+                max_radius: 1.0,
+                eta: 1.0,
+            },
+        );
+
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+        let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
+
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidTrustRegionConfig(
+                "Invalid parameter: \"`TrustRegion`: eta must be in [0, 1/4).\"".to_string()
             )
         );
     }

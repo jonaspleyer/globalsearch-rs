@@ -9,7 +9,7 @@
 //!
 //! // L-BFGS local solver configuration
 //! let lbfgs = LBFGSBuilder::default()
-//!             .max_iter(300)
+//!             .max_iter(500)
 //!             .tolerance_grad(1e-8)
 //!             .build();
 //!
@@ -20,6 +20,16 @@
 //!                     .build();
 //! ```
 use ndarray::{array, Array1};
+
+#[derive(Debug, Clone)]
+/// Trust Region Radius Method
+///
+/// This enum defines the types of trust region radius methods that can be
+/// used in the Trust Region local solver, including Cauchy, and Steihaug.
+pub enum TrustRegionRadiusMethod {
+    Cauchy,
+    Steihaug,
+}
 
 #[derive(Debug, Clone)]
 /// Local solver configuration for the OQNLP algorithm
@@ -71,6 +81,25 @@ pub enum LocalSolverConfig {
         /// Line search parameters for the Steepest Descent local solver
         line_search_params: LineSearchParams,
     },
+    TrustRegion {
+        /// Trust Region radius method to use to compute the step length and direction
+        trust_region_radius_method: TrustRegionRadiusMethod,
+        /// The maximum number of iterations for the Trust Region local solver
+        max_iter: u64,
+        /// The radius for the Trust Region local solver
+        radius: f64,
+        /// The maximum radius for the Trust Region local solver
+        max_radius: f64,
+        /// The parameter that determines the acceptance threshold for the trust region step
+        ///
+        /// Must lie in [0, 1/4) and defaults to 0.125
+        eta: f64,
+        // TODO: Steihaug's method can take with_epsilon, but Cauchy doesn't
+        // Should we include it here?
+        // TODO: Currently I don't set Dogleg as a method since it would require using linalg from
+        // ndarray. If more methods use ArgminInv then it would be a good idea to switch to using linalg
+        // and implement it
+    },
 }
 
 impl LocalSolverConfig {
@@ -84,6 +113,10 @@ impl LocalSolverConfig {
 
     pub fn steepestdescent() -> SteepestDescentBuilder {
         SteepestDescentBuilder::default()
+    }
+
+    pub fn trustregion() -> TrustRegionBuilder {
+        TrustRegionBuilder::default()
     }
 }
 
@@ -309,6 +342,87 @@ impl Default for SteepestDescentBuilder {
         SteepestDescentBuilder {
             max_iter: 300,
             line_search_params: LineSearchParams::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+/// Trust Region builder struct
+///
+/// This struct allows for the configuration of the Trust Region local solver.
+pub struct TrustRegionBuilder {
+    trust_region_radius_method: TrustRegionRadiusMethod,
+    max_iter: u64,
+    radius: f64,
+    max_radius: f64,
+    eta: f64,
+}
+
+/// Trust Region Builder
+///
+/// This builder allows for the configuration of the Trust Region local solver.
+impl TrustRegionBuilder {
+    /// Build the Trust Region local solver configuration
+    pub fn build(self) -> LocalSolverConfig {
+        LocalSolverConfig::TrustRegion {
+            trust_region_radius_method: TrustRegionRadiusMethod::Cauchy,
+            max_iter: 300,
+            radius: 1.0,
+            max_radius: 100.0,
+            eta: 0.125,
+        }
+    }
+
+    /// Set the Trust Region Method for the Trust Region local solver
+    pub fn method(mut self, method: TrustRegionRadiusMethod) -> Self {
+        self.trust_region_radius_method = method;
+        self
+    }
+
+    /// Set the maximum number of iterations for the Trust Region local solver
+    pub fn max_iter(mut self, max_iter: u64) -> Self {
+        self.max_iter = max_iter;
+        self
+    }
+
+    /// Set the Trust Region radius for the Trust Region local solver
+    pub fn radius(mut self, radius: f64) -> Self {
+        self.radius = radius;
+        self
+    }
+
+    /// Set the maximum Trust Region radius for the Trust Region local solver
+    pub fn max_radius(mut self, max_radius: f64) -> Self {
+        self.max_radius = max_radius;
+        self
+    }
+
+    /// Set eta for the Trust Region local solver
+    ///
+    /// The parameter that determines the acceptance threshold for the trust region step.
+    /// Must lie in [0, 1/4) and defaults to 0.125
+    pub fn eta(mut self, eta: f64) -> Self {
+        self.eta = eta;
+        self
+    }
+}
+
+/// Default implementation for the Trust Region builder
+///
+/// This implementation sets the default values for the Trust Region builder.
+/// Default values:
+/// - `trust_region_radius_method`: Dogleg
+/// - `radius`: 1.0
+/// - `max_radius`: 100.0
+/// - `eta`: 0.125
+impl Default for TrustRegionBuilder {
+    fn default() -> Self {
+        TrustRegionBuilder {
+            trust_region_radius_method: TrustRegionRadiusMethod::Cauchy,
+            max_iter: 300,
+            radius: 1.0,
+            max_radius: 100.0,
+            eta: 0.125,
         }
     }
 }
