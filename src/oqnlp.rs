@@ -57,11 +57,11 @@
 //!     // It is recommended that you adjust these parameters to your problem
 //!     // and the desired behavior of the algorithm, instead of using the default values.
 //!     let params: OQNLPParams = OQNLPParams {
-//!         LocalSolverType::TrustRegion,
+//!         local_solver_type: LocalSolverType::TrustRegion,
 //!         local_solver_config: TrustRegionBuilder::default()
 //!             .method(TrustRegionRadiusMethod::Steihaug)
 //!             .build(),
-//!             ..OQNLPParams::Default(),
+//!             ..OQNLPParams::default()
 //!     };
 //!
 //!     let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params).unwrap();
