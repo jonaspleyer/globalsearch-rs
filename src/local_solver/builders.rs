@@ -1,7 +1,8 @@
 //! # Local Solver Builders module.
 //!
 //! This module contains the builders.
-//! The builders allow for the creation and configuration of the local solvers, including the L-BFGS, Nelder-Mead, and Steepest Descent methods.
+//! The builders allow for the creation and configuration of the local solvers,
+//! including the L-BFGS, Nelder-Mead, Steepest Descent and Trust Region methods.
 //!
 //! ## Example
 //! ```rust

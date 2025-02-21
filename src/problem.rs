@@ -29,12 +29,26 @@
 //!        array![[-600.0, 600.0]]
 //!    }
 //! }
+//! ```
+
 use crate::types::EvaluationError;
 use ndarray::{Array1, Array2};
 
-/// Trait for optimization problems
+/// # Trait for optimization problems
 ///
-/// This trait defines the methods that an optimization problem must implement, including the objective function, gradient and variable bounds.
+/// This trait defines the methods that an optimization problem must implement, including the objective function, gradient, hessian and variable bounds.
+///
+/// The objective function is the function to minimize, evaluated at a given point x (`Array1<f64>`).
+///
+/// The gradient is the derivative of the objective function, evaluated at a given point x (`Array1<f64>`).
+///
+/// The hessian is the square matrix of the second order partial derivatives of the objective function, evaluated at a given point x (`Array1<f64>`).
+///
+/// The variable bounds are the lower and upper bounds for the optimization problem.
+///
+/// The default implementation of the gradient and hessian returns an error indicating the gradient and hessian are not implemented.
+/// Some local solvers require the gradient and hessian to be implemented, while for others it isn't needed.
+/// You should check the documentation of the local solver you are using to know if the gradient and hessian are needed.
 pub trait Problem {
     /// Objective function to minimize, given at point x (`Array1<f64>`)
     ///

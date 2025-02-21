@@ -7,13 +7,16 @@ use ndarray::Array1;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+/// Filters errors
 pub enum FiltersErrors {
     /// Distance factor must be positive or equal to zero
     #[error("Distance factor must be positive or equal to zero, got {0}.")]
     NegativeDistanceFactor(f64),
 }
 
-/// Merit filter
+/// # Merit filter
+///
+/// The merit filter is used to check if the objective value of a point is below a certain threshold.
 pub struct MeritFilter {
     pub threshold: f64,
 }
@@ -42,7 +45,10 @@ impl MeritFilter {
     }
 }
 
-/// Distance filter
+/// # Distance filter
+///
+/// The distance filter is used to maintain diversity among solutions.
+/// It checks if a point is far enough from the solutions in the filter.
 pub struct DistanceFilter {
     solutions: Vec<LocalSolution>, // TODO: Change to ndarray?
     params: FilterParams,
@@ -103,7 +109,7 @@ fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 #[cfg(test)]
 mod test_filters {
     use super::*;
-    
+
     #[test]
     /// Test the invalid distance factor for the Distance Filter
     fn test_filter_params_invalid_distance_factor() {

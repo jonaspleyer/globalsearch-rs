@@ -1,6 +1,14 @@
 //! # Scatter Search module
 //!
 //! This module contains the implementation of the Scatter Search algorithm.
+//!
+//! The Scatter Search algorithm is a population-based optimization algorithm
+//! that uses a reference set of solutions to generate new candidate solutions.
+//!
+//! The algorithm is divided into three main steps:
+//!  1. Initialization of the reference set
+//!  2. Diversification of the reference set
+//!  3. Generation of trial points and evaluation
 
 use crate::problem::Problem;
 use crate::types::OQNLPParams;

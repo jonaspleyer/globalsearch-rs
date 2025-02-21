@@ -1,6 +1,16 @@
 //! # Local Solver Runner module
 //!
 //! This module contains the implementation of the local solver runner, which is used to solve optimization problems locally.
+//!
+//! The local solver runner uses the `argmin` crate to run the local solvers.
+//!
+//! ## Local Solvers
+//!
+//! The local solvers currently supported are:
+//!  - L-BFGS: Requires gradient and linesearch
+//!  - Nelder-Mead: Only requires the objective function
+//!  - Steepest Descent: Requires gradient and linesearch
+//!  - Trust Region: Requires gradient and hessian
 
 use crate::local_solver::builders::{LineSearchMethod, LocalSolverConfig, TrustRegionRadiusMethod};
 use crate::problem::Problem;
@@ -40,9 +50,16 @@ pub enum LocalSolverError {
     NoSolution,
 }
 
-/// Local solver struct
+/// # Local solver struct
 ///
 /// This struct contains the problem to solve and the local solver type and configuration.
+///
+/// It has a `solve` method that uses a match to select the local solver function to use based on the `LocalSolverType` enum.
+/// The `solve` method returns a `LocalSolution` struct.
+///
+/// The `LocalSolver` struct is generic over the `Problem` trait.
+/// It has a problem field of type `P` and a local solver type field of type `LocalSolverType`.
+/// It also has a local solver configuration field of type `LocalSolverConfig` to configure the local solver.
 pub struct LocalSolver<P: Problem> {
     problem: P,
     local_solver_type: LocalSolverType,

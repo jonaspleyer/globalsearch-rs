@@ -1,6 +1,77 @@
 //! # OQNLP module
 //!
 //! The OQNLP (OptQuest/NLP) algorithm is a global optimization algorithm that combines scatter search with local optimization methods.
+//!
+//! ## Example
+//! ```rust
+//! // Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 27-28. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
+//! use globalsearch::local_solver::builders::{TrustRegionBuilder, TrustRegionRadiusMethod};
+//! use globalsearch::problem::Problem;
+//! use globalsearch::{
+//!     oqnlp::OQNLP,
+//!     types::{EvaluationError, LocalSolverType, OQNLPParams, SolutionSet},
+//! };
+//! use ndarray::{array, Array1, Array2};
+//!
+//! #[derive(Debug, Clone)]
+//! pub struct SixHumpCamel;
+//!
+//! impl Problem for SixHumpCamel {
+//!    fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+//!       Ok(
+//!          (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+//!            + x[0] * x[1]
+//!            + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
+//!          )
+//!     }
+//!
+//!     // Calculated analytically, reference didn't provide gradient
+//!     fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+//!         Ok(array![
+//!             (8.0 - 8.4 * x[0].powi(2) + 2.0 * x[0].powi(4)) * x[0] + x[1],
+//!             x[0] + (-8.0 + 16.0 * x[1].powi(2)) * x[1]
+//!         ])
+//!     }
+//!
+//!     // Calculated analytically, reference didn't provide hessian
+//!     fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError> {
+//!         Ok(array![
+//!             [(4.0 * x[0].powi(2) - 4.2) * x[0].powi(2)
+//!                 + 4.0 * (4.0 / 3.0 * x[0].powi(3) - 4.2 * x[0]) * x[0]
+//!                 + 2.0 * (x[0].powi(4) / 3.0 - 2.1 * x[0].powi(2) + 4.0),
+//!             1.0],
+//!             [1.0, 40.0 * x[1].powi(2) + 2.0 * (4.0 * x[1].powi(2) - 4.0)]])
+//!     }
+//!
+//!     fn variable_bounds(&self) -> Array2<f64> {
+//!         array![[-3.0, 3.0], [-2.0, 2.0]]
+//!     }
+//! }
+//!
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Solving the Six-Hump Camel problem using globalsearch-rs
+//!     // using the Trust Region method as a local solver
+//!     let problem: SixHumpCamel = SixHumpCamel;
+//!
+//!     // Set the parameters for the OQNLP algorithm
+//!     // It is recommended that you adjust these parameters to your problem
+//!     // and the desired behavior of the algorithm, instead of using the default values.
+//!     let params: OQNLPParams = OQNLPParams {
+//!         LocalSolverType::TrustRegion,
+//!         local_solver_config: TrustRegionBuilder::default()
+//!             .method(TrustRegionRadiusMethod::Steihaug)
+//!             .build(),
+//!             ..OQNLPParams::Default(),
+//!     };
+//!
+//!     let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params).unwrap();
+//!     let sol_set: SolutionSet = oqnlp.run().unwrap();
+//!     println!("Solution set:");
+//!     println!("{}", sol_set);
+//!     Ok(())
+//!
+//! }
+//! ```
 
 use crate::filters::{DistanceFilter, MeritFilter};
 use crate::local_solver::runner::LocalSolver;
@@ -21,8 +92,8 @@ use thiserror::Error;
 // -> UnconstrainedOQNLP
 // -> ConstrainedOQNLP
 
-/// Error to be thrown if an issue occurs during the OQNLP optimization process
 #[derive(Debug, Error)]
+/// ONQLP errors
 pub enum OQNLPError {
     /// Error when the local solver fails to find a solution
     #[error("OQNLP Error: Local solver failed to find a solution. {0}")]
@@ -62,10 +133,27 @@ pub enum OQNLPError {
     DistanceFilterError(String),
 }
 
-/// The main struct for the OQNLP algorithm.
+/// # The main struct for the OQNLP algorithm.
 ///
 /// This struct contains the optimization problem, algorithm parameters, filtering mechanisms,
 /// and local solver, managing the optimization process.
+///
+/// The OQNLP algorithm is a global optimization algorithm that combines scatter search with local optimization methods.
+///
+/// The struct contains the following fields:
+/// - `problem`: The optimization problem to be solved.
+/// - `params`: Parameters controlling the behavior of the OQNLP algorithm.
+/// - `merit_filter`: The merit filter used to maintain a threshold for the objective function.
+/// - `distance_filter`: The distance filter used to maintain diversity among solutions.
+/// - `local_solver`: The local solver responsible for refining solutions.
+/// - `solution_set`: The set of best solutions found during the optimization process.
+/// - `max_time`: Max time for the stage 2 of the OQNLP algorithm.
+/// - `verbose`: Verbose flag to enable additional output during the optimization process.
+///
+/// It also contains methods to run the optimization process and adjust the threshold for the merit and distance filters.
+///
+/// The new method creates a new OQNLP instance with the given optimization problem and parameters,
+/// while the run method executes the optimization process and returns the solution set.
 pub struct OQNLP<P: Problem + Clone> {
     /// The optimization problem to be solved.
     ///
