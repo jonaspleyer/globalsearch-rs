@@ -32,7 +32,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-globalsearch = "0.1.0"
+globalsearch = "0.2.0"
 ```
 
 Or use `cargo add globalsearch` in your project directory.
@@ -58,45 +58,45 @@ Or use `cargo add globalsearch` in your project directory.
 1. Define a problem by implementing the `Problem` trait.
 
    ```rust
-    use ndarray::{array, Array1, Array2};
-    use globalsearch::problem::Problem;
-    use globalsearch::types::EvaluationError;
+   use ndarray::{array, Array1, Array2};
+   use globalsearch::problem::Problem;
+   use globalsearch::types::EvaluationError;
 
-    pub struct MinimizeProblem;
-    impl Problem for MinimizeProblem {
-        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
-            Ok(
-                ..., // Your objective function here
-            )
-        }
+   pub struct MinimizeProblem;
+   impl Problem for MinimizeProblem {
+       fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+           Ok(
+               ..., // Your objective function here
+           )
+       }
 
-        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
-            Ok(array![
-                ..., // Optional: Gradient of your objective function here
-            ])
-        }
+       fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+           Ok(array![
+               ..., // Optional: Gradient of your objective function here
+           ])
+       }
 
-        fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError> {
-            Ok(array![
-                ..., // Optional: Hessian of your objective function here
-            ])
-        }
+       fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError> {
+           Ok(array![
+               ..., // Optional: Hessian of your objective function here
+           ])
+       }
 
-        fn variable_bounds(&self) -> Array2<f64> {
-            array![[..., ...], [..., ...]] // Lower and upper bounds for each variable
-        }
+       fn variable_bounds(&self) -> Array2<f64> {
+           array![[..., ...], [..., ...]] // Lower and upper bounds for each variable
+       }
    }
    ```
 
    Where the `Problem` trait is defined as:
 
    ```rust
-    pub trait Problem {
-        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError>;
-        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError>;
-        fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError>;
-        fn variable_bounds(&self) -> Array2<f64>;
-    }
+   pub trait Problem {
+       fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError>;
+       fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError>;
+       fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError>;
+       fn variable_bounds(&self) -> Array2<f64>;
+   }
    ```
 
    Depending on your choice of local solver, you might need to implement the `gradient` and `hessian` methods. Learn more about the local solver configuration in the [argmin docs](https://docs.rs/argmin/latest/argmin/solver/index.html) or the [`LocalSolverType`](https://docs.rs/globalsearch/latest/globalsearch/types/enum.LocalSolverType.html).
@@ -106,45 +106,45 @@ Or use `cargo add globalsearch` in your project directory.
 2. Set OQNLP parameters
 
    ```rust
-    use globalsearch::types::{LocalSolverType, OQNLPParams};
-    use globalsearch::local_solver::builders::SteepestDescentBuilder;
+   use globalsearch::types::{LocalSolverType, OQNLPParams};
+   use globalsearch::local_solver::builders::SteepestDescentBuilder;
 
-    let params: OQNLPParams = OQNLPParams {
-        iterations: 125,
-        wait_cycle: 10,
-        threshold_factor: 0.2,
-        distance_factor: 0.75,
-        population_size: 250,
-        local_solver_type: LocalSolverType::SteepestDescent,
-        local_solver_config: SteepestDescentBuilder::default().build(),
-        seed: 0,
-    };
+   let params: OQNLPParams = OQNLPParams {
+       iterations: 125,
+       wait_cycle: 10,
+       threshold_factor: 0.2,
+       distance_factor: 0.75,
+       population_size: 250,
+       local_solver_type: LocalSolverType::SteepestDescent,
+       local_solver_config: SteepestDescentBuilder::default().build(),
+       seed: 0,
+   };
    ```
 
    Where `OQNLPParams` is defined as:
 
    ```rust
-    pub struct OQNLPParams {
-        pub iterations: usize,
-        pub wait_cycle: usize,
-        pub threshold_factor: f64,
-        pub distance_factor: f64,
-        pub population_size: usize,
-        pub local_solver_type: LocalSolverType,
-        pub local_solver_config: LocalSolverConfig,
-        pub seed: u64,
-    }
+   pub struct OQNLPParams {
+       pub iterations: usize,
+       pub wait_cycle: usize,
+       pub threshold_factor: f64,
+       pub distance_factor: f64,
+       pub population_size: usize,
+       pub local_solver_type: LocalSolverType,
+       pub local_solver_config: LocalSolverConfig,
+       pub seed: u64,
+   }
    ```
 
    And `LocalSolverType` is defined as:
 
    ```rust
-    pub enum LocalSolverType {
-        LBFGS,
-        NelderMead,
-        SteepestDescent,
-        TrustRegion,
-    }
+   pub enum LocalSolverType {
+       LBFGS,
+       NelderMead,
+       SteepestDescent,
+       TrustRegion,
+   }
    ```
 
    You can also modify the local solver configuration for each type of local solver. See [`builders.rs`](https://github.com/GermanHeim/globalsearch-rs/tree/main/src/local_solver/builders.rs) for more details.
