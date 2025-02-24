@@ -20,10 +20,12 @@ ndarray = "0.15.6"
 rayon = { version = "1.5.3", optional = true }
 thiserror = "2.0.11"
 rand = "0.9.0"
+kdam = { version = "0.6.2", optional = true }
 
 [features]
 default = []
 rayon = ["dep:rayon"]
+progress_bar = ["dep:kdam"]
 
 [dev-dependencies]
 criterion = { git = "https://github.com/bheisler/criterion.rs", features = [

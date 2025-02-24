@@ -78,6 +78,8 @@ use crate::local_solver::runner::LocalSolver;
 use crate::problem::Problem;
 use crate::scatter_search::ScatterSearch;
 use crate::types::{FilterParams, LocalSolution, OQNLPParams, SolutionSet};
+#[cfg(feature = "progress_bar")]
+use kdam::{Bar, BarExt};
 use ndarray::Array1;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -278,6 +280,18 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             println!("Starting Stage 2");
         }
 
+        #[cfg(feature = "progress_bar")]
+        let mut stage2_bar = Bar::builder()
+            .total(self.params.iterations)
+            .desc("Stage 2")
+            .unit("it")
+            .postfix(&format!(
+                "Objective function: {:.6}",
+                local_sol.objective.clone()
+            ))
+            .build()
+            .expect("Failed to create progress bar");
+
         self.process_local_solution(local_sol)?;
 
         // Stage 2: Main iterative loop
@@ -290,6 +304,9 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             self.max_time.map(|_| std::time::Instant::now());
 
         for (iter, trial) in ref_set.iter().take(self.params.iterations).enumerate() {
+            #[cfg(feature = "progress_bar")]
+            stage2_bar.update(1).expect("Failed to update progress bar");
+
             if let (Some(max_secs), Some(start)) = (self.max_time, start_timer) {
                 if start.elapsed().as_secs_f64() > max_secs {
                     if self.verbose {
@@ -318,6 +335,15 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                         iter, local_trial.objective
                     );
                     println!("x0 = {}", local_trial.point);
+                }
+
+                #[cfg(feature = "progress_bar")]
+                if added {
+                    stage2_bar
+                        .set_postfix(&format!("Objective function: {:.6}", local_trial.objective));
+                    stage2_bar
+                        .refresh()
+                        .expect("Failed to refresh progress bar");
                 }
             } else {
                 unchanged_cycles += 1;
@@ -384,6 +410,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             self.solution_set = Some(SolutionSet {
                 solutions: Array1::from(new_solutions),
             });
+
             true
         } else {
             false
@@ -726,5 +753,37 @@ mod tests_oqnlp {
 
         let oqnlp = OQNLP::new(problem, params);
         assert!(matches!(oqnlp, Err(OQNLPError::InvalidPopulationSize(1))));
+    }
+
+    #[test]
+    #[cfg(feature = "progress_bar")]
+    /// Test the progress bar functionality
+    fn test_progress_bar() {
+        use kdam::term;
+        use std::io::{stderr, IsTerminal};
+
+        // Initialize terminal
+        term::init(stderr().is_terminal());
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 5,       // Small number for testing
+            population_size: 10, // Must be >= iterations
+            ..Default::default()
+        };
+
+        let mut oqnlp = OQNLP::new(problem, params).unwrap().verbose();
+
+        // Run OQNLP with progress bar
+        let result = oqnlp.run();
+
+        assert!(
+            result.is_ok(),
+            "OQNLP should run successfully with progress bar"
+        );
+
+        // Verify that a solution was found
+        let sol_set = result.unwrap();
+        assert!(sol_set.len() > 0, "Should find at least one solution");
     }
 }

@@ -198,6 +198,7 @@ src/
 - [argmin](https://github.com/argmin-rs/argmin)
 - [ndarray](https://github.com/rust-ndarray/ndarray)
 - [rayon](https://github.com/rayon-rs/rayon) [feature: `rayon`]
+- [kdam](https://github.com/clitic/kdam) [feature: `progress_bar`]
 - [rand](https://github.com/rust-random/rand)
 - [thiserror](https://github.com/dtolnay/thiserror)
 - [criterion.rs](https://github.com/bheisler/criterion.rs) [dev-dependency]
