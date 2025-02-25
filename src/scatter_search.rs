@@ -66,7 +66,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         };
 
         let seed: u64 = params.seed;
-        let mut ss: ScatterSearch<P> = Self {
+        let ss: ScatterSearch<P> = Self {
             problem,
             params,
             reference_set: Vec::new(),
@@ -74,14 +74,14 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             rng: Mutex::new(StdRng::seed_from_u64(seed)),
         };
 
-        ss.initialize_reference_set()?;
         Ok(ss)
     }
 
     /// Run the Scatter Search algorithm
     ///
     /// Returns the reference set and the best solution found
-    pub fn run(self) -> Result<(Vec<Array1<f64>>, Array1<f64>), ScatterSearchError> {
+    pub fn run(mut self) -> Result<(Vec<Array1<f64>>, Array1<f64>), ScatterSearchError> {
+        self.initialize_reference_set()?;
         let best = self.best_solution()?;
         Ok((self.reference_set, best))
     }
@@ -419,7 +419,8 @@ mod tests_scatter_search {
         };
 
         let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
-        assert_eq!(ss.reference_set.len(), 100);
+        let (ref_set, _) = ss.run().unwrap();
+        assert_eq!(ref_set.len(), 100);
     }
 
     #[test]
@@ -439,8 +440,10 @@ mod tests_scatter_search {
         };
 
         let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
-        let bounds: VariableBounds = ss.bounds;
-        let ref_set = ss.reference_set;
+        let bounds: VariableBounds = ss.bounds.clone();
+        let (ref_set, _) = ss.run().unwrap();
+
+        assert_eq!(ref_set.len(), 100);
 
         for point in ref_set {
             for i in 0..point.len() {
@@ -470,8 +473,11 @@ mod tests_scatter_search {
             ScatterSearch::new(problem.clone(), params.clone()).unwrap();
         let ss2: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
 
-        let ref_set1 = ss1.reference_set;
-        let ref_set2 = ss2.reference_set;
+        let (ref_set1, _) = ss1.run().unwrap();
+        let (ref_set2, _) = ss2.run().unwrap();
+
+        assert_eq!(ref_set1.len(), 100);
+        assert_eq!(ref_set1.len(), ref_set2.len());
 
         for i in 0..ref_set1.len() {
             assert_eq!(ref_set1[i], ref_set2[i]);
