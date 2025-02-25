@@ -21,6 +21,9 @@ use thiserror::Error;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
+#[cfg(feature = "progress_bar")]
+use kdam::{Bar, BarExt};
+
 /// Struct to hold the bounds of the variables
 #[derive(Debug, Clone)]
 pub struct VariableBounds {
@@ -47,6 +50,8 @@ pub struct ScatterSearch<P: Problem> {
     reference_set: Vec<Array1<f64>>,
     bounds: VariableBounds,
     rng: Mutex<StdRng>,
+    #[cfg(feature = "progress_bar")]
+    progress_bar: Option<Bar>,
 }
 
 impl<P: Problem + Sync + Send> ScatterSearch<P> {
@@ -72,6 +77,8 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             reference_set: Vec::new(),
             bounds,
             rng: Mutex::new(StdRng::seed_from_u64(seed)),
+            #[cfg(feature = "progress_bar")]
+            progress_bar: None,
         };
 
         Ok(ss)
@@ -81,8 +88,26 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     ///
     /// Returns the reference set and the best solution found
     pub fn run(mut self) -> Result<(Vec<Array1<f64>>, Array1<f64>), ScatterSearchError> {
+        #[cfg(feature = "progress_bar")]
+        {
+            self.progress_bar = Some(
+                Bar::builder()
+                    .total(3)
+                    .desc("Stage 1")
+                    .unit("steps")
+                    .build()
+                    .expect("Failed to create progress bar"),
+            );
+        }
+
         self.initialize_reference_set()?;
         let best = self.best_solution()?;
+
+        #[cfg(feature = "progress_bar")]
+        if let Some(pb) = &mut self.progress_bar {
+            pb.set_description("Stage 1, found best solution");
+            pb.update(1).expect("Failed to update progress bar");
+        }
         Ok((self.reference_set, best))
     }
 
@@ -93,8 +118,20 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         ref_set.push(self.bounds.upper.to_owned());
         ref_set.push((&self.bounds.lower + &self.bounds.upper) / 2.0);
 
+        #[cfg(feature = "progress_bar")]
+        if let Some(pb) = &mut self.progress_bar {
+            pb.set_description("Stage 1, initialized reference set");
+            pb.update(1).expect("Failed to update progress bar");
+        }
+
         self.diversify_reference_set(&mut ref_set)?;
         self.reference_set = ref_set;
+
+        #[cfg(feature = "progress_bar")]
+        if let Some(pb) = &mut self.progress_bar {
+            pb.set_description("Stage 1, diversified reference set");
+            pb.update(1).expect("Failed to update progress bar");
+        }
         Ok(())
     }
 
