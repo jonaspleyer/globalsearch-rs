@@ -135,6 +135,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         Ok(())
     }
 
+    /// Diversify the reference set by adding new points to it
     pub fn diversify_reference_set(
         &mut self,
         ref_set: &mut Vec<Array1<f64>>,
@@ -175,7 +176,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
             updater_iter.for_each(|(c, current_min)| {
                 if let Some(last) = ref_set.last() {
-                    let dist: f64 = euclidean_distance(c, last);
+                    let dist: f64 = euclidean_distance_squared(c, last);
                     if dist < *current_min {
                         *current_min = dist;
                     }
@@ -188,6 +189,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         Ok(())
     }
 
+    /// Generate stratified samples within the bounds
     pub fn generate_stratified_samples(
         &self,
         n: usize,
@@ -225,19 +227,20 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         Ok(samples)
     }
 
+    /// Compute the minimum distance between a point and a reference set
     pub fn min_distance(&self, point: &Array1<f64>, ref_set: &[Array1<f64>]) -> f64 {
         #[cfg(feature = "rayon")]
         {
             ref_set
                 .par_iter()
-                .map(|p| euclidean_distance(point, p))
+                .map(|p| euclidean_distance_squared(point, p))
                 .reduce(|| f64::INFINITY, f64::min)
         }
         #[cfg(not(feature = "rayon"))]
         {
             ref_set
                 .iter()
-                .map(|p| euclidean_distance(point, p))
+                .map(|p| euclidean_distance_squared(point, p))
                 .fold(f64::INFINITY, f64::min)
         }
     }
@@ -399,13 +402,28 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     }
 }
 
-fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
+/// Compute the squared Euclidean distance between two points
+///
+/// Use this function for performance since we don't use the square root
+fn euclidean_distance_squared(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
     a.iter()
         .zip(b.iter())
         .map(|(x, y)| (x - y).powi(2))
         .sum::<f64>()
-        .sqrt()
 }
+
+// The following code allows to compute the Euclidean distance between two points
+// but it is not used in the current implementation
+// Could there be some cases where we need to compute the Euclidean distance?
+// due to overflow or numerical stability?
+//
+// /// Compute the Euclidean distance between two points.
+// ///
+// /// Use euclidean_distance_squared when only comparing distances for better performance
+// /// given that if a < b, then a² < b²
+// fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
+//     euclidean_distance_squared(a, b).sqrt()
+// }
 
 #[cfg(test)]
 mod tests_scatter_search {
@@ -519,5 +537,14 @@ mod tests_scatter_search {
         for i in 0..ref_set1.len() {
             assert_eq!(ref_set1[i], ref_set2[i]);
         }
+    }
+
+    #[test]
+    /// Test euclidean distance squared
+    fn test_euclidean_distance_squared() {
+        let a: Array1<f64> = array![1.0, 2.0];
+        let b: Array1<f64> = array![3.0, 4.0];
+        let dist: f64 = euclidean_distance_squared(&a, &b);
+        assert_eq!(dist, 8.0);
     }
 }
