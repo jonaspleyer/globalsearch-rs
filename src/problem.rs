@@ -13,21 +13,41 @@
 //! use ndarray::{array, Array1, Array2};
 //!
 //! #[derive(Debug, Clone)]
-//! pub struct OneDGriewank;
+//! pub struct SixHumpCamel;
 //!
-//! impl Problem for OneDGriewank {
-//!    fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
-//!       Ok(1.0 + x[0].powi(2) / 4000.0 - x[0].cos())
-//!    }
+//! impl Problem for SixHumpCamel {
+//!     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+//!        Ok(
+//!              (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+//!                  + x[0] * x[1]
+//!                  + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
+//!          )
+//!     }
 //!
-//!    // Calculated analytically, reference didn't provide gradient
-//!    fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
-//!        Ok(array![x[0] / 2000.0 + x[0].sin()])
-//!    }
+//!     // Calculated analytically, reference didn't provide gradient
+//!     fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+//!         Ok(array![
+//!              (8.0 - 8.4 * x[0].powi(2) + 2.0 * x[0].powi(4)) * x[0] + x[1],
+//!              x[0] + (-8.0 + 16.0 * x[1].powi(2)) * x[1]
+//!         ])
+//!     }
 //!
-//!    fn variable_bounds(&self) -> Array2<f64> {
-//!        array![[-600.0, 600.0]]
-//!    }
+//!     // Calculated analytically, reference didn't provide hessian
+//!     fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError> {
+//!         Ok(array![
+//!             [
+//!                 (4.0 * x[0].powi(2) - 4.2) * x[0].powi(2)
+//!                     + 4.0 * (4.0 / 3.0 * x[0].powi(3) - 4.2 * x[0]) * x[0]
+//!                     + 2.0 * (x[0].powi(4) / 3.0 - 2.1 * x[0].powi(2) + 4.0),
+//!                 1.0
+//!             ],
+//!             [1.0, 40.0 * x[1].powi(2) + 2.0 * (4.0 * x[1].powi(2) - 4.0)],
+//!         ])
+//!     }
+//!
+//!     fn variable_bounds(&self) -> Array2<f64> {
+//!         array![[-3.0, 3.0], [-2.0, 2.0]]
+//!     }
 //! }
 //! ```
 
