@@ -428,9 +428,8 @@ fn euclidean_distance_squared(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 #[cfg(test)]
 mod tests_scatter_search {
     use super::*;
-    use crate::local_solver::builders::SteepestDescentBuilder;
+    use crate::types::EvaluationError;
     use crate::types::OQNLPParams;
-    use crate::types::{EvaluationError, LocalSolverType};
     use ndarray::{array, Array2};
 
     #[derive(Debug, Clone)]
@@ -443,14 +442,6 @@ mod tests_scatter_search {
                     + x[0] * x[1]
                     + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
             )
-        }
-
-        // Calculated analytically, reference didn't provide gradient
-        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
-            Ok(array![
-                (8.0 - 8.4 * x[0].powi(2) + 2.0 * x[0].powi(4)) * x[0] + x[1],
-                x[0] + (-8.0 + 16.0 * x[1].powi(2)) * x[1]
-            ])
         }
 
         fn variable_bounds(&self) -> Array2<f64> {
@@ -468,9 +459,8 @@ mod tests_scatter_search {
             threshold_factor: 0.2,
             distance_factor: 0.75,
             population_size: 100,
-            local_solver_type: LocalSolverType::SteepestDescent,
-            local_solver_config: SteepestDescentBuilder::default().build(),
             seed: 0,
+            ..OQNLPParams::default()
         };
 
         let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
@@ -489,9 +479,8 @@ mod tests_scatter_search {
             threshold_factor: 0.2,
             distance_factor: 0.75,
             population_size: 100,
-            local_solver_type: LocalSolverType::SteepestDescent,
-            local_solver_config: SteepestDescentBuilder::default().build(),
             seed: 0,
+            ..OQNLPParams::default()
         };
 
         let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
@@ -519,9 +508,8 @@ mod tests_scatter_search {
             threshold_factor: 0.2,
             distance_factor: 0.75,
             population_size: 100,
-            local_solver_type: LocalSolverType::SteepestDescent,
-            local_solver_config: SteepestDescentBuilder::default().build(),
             seed: 0,
+            ..OQNLPParams::default()
         };
 
         let ss1: ScatterSearch<SixHumpCamel> =
@@ -540,11 +528,209 @@ mod tests_scatter_search {
     }
 
     #[test]
+    /// Test generating trial points for a `ScatterSearch` instance
+    fn test_generate_trial_points() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 1,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 10,
+            seed: 0,
+            ..OQNLPParams::default()
+        };
+
+        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        ss.initialize_reference_set().unwrap();
+
+        let trial_points: Vec<Array1<f64>> = ss.generate_trial_points().unwrap();
+
+        // With 10 points in the reference set, we should have C(10, 2) = 45 combinations
+        // Each combination produces 6 trial points (4 linear combinations + 2 random)
+        // So the reference set has 45 * 6 = 270 trial points
+        assert_eq!(trial_points.len(), 45 * 6);
+    }
+
+    #[test]
+    /// Test combining two points into trial points
+    fn test_combine_points() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 1,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 10,
+            seed: 0,
+            ..OQNLPParams::default()
+        };
+
+        let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let a: Array1<f64> = array![1.0, 1.0];
+        let b: Array1<f64> = array![2.0, 2.0];
+
+        let trial_points: Vec<Array1<f64>> = ss.combine_points(&a, &b, 0).unwrap();
+
+        // 4 linear combinations and 2 random perturbations
+        assert_eq!(trial_points.len(), 6);
+    }
+
+    #[test]
+    /// Test storing trials in the reference set
+    fn test_store_trials() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 1,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 4,
+            seed: 0,
+            ..OQNLPParams::default()
+        };
+
+        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+
+        // Initially empty reference set (not initialized)
+        assert_eq!(ss.reference_set.len(), 0);
+
+        let trial: Array1<f64> = array![1.0, 1.0];
+        ss.store_trial(trial.clone());
+
+        // Verify trial was stored
+        assert_eq!(ss.reference_set.len(), 1);
+        assert_eq!(ss.reference_set[0], trial);
+    }
+
+    #[test]
+    /// Test updating the reference set with new trials
+    fn test_update_reference_set() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 1,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 4,
+            seed: 0,
+            ..OQNLPParams::default()
+        };
+
+        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        ss.initialize_reference_set().unwrap();
+
+        let trials: Vec<Array1<f64>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
+        ss.update_reference_set(trials).unwrap();
+
+        assert_eq!(ss.reference_set.len(), 4);
+    }
+
+    #[test]
+    /// Test computing the minimum distance between a point and a reference set
+    fn test_min_distance() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 1,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 4,
+            seed: 0,
+            ..OQNLPParams::default()
+        };
+
+        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        ss.initialize_reference_set().unwrap();
+
+        let point: Array1<f64> = array![-3.0, -2.0];
+        let min_dist: f64 = ss.min_distance(&point, &ss.reference_set);
+
+        // The minimum distance should be 0 since the point is in the reference set
+        assert_eq!(min_dist, 0.0);
+    }
+
+    #[test]
     /// Test euclidean distance squared
     fn test_euclidean_distance_squared() {
         let a: Array1<f64> = array![1.0, 2.0];
         let b: Array1<f64> = array![3.0, 4.0];
         let dist: f64 = euclidean_distance_squared(&a, &b);
         assert_eq!(dist, 8.0);
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    /// Test generating trial points using rayon
+    fn test_generate_trial_points_rayon() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 1,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 10,
+            seed: 0,
+            ..OQNLPParams::default()
+        };
+
+        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        ss.initialize_reference_set().unwrap();
+
+        let trial_points: Vec<Array1<f64>> = ss.generate_trial_points().unwrap();
+
+        // With 10 points in the reference set, we should have C(10, 2) = 45 combinations
+        // Each combination produces 6 trial points (4 linear combinations + 2 random)
+        // So the reference set has 45 * 6 = 270 trial points
+        assert_eq!(trial_points.len(), 45 * 6);
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    /// Test updating the reference set using rayon
+    fn test_update_reference_set_rayon() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 1,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 4,
+            seed: 0,
+            ..OQNLPParams::default()
+        };
+
+        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        ss.initialize_reference_set().unwrap();
+
+        let trials: Vec<Array1<f64>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
+        ss.update_reference_set(trials).unwrap();
+
+        assert_eq!(ss.reference_set.len(), 4);
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    /// Test computing the minimum distance between a point and a reference set using rayon
+    fn test_min_distance_rayon() {
+        let problem: SixHumpCamel = SixHumpCamel;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 1,
+            wait_cycle: 30,
+            threshold_factor: 0.2,
+            distance_factor: 0.75,
+            population_size: 4,
+            seed: 0,
+            ..OQNLPParams::default()
+        };
+
+        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        ss.initialize_reference_set().unwrap();
+
+        let point: Array1<f64> = array![-3.0, -2.0];
+        let min_dist: f64 = ss.min_distance(&point, &ss.reference_set);
+
+        // The minimum distance should be 0 since the point is in the reference set
+        assert_eq!(min_dist, 0.0);
     }
 }
