@@ -19,8 +19,9 @@ use thiserror::Error;
 /// Parameters for the OQNLP algorithm
 ///
 /// These parameters control the behavior of the optimization process,
-/// including the total number of iterations, the number of iterations for stage 1,
-/// the wait cycle, threshold factor, distance factor, and population size.
+/// including the total number of iterations, the population size
+/// the wait cycle, threshold factor, distance factor, local solver type
+/// and settings and the seed.
 pub struct OQNLPParams {
     /// Total number of iterations for the optimization process
     pub iterations: usize,
@@ -203,6 +204,11 @@ pub enum LocalSolverType {
     ///
     /// Requires `CostFunction`, `Gradient` and `Hessian`
     TrustRegion,
+
+    /// Newton-Conjugate-Gradient method local solver
+    ///
+    /// Requires `CostFunction`, `Gradient` and `Hessian`
+    NewtonCG,
 }
 
 #[derive(Debug, Error)]

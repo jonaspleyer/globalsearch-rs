@@ -20,6 +20,7 @@ use argmin::solver::{
     gradientdescent::SteepestDescent,
     linesearch::{HagerZhangLineSearch, MoreThuenteLineSearch},
     neldermead::NelderMead,
+    newton::NewtonCG,
     quasinewton::LBFGS,
     trustregion::{CauchyPoint, Steihaug, TrustRegion},
 };
@@ -42,6 +43,9 @@ pub enum LocalSolverError {
 
     #[error("Local Solver Error: Invalid LocalSolverConfig for Trust Region solver. {0}")]
     InvalidTrustRegionConfig(String),
+
+    #[error("Local Solver Error: Invalid LocalSolverConfig for Newton-CG method solver. {0}")]
+    InvalidNewtonCG(String),
 
     #[error("Local Solver Error: Failed to run local solver. {0}")]
     RunFailed(String),
@@ -93,6 +97,9 @@ impl<P: Problem> LocalSolver<P> {
             }
             LocalSolverType::TrustRegion => {
                 self.solve_trust_region(initial_point, &self.local_solver_config)
+            }
+            LocalSolverType::NewtonCG => {
+                self.solve_newton_cg(initial_point, &self.local_solver_config)
             }
         }
     }
@@ -168,7 +175,7 @@ impl<P: Problem> LocalSolver<P> {
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
                     let res = Executor::new(cost, solver)
-                        .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
+                        .configure(|state| state.param(initial_point).max_iters(*max_iter))
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
@@ -212,7 +219,7 @@ impl<P: Problem> LocalSolver<P> {
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
                     let res = Executor::new(cost, solver)
-                        .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
+                        .configure(|state| state.param(initial_point).max_iters(*max_iter))
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
@@ -376,7 +383,7 @@ impl<P: Problem> LocalSolver<P> {
                     let solver = SteepestDescent::new(linesearch);
 
                     let res = Executor::new(cost, solver)
-                        .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
+                        .configure(|state| state.param(initial_point).max_iters(*max_iter))
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
@@ -428,7 +435,7 @@ impl<P: Problem> LocalSolver<P> {
                     let solver = SteepestDescent::new(linesearch);
 
                     let res = Executor::new(cost, solver)
-                        .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
+                        .configure(|state| state.param(initial_point).max_iters(*max_iter))
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
@@ -522,7 +529,7 @@ impl<P: Problem> LocalSolver<P> {
                             LocalSolverError::InvalidTrustRegionConfig(e.to_string())
                         })?;
                     let res = Executor::new(cost, solver)
-                        .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
+                        .configure(|state| state.param(initial_point).max_iters(*max_iter))
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
@@ -552,7 +559,7 @@ impl<P: Problem> LocalSolver<P> {
                             LocalSolverError::InvalidTrustRegionConfig(e.to_string())
                         })?;
                     let res = Executor::new(cost, solver)
-                        .configure(|state| state.param(initial_point.clone()).max_iters(*max_iter))
+                        .configure(|state| state.param(initial_point).max_iters(*max_iter))
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
@@ -569,6 +576,160 @@ impl<P: Problem> LocalSolver<P> {
             }
         } else {
             Err(LocalSolverError::InvalidTrustRegionConfig(
+                "Error parsing solver configuration".to_string(),
+            ))
+        }
+    }
+
+    fn solve_newton_cg(
+        &self,
+        initial_point: Array1<f64>,
+        solver_config: &LocalSolverConfig,
+    ) -> Result<LocalSolution, LocalSolverError> {
+        struct ProblemCost<'a, P: Problem> {
+            problem: &'a P,
+        }
+
+        impl<P: Problem> CostFunction for ProblemCost<'_, P> {
+            type Param = Array1<f64>;
+            type Output = f64;
+
+            fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
+                self.problem
+                    .objective(param)
+                    .map_err(|e| Error::msg(e.to_string()))
+            }
+        }
+
+        impl<P: Problem> Gradient for ProblemCost<'_, P> {
+            type Param = Array1<f64>;
+            type Gradient = Array1<f64>;
+
+            fn gradient(&self, param: &Self::Param) -> std::result::Result<Self::Gradient, Error> {
+                self.problem
+                    .gradient(param)
+                    .map_err(|e| Error::msg(e.to_string()))
+            }
+        }
+
+        impl<P: Problem> Hessian for ProblemCost<'_, P> {
+            type Param = Array1<f64>;
+            type Hessian = Array2<f64>;
+
+            fn hessian(&self, param: &Self::Param) -> std::result::Result<Self::Hessian, Error> {
+                self.problem
+                    .hessian(param)
+                    .map_err(|e| Error::msg(e.to_string()))
+            }
+        }
+
+        let cost = ProblemCost {
+            problem: &self.problem,
+        };
+
+        if let LocalSolverConfig::NewtonCG {
+            max_iter,
+            curvature_threshold,
+            tolerance,
+            line_search_params,
+        } = solver_config
+        {
+            match &line_search_params.method {
+                LineSearchMethod::MoreThuente {
+                    c1,
+                    c2,
+                    width_tolerance,
+                    bounds,
+                } => {
+                    let linesearch = MoreThuenteLineSearch::new()
+                        .with_c(*c1, *c2)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
+                        .with_bounds(bounds[0], bounds[1])
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
+                        .with_width_tolerance(*width_tolerance)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?;
+
+                    let solver = NewtonCG::new(linesearch)
+                        .with_curvature_threshold(*curvature_threshold)
+                        .with_tolerance(*tolerance)
+                        .map_err(|e: Error| LocalSolverError::InvalidNewtonCG(e.to_string()))?;
+
+                    let res = Executor::new(cost, solver)
+                        .configure(|state| state.param(initial_point).max_iters(*max_iter))
+                        .run()
+                        .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
+
+                    Ok(LocalSolution {
+                        point: res
+                            .state()
+                            .best_param
+                            .as_ref()
+                            .ok_or(LocalSolverError::NoSolution)?
+                            .clone(),
+                        objective: res.state().best_cost,
+                    })
+                }
+                LineSearchMethod::HagerZhang {
+                    delta,
+                    sigma,
+                    epsilon,
+                    theta,
+                    gamma,
+                    eta,
+                    bounds,
+                } => {
+                    let linesearch = HagerZhangLineSearch::new()
+                        .with_delta_sigma(*delta, *sigma)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
+                        .with_epsilon(*epsilon)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
+                        .with_theta(*theta)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
+                        .with_gamma(*gamma)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
+                        .with_eta(*eta)
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?
+                        .with_bounds(bounds[0], bounds[1])
+                        .map_err(|e: Error| {
+                            LocalSolverError::InvalidSteepestDescentConfig(e.to_string())
+                        })?;
+
+                    let solver = NewtonCG::new(linesearch);
+
+                    let res = Executor::new(cost, solver)
+                        .configure(|state| state.param(initial_point).max_iters(*max_iter))
+                        .run()
+                        .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
+
+                    Ok(LocalSolution {
+                        point: res
+                            .state()
+                            .best_param
+                            .as_ref()
+                            .ok_or(LocalSolverError::NoSolution)?
+                            .clone(),
+                        objective: res.state().best_cost,
+                    })
+                }
+            }
+        } else {
+            Err(LocalSolverError::InvalidNewtonCG(
                 "Error parsing solver configuration".to_string(),
             ))
         }

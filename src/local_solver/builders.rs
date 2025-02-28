@@ -26,7 +26,7 @@ use ndarray::{array, Array1};
 /// Trust Region Radius Method
 ///
 /// This enum defines the types of trust region radius methods that can be
-/// used in the Trust Region local solver, including Cauchy, and Steihaug.
+/// used in the Trust Region local solver, including Cauchy and Steihaug.
 pub enum TrustRegionRadiusMethod {
     Cauchy,
     Steihaug,
@@ -101,6 +101,19 @@ pub enum LocalSolverConfig {
         // ndarray. If more methods use ArgminInv then it would be a good idea to switch to using linalg
         // and implement it
     },
+    NewtonCG {
+        /// Maximum number of iterations for the Newton local solver
+        max_iter: u64,
+        /// Curvature threshold
+        ///
+        /// The curvature threshold for the Newton-CG method. If the curvature is below this threshold,
+        /// the step is considered to be a Newton step. The default value is 0.0.
+        curvature_threshold: f64,
+        /// Tolerance for the Newton-CG method
+        tolerance: f64,
+        /// Line search parameters for the Newton-CG method
+        line_search_params: LineSearchParams,
+    },
 }
 
 impl LocalSolverConfig {
@@ -118,6 +131,10 @@ impl LocalSolverConfig {
 
     pub fn trustregion() -> TrustRegionBuilder {
         TrustRegionBuilder::default()
+    }
+
+    pub fn newton_cg() -> NewtonCGBuilder {
+        NewtonCGBuilder::default()
     }
 }
 
@@ -424,6 +441,75 @@ impl Default for TrustRegionBuilder {
             radius: 1.0,
             max_radius: 100.0,
             eta: 0.125,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+/// Newton-CG builder struct
+///
+/// This struct allows for the configuration of the Newton-CG method local solver.
+pub struct NewtonCGBuilder {
+    max_iter: u64,
+    curvature_threshold: f64,
+    tolerance: f64,
+    line_search_params: LineSearchParams,
+}
+
+/// Newton-CG method Builder
+///
+/// This builder allows for the configuration of the Newton-CG method local solver.
+impl NewtonCGBuilder {
+    /// Build the Newton-CG method local solver configuration
+    pub fn build(self) -> LocalSolverConfig {
+        LocalSolverConfig::NewtonCG {
+            max_iter: self.max_iter,
+            curvature_threshold: self.curvature_threshold,
+            tolerance: self.tolerance,
+            line_search_params: self.line_search_params,
+        }
+    }
+
+    /// Set the maximum number of iterations for the L-BFGS local solver
+    pub fn max_iter(mut self, max_iter: u64) -> Self {
+        self.max_iter = max_iter;
+        self
+    }
+
+    /// Set the curvature threshold
+    pub fn curvature_threshold(mut self, curvature_threshold: f64) -> Self {
+        self.curvature_threshold = curvature_threshold;
+        self
+    }
+
+    /// Set the tolerance
+    pub fn tolerance(mut self, tolerance: f64) -> Self {
+        self.tolerance = tolerance;
+        self
+    }
+
+    /// Set the line search parameters for the Newton-CG method local solver
+    pub fn line_search_params(mut self, line_search_params: LineSearchParams) -> Self {
+        self.line_search_params = line_search_params;
+        self
+    }
+}
+
+/// Default implementation for Newton-CG builder
+///
+/// This implementation sets the default values for Newton-CG builder.
+/// Default values:
+/// - `max_iter`: 300
+/// - `curvature_threshold`: 0.0
+/// - `tolerance`: EPSILON
+/// - `line_search_params`: Default LineSearchParams
+impl Default for NewtonCGBuilder {
+    fn default() -> Self {
+        NewtonCGBuilder {
+            max_iter: 300,
+            curvature_threshold: 0.0,
+            tolerance: f64::EPSILON,
+            line_search_params: LineSearchParams::default(),
         }
     }
 }
@@ -800,6 +886,45 @@ mod tests_builders {
         }
     }
 
+    #[test]
+    /// Test the default values for the Newton-CG builder
+    ///
+    /// The default values are:
+    /// - `max_iter`: 300
+    /// - `curvature_threshold`: 0.0
+    /// - `tolerance`: EPSILON
+    /// - `line_search_params`: Default LineSearchParams
+    fn test_default_newton_cg() {
+        let newtoncg: LocalSolverConfig = NewtonCGBuilder::default().build();
+        match newtoncg {
+            LocalSolverConfig::NewtonCG {
+                max_iter,
+                curvature_threshold,
+                tolerance,
+                line_search_params,
+            } => {
+                assert_eq!(max_iter, 300);
+                assert_eq!(curvature_threshold, 0.0);
+                assert_eq!(tolerance, f64::EPSILON);
+                match line_search_params.method {
+                    LineSearchMethod::MoreThuente {
+                        c1,
+                        c2,
+                        width_tolerance,
+                        bounds,
+                    } => {
+                        assert_eq!(c1, 1e-4);
+                        assert_eq!(c2, 0.9);
+                        assert_eq!(width_tolerance, 1e-10);
+                        assert_eq!(bounds, array![f64::EPSILON.sqrt(), f64::INFINITY]);
+                    }
+                    _ => panic!("Expected MoreThuente line search method"),
+                }
+            }
+            _ => panic!("Expected Newton-CG local solver"),
+        }
+    }
+
     /// Test the default values for the More-Thuente builder
     ///
     /// The default values are:
@@ -998,6 +1123,45 @@ mod tests_builders {
                 assert_eq!(eta, 0.1);
             }
             _ => panic!("Expected Trust Region local solver"),
+        }
+    }
+
+    #[test]
+    /// Test changing the parameters of Newton-CG builder
+    fn change_params_newton_cg() {
+        let linesearch: LineSearchParams = MoreThuenteBuilder::default().c1(1e-5).c2(0.8).build();
+        let newtoncg: LocalSolverConfig = NewtonCGBuilder::default()
+            .max_iter(500)
+            .curvature_threshold(0.1)
+            .tolerance(1e-7)
+            .line_search_params(linesearch)
+            .build();
+        match newtoncg {
+            LocalSolverConfig::NewtonCG {
+                max_iter,
+                curvature_threshold,
+                tolerance,
+                line_search_params,
+            } => {
+                assert_eq!(max_iter, 500);
+                assert_eq!(curvature_threshold, 0.1);
+                assert_eq!(tolerance, 1e-7);
+                match line_search_params.method {
+                    LineSearchMethod::MoreThuente {
+                        c1,
+                        c2,
+                        width_tolerance,
+                        bounds,
+                    } => {
+                        assert_eq!(c1, 1e-5);
+                        assert_eq!(c2, 0.8);
+                        assert_eq!(width_tolerance, 1e-10);
+                        assert_eq!(bounds, array![f64::EPSILON.sqrt(), f64::INFINITY]);
+                    }
+                    _ => panic!("Expected MoreThuente line search method"),
+                }
+            }
+            _ => panic!("Expected Newton-CG local solver"),
         }
     }
 
