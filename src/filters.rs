@@ -109,6 +109,7 @@ fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 #[cfg(test)]
 mod test_filters {
     use super::*;
+    use ndarray::array;
 
     #[test]
     /// Test the invalid distance factor for the Distance Filter
@@ -125,5 +126,98 @@ mod test_filters {
             df,
             Err(FiltersErrors::NegativeDistanceFactor(-0.5))
         ));
+    }
+
+    #[test]
+    /// Test updating MeritFilter threshold
+    fn test_merit_filter_update_threshold() {
+        let mut filter = MeritFilter::new();
+        filter.update_threshold(10.0);
+        assert_eq!(filter.threshold, 10.0);
+    }
+
+    #[test]
+    /// Test valid construction of DistanceFilter
+    fn test_distance_filter_valid() {
+        let params = FilterParams {
+            distance_factor: 1.0,
+            wait_cycle: 5,
+            threshold_factor: 0.2,
+        };
+
+        let filter = DistanceFilter::new(params).unwrap();
+        assert_eq!(filter.params.distance_factor, 1.0);
+        assert_eq!(filter.solutions.len(), 0);
+    }
+
+    #[test]
+    /// Test adding solutions to DistanceFilter
+    fn test_distance_filter_add_solution() {
+        let params = FilterParams {
+            distance_factor: 1.0,
+            wait_cycle: 5,
+            threshold_factor: 0.2,
+        };
+
+        let mut filter = DistanceFilter::new(params).unwrap();
+        let solution = LocalSolution {
+            point: array![1.0, 2.0, 3.0],
+            objective: 5.0,
+        };
+
+        filter.add_solution(solution);
+        assert_eq!(filter.solutions.len(), 1);
+        assert_eq!(filter.solutions[0].objective, 5.0);
+    }
+
+    #[test]
+    /// Test min_distance calculation
+    fn test_distance_filter_min_distance() {
+        let params = FilterParams {
+            distance_factor: 1.0,
+            wait_cycle: 5,
+            threshold_factor: 0.2,
+        };
+
+        let mut filter = DistanceFilter::new(params).unwrap();
+
+        filter.add_solution(LocalSolution {
+            point: array![1.0, 1.0, 1.0],
+            objective: 5.0,
+        });
+
+        filter.add_solution(LocalSolution {
+            point: array![4.0, 4.0, 4.0],
+            objective: 10.0,
+        });
+
+        // Point is at distance sqrt(3) from [1, 1, 1] and sqrt(3) from [4, 4, 4]
+        assert_eq!(filter.min_distance(&array![2.0, 2.0, 2.0]), 3.0_f64.sqrt());
+
+        // Point is at distance 0 from [1, 1, 1]
+        assert_eq!(filter.min_distance(&array![1.0, 1.0, 1.0]), 0.0);
+    }
+
+    #[test]
+    /// Test distance check
+    fn test_distance_filter_check() {
+        let params = FilterParams {
+            distance_factor: 2.0,
+            wait_cycle: 5,
+            threshold_factor: 0.2,
+        };
+
+        let mut filter = DistanceFilter::new(params).unwrap();
+
+        filter.add_solution(LocalSolution {
+            point: array![0.0, 0.0, 0.0],
+            objective: 5.0,
+        });
+
+        // Point is at distance 1.73... from origin, which is less than distance_factor=2.0
+        assert!(!filter.check(&array![1.0, 1.0, 1.0]));
+
+        // Point is at distance 5.2 from origin, which is greater than distance_factor=2.0
+        assert!(filter.check(&array![3.0, 4.0, 3.0]));
     }
 }
