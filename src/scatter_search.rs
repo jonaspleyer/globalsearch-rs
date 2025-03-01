@@ -251,6 +251,12 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             .flat_map(|i| ((i + 1)..self.reference_set.len()).map(move |j| (i, j)))
             .collect();
 
+        // Pre-allocate the result vector to avoid reallocations
+        let n_combinations = indices.len();
+        let n_trial_points_per_combo = 6; // 4 linear combinations + 2 random
+        let mut trial_points: Vec<Array1<f64>> =
+            Vec::with_capacity(n_combinations * n_trial_points_per_combo);
+
         // Precompute seeds for each combine_points call
         let seeds: Vec<u64> = {
             let mut rng = self.rng.lock().unwrap();
@@ -260,24 +266,30 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         };
 
         #[cfg(feature = "rayon")]
-        let trial_points: Vec<Vec<Array1<f64>>> = indices
-            .par_iter()
-            .zip(seeds.par_iter())
-            .map(|(&(i, j), &seed)| {
-                self.combine_points(&self.reference_set[i], &self.reference_set[j], seed)
-            })
-            .collect::<Result<Vec<_>, ScatterSearchError>>()?;
+        {
+            let points_per_combo: Vec<Vec<Array1<f64>>> = indices
+                .par_iter()
+                .zip(seeds.par_iter())
+                .map(|(&(i, j), &seed)| {
+                    self.combine_points(&self.reference_set[i], &self.reference_set[j], seed)
+                })
+                .collect::<Result<Vec<_>, ScatterSearchError>>()?;
+
+            for points in points_per_combo {
+                trial_points.extend(points);
+            }
+        }
 
         #[cfg(not(feature = "rayon"))]
-        let trial_points: Vec<Vec<Array1<f64>>> = indices
-            .iter()
-            .zip(seeds.iter())
-            .map(|(&(i, j), &seed)| {
-                self.combine_points(&self.reference_set[i], &self.reference_set[j], seed)
-            })
-            .collect::<Result<Vec<_>, ScatterSearchError>>()?;
+        {
+            for (&(i, j), &seed) in indices.iter().zip(seeds.iter()) {
+                let points =
+                    self.combine_points(&self.reference_set[i], &self.reference_set[j], seed)?;
+                trial_points.extend(points);
+            }
+        }
 
-        Ok(trial_points.into_iter().flatten().collect())
+        Ok(trial_points)
     }
 
     /// Combines two points into several trial points.
@@ -406,10 +418,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 ///
 /// Use this function for performance since we don't use the square root
 fn euclidean_distance_squared(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| (x - y).powi(2))
-        .sum::<f64>()
+    (a - b).mapv(|x| x * x).sum()
 }
 
 // The following code allows to compute the Euclidean distance between two points

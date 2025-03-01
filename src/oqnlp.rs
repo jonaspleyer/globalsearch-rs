@@ -730,7 +730,7 @@ mod tests_oqnlp {
             .max_time(20.0);
 
         let sol_set: SolutionSet = oqnlp.run().unwrap();
-        assert!(sol_set.len() == 2);
+        assert_eq!(sol_set.len(), 2);
 
         // With a very low time limit, the algorithm should stop before finding both solutions
         let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params)
@@ -739,7 +739,7 @@ mod tests_oqnlp {
             .max_time(0.000001);
 
         let sol_set: SolutionSet = oqnlp.run().unwrap();
-        assert!(sol_set.len() == 1);
+        assert_eq!(sol_set.len(), 1);
     }
 
     #[test]
