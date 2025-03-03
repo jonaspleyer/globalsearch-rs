@@ -117,6 +117,27 @@ pub struct LocalSolution {
     pub objective: f64,
 }
 
+impl LocalSolution {
+    /// Returns the objective function value (f64) at the solution point
+    ///
+    /// Same as `objective` field
+    ///
+    /// This method is similar to the `fun` method in `SciPy.optimize` result
+    pub fn fun(&self) -> f64 {
+        self.objective
+    }
+
+    /// Returns the solution point (Array1<f64>) in the parameter space
+    ///
+    /// Same as `point` field
+    /// Returns a clone of the point to avoid moving it
+    ///
+    /// This method is similar to the `x` method in `SciPy.optimize` result
+    pub fn x(&self) -> Array1<f64> {
+        self.point.clone()
+    }
+}
+
 #[derive(Debug, Clone)]
 /// A set of local solutions
 ///
@@ -142,6 +163,13 @@ impl SolutionSet {
     /// Returns true if the solution set contains no solutions.
     pub fn is_empty(&self) -> bool {
         self.solutions.is_empty()
+    }
+
+    /// Returns the best solution in the set based on the objective function value.
+    pub fn best_solution(&self) -> Option<&LocalSolution> {
+        self.solutions
+            .iter()
+            .min_by(|a, b| a.objective.partial_cmp(&b.objective).unwrap())
     }
 }
 
@@ -212,14 +240,16 @@ pub enum LocalSolverType {
 }
 
 impl LocalSolverType {
-    pub fn from_string(s: &str) -> Option<Self> {
-        match s {
-            "LBFGS" => Some(Self::LBFGS),
-            "NelderMead" => Some(Self::NelderMead),
-            "SteepestDescent" => Some(Self::SteepestDescent),
-            "TrustRegion" => Some(Self::TrustRegion),
-            "NewtonCG" => Some(Self::NewtonCG),
-            _ => None,
+    pub fn from_string(s: &str) -> Result<Self, &'static str> {
+        match s.to_lowercase().as_str() {
+            "lbfgs" => Ok(Self::LBFGS),
+            "nelder-mead" => Ok(Self::NelderMead),
+            "neldermead" => Ok(Self::NelderMead),
+            "steepestdescent" => Ok(Self::SteepestDescent),
+            "trustregion" => Ok(Self::TrustRegion),
+            "newton-cg" => Ok(Self::NewtonCG),
+            "newtoncg" => Ok(Self::NewtonCG),
+            _ => Err("Invalid solver type"),
         }
     }
 }
@@ -372,24 +402,62 @@ mod tests_types {
     fn test_local_solver_type_from_string() {
         assert_eq!(
             LocalSolverType::from_string("LBFGS"),
-            Some(LocalSolverType::LBFGS)
+            Ok(LocalSolverType::LBFGS)
         );
         assert_eq!(
-            LocalSolverType::from_string("NelderMead"),
-            Some(LocalSolverType::NelderMead)
+            LocalSolverType::from_string("Nelder-Mead"),
+            Ok(LocalSolverType::NelderMead)
         );
         assert_eq!(
             LocalSolverType::from_string("SteepestDescent"),
-            Some(LocalSolverType::SteepestDescent)
+            Ok(LocalSolverType::SteepestDescent)
         );
         assert_eq!(
             LocalSolverType::from_string("TrustRegion"),
-            Some(LocalSolverType::TrustRegion)
+            Ok(LocalSolverType::TrustRegion)
         );
         assert_eq!(
             LocalSolverType::from_string("NewtonCG"),
-            Some(LocalSolverType::NewtonCG)
+            Ok(LocalSolverType::NewtonCG)
         );
-        assert_eq!(LocalSolverType::from_string("Invalid"), None);
+        assert_eq!(
+            LocalSolverType::from_string("Invalid"),
+            Err("Invalid solver type")
+        );
+    }
+
+    #[test]
+    /// Test f() and x() methods from LocalSolution
+    fn test_local_solution_f_x() {
+        let local_solution = LocalSolution {
+            point: array![1.0],
+            objective: -1.0,
+        };
+
+        assert_eq!(local_solution.fun(), -1.0);
+        assert_eq!(local_solution.x(), array![1.0]);
+    }
+
+    #[test]
+    /// Test best_solution from SolutionSet
+    fn test_solution_set_best_solution() {
+        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![
+            LocalSolution {
+                point: array![1.0],
+                objective: -1.0,
+            },
+            LocalSolution {
+                point: array![2.0],
+                objective: -1.0,
+            },
+            LocalSolution {
+                point: array![3.0],
+                objective: -1.0,
+            },
+        ]);
+        let solution_set: SolutionSet = SolutionSet { solutions };
+
+        let best_solution = solution_set.best_solution().unwrap();
+        assert_eq!(best_solution.objective, -1.0);
     }
 }
