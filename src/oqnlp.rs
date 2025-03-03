@@ -86,8 +86,7 @@ use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use thiserror::Error;
 
-// TODO: Where can we use rayon?
-// use rayon::prelude::*;
+// TODO: We could do batched stage 2 to implement rayon parallelism
 
 // TODO: Set penalty functions?
 // How should we do this? Two different OQNLP implementations?
@@ -422,14 +421,13 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
     /// Check if a candidate solution is a duplicate in a set of solutions
     fn is_duplicate_in_set(&self, candidate: &LocalSolution, set: &Array1<LocalSolution>) -> bool {
-        for s in set.iter() {
+        let distance_threshold = self.params.distance_factor;
+
+        set.iter().any(|s| {
             let diff = &candidate.point - &s.point;
-            let dist = diff.dot(&diff).sqrt();
-            if dist < self.params.distance_factor {
-                return true;
-            }
-        }
-        false
+            let dist_squared = diff.dot(&diff);
+            dist_squared < distance_threshold * distance_threshold
+        })
     }
 
     /// Set the maximum time for the stage 2 of the OQNLP algorithm and return self for chaining.
