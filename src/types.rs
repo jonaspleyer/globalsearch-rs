@@ -180,7 +180,7 @@ impl fmt::Display for SolutionSet {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// Local solver implementation types for the OQNLP algorithm
 ///
 /// This enum defines the types of local solvers that can be used in the OQNLP algorithm, including L-BFGS, Nelder-Mead, and Gradient Descent (argmin's implementations).
@@ -209,6 +209,19 @@ pub enum LocalSolverType {
     ///
     /// Requires `CostFunction`, `Gradient` and `Hessian`
     NewtonCG,
+}
+
+impl LocalSolverType {
+    pub fn from_string(s: &str) -> Option<Self> {
+        match s {
+            "LBFGS" => Some(Self::LBFGS),
+            "NelderMead" => Some(Self::NelderMead),
+            "SteepestDescent" => Some(Self::SteepestDescent),
+            "TrustRegion" => Some(Self::TrustRegion),
+            "NewtonCG" => Some(Self::NewtonCG),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -352,5 +365,31 @@ mod tests_types {
         let solutions: Array1<LocalSolution> = Array1::from_vec(vec![]);
         let solution_set: SolutionSet = SolutionSet { solutions };
         let _should_panic: LocalSolution = solution_set[0].clone();
+    }
+
+    #[test]
+    /// Test the from_string method for the LocalSolverType enum
+    fn test_local_solver_type_from_string() {
+        assert_eq!(
+            LocalSolverType::from_string("LBFGS"),
+            Some(LocalSolverType::LBFGS)
+        );
+        assert_eq!(
+            LocalSolverType::from_string("NelderMead"),
+            Some(LocalSolverType::NelderMead)
+        );
+        assert_eq!(
+            LocalSolverType::from_string("SteepestDescent"),
+            Some(LocalSolverType::SteepestDescent)
+        );
+        assert_eq!(
+            LocalSolverType::from_string("TrustRegion"),
+            Some(LocalSolverType::TrustRegion)
+        );
+        assert_eq!(
+            LocalSolverType::from_string("NewtonCG"),
+            Some(LocalSolverType::NewtonCG)
+        );
+        assert_eq!(LocalSolverType::from_string("Invalid"), None);
     }
 }
