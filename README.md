@@ -12,7 +12,18 @@
     </p>
 </p>
 
-`globalsearch-rs`: Rust implementation of the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). Combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
+<div align="center">
+    <img src="https://img.shields.io/crates/v/globalsearch?logo=rust&color=E05D44" alt="crates version" />
+    <img src="https://img.shields.io/github/actions/workflow/status/GermanHeim/globalsearch-rs/globalsearch-rs-CI.yml?branch=main&label=globalsearch%20CI" alt="CI" />
+        <a href="https://app.codecov.io/gh/GermanHeim/globalsearch-rs">
+        <img src="https://img.shields.io/codecov/c/github/GermanHeim/globalsearch-rs?logo=codecov&color=FF0077&token=C2FI2Z26ME" alt="Codecov" />
+    </a>
+    <a href="https://github.com/GermanHeim/globalsearch-rs/blob/main/LICENSE.txt">
+        <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
+    </a>
+</div>
+
+`globalsearch-rs`: Rust implementation of the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). It combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
 
 Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
 
