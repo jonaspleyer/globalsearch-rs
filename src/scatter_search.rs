@@ -39,7 +39,7 @@ pub enum ScatterSearchError {
     NoCandidates,
 
     /// Error when evaluating the objective function
-    #[error("Scatter Search Error: Evaluation error: {0}")]
+    #[error("Scatter Search Error: Evaluation error: {0}.")]
     EvaluationError(#[from] crate::types::EvaluationError),
 }
 

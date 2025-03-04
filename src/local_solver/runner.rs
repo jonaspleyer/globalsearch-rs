@@ -804,7 +804,7 @@ mod tests_local_solvers {
         assert_eq!(
             error,
             LocalSolverError::RunFailed(
-                "Gradient not implemented and needed for local solver".to_string()
+                "Gradient not implemented and needed for local solver.".to_string()
             )
         );
     }
@@ -827,7 +827,7 @@ mod tests_local_solvers {
         assert_eq!(
             error,
             LocalSolverError::RunFailed(
-                "Gradient not implemented and needed for local solver".to_string()
+                "Gradient not implemented and needed for local solver.".to_string()
             )
         );
     }

@@ -171,6 +171,11 @@ impl SolutionSet {
             .iter()
             .min_by(|a, b| a.objective.partial_cmp(&b.objective).unwrap())
     }
+
+    /// Returns an iterator over the solutions in the set.
+    pub fn solutions(&self) -> impl Iterator<Item = &LocalSolution> {
+        self.solutions.iter()
+    }
 }
 
 impl Index<usize> for SolutionSet {
@@ -188,9 +193,9 @@ impl fmt::Display for SolutionSet {
         writeln!(f, "━━━━━━━━━━━ Solution Set ━━━━━━━━━━━")?;
         writeln!(f, "Total solutions: {}", self.solutions.len())?;
         if len > 0 {
-            // Since all the solutions have the same objective value (+- eps)
-            // we can just print the first one
-            writeln!(f, "Objective value: {:.8e}", self.solutions[0].objective)?;
+            if let Some(best) = self.best_solution() {
+                writeln!(f, "Best objective value: {:.8e}", best.objective)?;
+            }
         }
         writeln!(f, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")?;
 
@@ -258,39 +263,39 @@ impl LocalSolverType {
 /// Error type for function, gradient and hessian evaluation
 pub enum EvaluationError {
     /// Error when the input is invalid
-    #[error("Invalid input: {0}")]
+    #[error("Invalid input: {0}.")]
     InvalidInput(String),
 
     /// Error when dividing by zero
-    #[error("Division by zero found")]
+    #[error("Division by zero found.")]
     DivisionByZero,
 
     /// Error when having a negative square root
-    #[error("Negative square root found")]
+    #[error("Negative square root found.")]
     NegativeSqrt,
 
     /// Error when the objective function is not implemented
-    #[error("Objective function not implemented and needed for local solver")]
+    #[error("Objective function not implemented and needed for local solver.")]
     ObjectiveFunctionNotImplemented,
 
     /// Error when the gradient is not implemented
-    #[error("Gradient not implemented and needed for local solver")]
+    #[error("Gradient not implemented and needed for local solver.")]
     GradientNotImplemented,
 
     /// Error when the hessian is not implemented
-    #[error("Hessian not implemented and needed for local solver")]
+    #[error("Hessian not implemented and needed for local solver.")]
     HessianNotImplemented,
 
     /// Error when the objective function can't be evaluated
-    #[error("Objective function evaluation failed")]
+    #[error("Objective function evaluation failed.")]
     ObjectiveFunctionEvaluationFailed,
 
     /// Error when the gradient can't be evaluated
-    #[error("Gradient evaluation failed")]
+    #[error("Gradient evaluation failed.")]
     GradientEvaluationFailed,
 
     /// Error when the hessian can't be evaluated
-    #[error("Hessian evaluation failed")]
+    #[error("Hessian evaluation failed.")]
     HessianEvaluationFailed,
 }
 
@@ -371,10 +376,12 @@ mod tests_types {
         }]);
         let solution_set: SolutionSet = SolutionSet { solutions };
 
+        println!("{}", solution_set);
+
         let display_output: String = format!("{}", solution_set);
         assert!(display_output.contains("Solution Set"));
         assert!(display_output.contains("Total solutions: 1"));
-        assert!(display_output.contains("Objective value"));
+        assert!(display_output.contains("Best objective value"));
         assert!(display_output.contains("Solution #1"));
     }
 

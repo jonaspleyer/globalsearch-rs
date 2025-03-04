@@ -101,19 +101,19 @@ pub enum OQNLPError {
     LocalSolverError(String),
 
     /// Error when OQNLP fails to find a feasible solution
-    #[error("OQNLP Error: No feasible solution found")]
+    #[error("OQNLP Error: No feasible solution found.")]
     NoFeasibleSolution,
 
     /// Error when the objective function evaluation fails
-    #[error("OQNLP Error: Objective function evaluation failed")]
+    #[error("OQNLP Error: Objective function evaluation failed.")]
     ObjectiveFunctionEvaluationFailed,
 
     /// Error when creating a new ScatterSearch instance
-    #[error("OQNLP Error: Failed to create a new ScatterSearch instance")]
+    #[error("OQNLP Error: Failed to create a new ScatterSearch instance.")]
     ScatterSearchError,
 
     /// Error when running the ScatterSearch instance
-    #[error("OQNLP Error: Failed to run the ScatterSearch instance")]
+    #[error("OQNLP Error: Failed to run the ScatterSearch instance.")]
     ScatterSearchRunError,
 
     /// Error when the population size is invalid
