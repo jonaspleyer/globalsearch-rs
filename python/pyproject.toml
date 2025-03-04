@@ -21,7 +21,10 @@ dynamic = ["version"]
 authors = [
     { name = "Germán Martín Heim", email = "german.martin.heim@gmail.com" },
 ]
-dependencies = ["numpy>=1.24.4", "pytest>=8.3.5", "ruff>=0.9.9"]
+dependencies = ["numpy>=1.24.4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3.5", "ruff>=0.9.9"]
 
 [project.urls]
 Repository = "https://github.com/GermanHeim/globalsearch-rs"
