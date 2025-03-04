@@ -254,7 +254,7 @@ impl LocalSolverType {
             "trustregion" => Ok(Self::TrustRegion),
             "newton-cg" => Ok(Self::NewtonCG),
             "newtoncg" => Ok(Self::NewtonCG),
-            _ => Err("Invalid solver type"),
+            _ => Err("Invalid solver type."),
         }
     }
 }
@@ -429,7 +429,7 @@ mod tests_types {
         );
         assert_eq!(
             LocalSolverType::from_string("Invalid"),
-            Err("Invalid solver type")
+            Err("Invalid solver type.")
         );
     }
 
