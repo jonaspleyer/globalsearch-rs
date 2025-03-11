@@ -76,14 +76,6 @@ impl DistanceFilter {
         })
     }
 
-    /// Get the minimum distance between the given point and all solutions in DistanceFilter
-    pub fn min_distance(&self, point: &Array1<f64>) -> f64 {
-        self.solutions
-            .iter()
-            .map(|s| euclidean_distance(point, &s.point))
-            .fold(f64::INFINITY, |a, b| a.min(b))
-    }
-
     /// Add a solution to DistanceFilter
     pub fn add_solution(&mut self, solution: LocalSolution) {
         self.solutions.push(solution);
@@ -91,19 +83,19 @@ impl DistanceFilter {
 
     /// Check if the given point is far enough from all solutions in DistanceFilter
     pub fn check(&self, point: &Array1<f64>) -> bool {
-        self.solutions
-            .iter()
-            .all(|s| euclidean_distance(point, &s.point) > self.params.distance_factor)
+        self.solutions.iter().all(|s| {
+            euclidean_distance_squared(point, &s.point)
+                > self.params.distance_factor * self.params.distance_factor
+        })
     }
 }
 
-/// Euclidean distance
-fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
+/// Euclidean distance squared
+fn euclidean_distance_squared(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
     a.iter()
         .zip(b.iter())
         .map(|(x, y)| (x - y).powi(2))
         .sum::<f64>()
-        .sqrt()
 }
 
 #[cfg(test)]
@@ -168,34 +160,6 @@ mod test_filters {
         filter.add_solution(solution);
         assert_eq!(filter.solutions.len(), 1);
         assert_eq!(filter.solutions[0].objective, 5.0);
-    }
-
-    #[test]
-    /// Test min_distance calculation
-    fn test_distance_filter_min_distance() {
-        let params = FilterParams {
-            distance_factor: 1.0,
-            wait_cycle: 5,
-            threshold_factor: 0.2,
-        };
-
-        let mut filter = DistanceFilter::new(params).unwrap();
-
-        filter.add_solution(LocalSolution {
-            point: array![1.0, 1.0, 1.0],
-            objective: 5.0,
-        });
-
-        filter.add_solution(LocalSolution {
-            point: array![4.0, 4.0, 4.0],
-            objective: 10.0,
-        });
-
-        // Point is at distance sqrt(3) from [1, 1, 1] and sqrt(3) from [4, 4, 4]
-        assert_eq!(filter.min_distance(&array![2.0, 2.0, 2.0]), 3.0_f64.sqrt());
-
-        // Point is at distance 0 from [1, 1, 1]
-        assert_eq!(filter.min_distance(&array![1.0, 1.0, 1.0]), 0.0);
     }
 
     #[test]
