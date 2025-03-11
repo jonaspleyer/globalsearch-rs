@@ -739,7 +739,9 @@ impl<P: Problem> LocalSolver<P> {
 #[cfg(test)]
 mod tests_local_solvers {
     use super::*;
-    use crate::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder, SteepestDescentBuilder};
+    use crate::local_solver::builders::{
+        HagerZhangBuilder, LBFGSBuilder, MoreThuenteBuilder, SteepestDescentBuilder,
+    };
     use crate::types::{EvaluationError, LocalSolverType};
     use ndarray::{array, Array2};
 
@@ -753,6 +755,31 @@ mod tests_local_solvers {
                     + x[0] * x[1]
                     + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
             )
+        }
+
+        fn variable_bounds(&self) -> Array2<f64> {
+            array![[-3.0, 3.0], [-2.0, 2.0]]
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct NoHessianSixHumpCamel;
+
+    impl Problem for NoHessianSixHumpCamel {
+        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+            Ok(
+                (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+                    + x[0] * x[1]
+                    + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
+            )
+        }
+
+        // Calculated analytically, reference didn't provide gradient
+        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+            Ok(array![
+                (8.0 - 8.4 * x[0].powi(2) + 2.0 * x[0].powi(4)) * x[0] + x[1],
+                x[0] + (-8.0 + 16.0 * x[1].powi(2)) * x[1]
+            ])
         }
 
         fn variable_bounds(&self) -> Array2<f64> {
@@ -833,15 +860,66 @@ mod tests_local_solvers {
     }
 
     #[test]
-    /// Test creating a local solver with an invalid configuration
-    /// In this case, for HagerZhangLineSearch, delta must be in (0, 1) and we set it to 2.0
-    /// It should return the following error:
-    /// `HagerZhangLineSearch`: delta must be in (0, 1) and sigma must be in [delta, 1)
-    fn invalid_hagerzhang() {
+    /// Test the Newton CG local solver with a problem that doesn't
+    /// have a gradient. Since Newton CG requires a gradient and a hessian,
+    /// the local solver should return an error.
+    fn test_newton_cg_no_gradient_hessian() {
         let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
 
         let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
             problem,
+            LocalSolverType::NewtonCG,
+            LocalSolverConfig::NewtonCG {
+                max_iter: 1000,
+                curvature_threshold: 1e-6,
+                tolerance: 1e-6,
+                line_search_params: HagerZhangBuilder::default().build(),
+            },
+        );
+
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+        let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::RunFailed(
+                "Gradient not implemented and needed for local solver.".to_string()
+            )
+        );
+
+        let problem: NoHessianSixHumpCamel = NoHessianSixHumpCamel;
+
+        let local_solver: LocalSolver<NoHessianSixHumpCamel> = LocalSolver::new(
+            problem,
+            LocalSolverType::NewtonCG,
+            LocalSolverConfig::NewtonCG {
+                max_iter: 1000,
+                curvature_threshold: 1e-6,
+                tolerance: 1e-6,
+                line_search_params: HagerZhangBuilder::default().build(),
+            },
+        );
+
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+        let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::RunFailed(
+                "Hessian not implemented and needed for local solver.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    /// Test creating a HagerZhangLineSearch instance with an invalid configurations
+    fn invalid_hagerzhang() {
+        let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+
+        // Invalid delta value
+        // Delta must be in (0, 1) and sigma must be in [delta, 1)
+        // Here we set it to 2.0
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
             LocalSolverType::LBFGS,
             LocalSolverConfig::LBFGS {
                 max_iter: 1000,
@@ -852,13 +930,240 @@ mod tests_local_solvers {
             },
         );
 
-        let initial_point: Array1<f64> = array![0.0, 0.0];
-        let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
+        let error: LocalSolverError = local_solver.solve(initial_point.clone()).unwrap_err();
 
         assert_eq!(
             error,
             LocalSolverError::InvalidLBFGSConfig(
                 "Invalid parameter: \"`HagerZhangLineSearch`: delta must be in (0, 1) and sigma must be in [delta, 1).\""
+                    .to_string()
+            )
+        );
+
+        // Invalid sigma value
+        // Delta must be in (0, 1) and sigma must be in [delta, 1)
+        // Here we set delta to 0.7 and sigma to 0.5
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: HagerZhangBuilder::default().delta(0.7).sigma(0.5).build(),
+            },
+        );
+
+        let error: LocalSolverError = local_solver.solve(initial_point.clone()).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`HagerZhangLineSearch`: delta must be in (0, 1) and sigma must be in [delta, 1).\""
+                    .to_string()
+            )
+        );
+
+        // Invalid epsilon value
+        // Epsilon must be non-negative
+        // Here we set epsilon to -0.5
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: HagerZhangBuilder::default().epsilon(-0.5).build(),
+            },
+        );
+
+        let error: LocalSolverError = local_solver.solve(initial_point.clone()).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`HagerZhangLineSearch`: epsilon must be >= 0.\"".to_string()
+            )
+        );
+
+        // Invalid theta value
+        // Theta must be in (0, 1)
+        // Here we set theta to 1.5
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: HagerZhangBuilder::default().theta(1.5).build(),
+            },
+        );
+
+        let error: LocalSolverError = local_solver.solve(initial_point.clone()).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`HagerZhangLineSearch`: theta must be in (0, 1).\""
+                    .to_string()
+            )
+        );
+
+        // Invalid gamma value
+        // Gamma must be in (0, 1)
+        // Here we set gamma to 1.5
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: HagerZhangBuilder::default().gamma(1.5).build(),
+            },
+        );
+
+        let error: LocalSolverError = local_solver.solve(initial_point.clone()).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`HagerZhangLineSearch`: gamma must be in (0, 1).\""
+                    .to_string()
+            )
+        );
+
+        // Invalid eta value
+        // Eta must be larger than zero
+        // Here we set eta to -0.5
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: HagerZhangBuilder::default().eta(-0.5).build(),
+            },
+        );
+
+        let error: LocalSolverError = local_solver.solve(initial_point.clone()).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`HagerZhangLineSearch`: eta must be > 0.\"".to_string()
+            )
+        );
+
+        // Invalid bounds value
+        // Bounds must be a tuple with two values, where the first value
+        // (step_min) is smaller than the second value (step_max)
+        // both values should be higher or equal to zero
+        // Here we set bounds to [1.0, 0.0]
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem,
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: HagerZhangBuilder::default()
+                    .bounds(array![1.0, 0.0])
+                    .build(),
+            },
+        );
+
+        let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`HagerZhangLineSearch`: minimum and maximum step length must be chosen such that 0 <= step_min < step_max.\""
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    /// Test creating a MoreThuenteLineSearch instance with an invalid configurations
+    fn invalid_morethuente() {
+        let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+
+        // Invalid c1 and c2 values
+        // c1 and c2 must be in (0, 1) and c1 < c2
+        // Here we set c1 to 1.0 and c2 to 0.5
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: MoreThuenteBuilder::default().c1(1.0).c2(0.5).build(),
+            },
+        );
+
+        let error: LocalSolverError = local_solver.solve(initial_point.clone()).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`MoreThuenteLineSearch`: Parameter c1 must be in (0, c2).\""
+                    .to_string()
+            )
+        );
+
+        // Invalid bounds value
+        // Bounds must be a tuple with two values, where the first value
+        // (step_min) is smaller than the second value (step_max)
+        // Here we set bounds to [1.0, 0.0]
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: MoreThuenteBuilder::default()
+                    .bounds(array![1.0, 0.0])
+                    .build(),
+            },
+        );
+
+        let error: LocalSolverError = local_solver.solve(initial_point.clone()).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`MoreThuenteLineSearch`: step_min must be smaller than step_max.\""
+                    .to_string()
+            )
+        );
+
+        // Invalid width_tolerance value
+        // Width tolerance must be larger than zero
+        // Here we set width_tolerance to -0.5
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem,
+            LocalSolverType::LBFGS,
+            LocalSolverConfig::LBFGS {
+                max_iter: 1000,
+                tolerance_grad: 1e-6,
+                tolerance_cost: 1e-6,
+                history_size: 5,
+                line_search_params: MoreThuenteBuilder::default().width_tolerance(-0.5).build(),
+            },
+        );
+
+        let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
+        assert_eq!(
+            error,
+            LocalSolverError::InvalidLBFGSConfig(
+                "Invalid parameter: \"`MoreThuenteLineSearch`: relative width tolerance must be >= 0.0.\""
                     .to_string()
             )
         );
