@@ -12,7 +12,7 @@
 
 use crate::problem::Problem;
 use crate::types::OQNLPParams;
-use ndarray::{Array1, Axis};
+use ndarray::Array1;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::sync::Mutex;
@@ -56,18 +56,10 @@ pub struct ScatterSearch<P: Problem> {
 
 impl<P: Problem + Sync + Send> ScatterSearch<P> {
     pub fn new(problem: P, params: OQNLPParams) -> Result<Self, ScatterSearchError> {
-        let lower = problem
-            .variable_bounds()
-            .slice_axis(Axis(1), ndarray::Slice::from(0..1))
-            .into_owned();
-        let upper = problem
-            .variable_bounds()
-            .slice_axis(Axis(1), ndarray::Slice::from(1..2))
-            .into_owned();
-
-        let bounds: VariableBounds = VariableBounds {
-            lower: lower.remove_axis(Axis(1)),
-            upper: upper.remove_axis(Axis(1)),
+        let var_bounds = problem.variable_bounds();
+        let bounds = VariableBounds {
+            lower: var_bounds.column(0).to_owned(),
+            upper: var_bounds.column(1).to_owned(),
         };
 
         let seed: u64 = params.seed;
