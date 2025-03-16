@@ -19,14 +19,17 @@
     <a href="https://docs.astral.sh/ruff/">
         <img src="https://img.shields.io/badge/ruff-black?logo=ruff" alt="ruff" />
     </a> 
+    <a href="https://github.com/GermanHeim/globalsearch-rs/actions/workflows/pyglobalsearch-ci.yml">
+        <img src="https://img.shields.io/github/actions/workflow/status/GermanHeim/globalsearch-rs/pyglobalsearch-ci.yml?branch=main&label=pyglobalsearch%20CI&logo=github" alt="PyGlobalSearch CI"/>
+    </a>
     <a href="https://github.com/GermanHeim/globalsearch-rs/blob/main/LICENSE.txt">
         <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
     </a>
 </div>
 
-`pyglobalsearch`: Python interface for the Rust crate `globalsearch` using [pyo3](https://github.com/PyO3/pyo3) and [Maturin](https://github.com/PyO3/maturin). The Rust crate implements the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). It combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
+`pyglobalsearch`: Python interface for the Rust crate `globalsearch`. The Rust crate implements the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). It combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
 
-Similar to MATLAB's `GlobalSearch` \[2\]. The bindings are built using [pyo3](https://github.com/PyO3/pyo3).
+Similar to MATLAB's `GlobalSearch` \[2\]. The bindings are built using [pyo3](https://github.com/PyO3/pyo3) and [Maturin](https://github.com/PyO3/maturin).
 
 ## Installation
 

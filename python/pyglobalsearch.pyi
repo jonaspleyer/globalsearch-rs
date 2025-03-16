@@ -1,5 +1,6 @@
 import numpy as np
-from typing import Callable, List, Optional, TypedDict, Any
+from numpy.typing import NDArray
+from typing import Callable, List, Optional, TypedDict
 
 class Solution(TypedDict):
     """
@@ -68,22 +69,22 @@ class PyProblem:
     variable in the optimization problem.
     """
 
-    objective: Callable[[np.ndarray[Any, np.dtype[np.float64]]], float]
-    variable_bounds: Callable[[], np.ndarray[Any, np.dtype[np.float64]]]
-    gradient: Optional[Callable[[np.ndarray[Any, np.dtype[np.float64]]], np.ndarray]]
+    objective: Callable[[NDArray[np.float64]], float]
+    variable_bounds: Callable[[], NDArray[np.float64]]
+    gradient: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]]
     hessian: Optional[
         Callable[
-            [np.ndarray[Any, np.dtype[np.float64]]],
-            np.ndarray[Any, np.dtype[np.float64]],
+            [NDArray[np.float64]],
+            NDArray[np.float64],
         ]
     ]
 
     def __init__(
         self,
-        objective: Callable[[np.ndarray], float],
-        variable_bounds: Callable[[], np.ndarray],
-        gradient: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-        hessian: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        objective: Callable[[NDArray[np.float64]], float],
+        variable_bounds: Callable[[], NDArray[np.float64]],
+        gradient: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]] = None,
+        hessian: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]] = None,
     ) -> None:
         """
         # Initialize an optimization problem.

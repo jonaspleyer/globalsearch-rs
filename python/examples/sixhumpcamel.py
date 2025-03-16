@@ -13,7 +13,7 @@
 
 import pyglobalsearch as gs
 import numpy as np
-from typing import Any
+from numpy.typing import NDArray
 
 # Create the optimization parameters
 params = gs.PyOQNLPParams(
@@ -27,7 +27,7 @@ params = gs.PyOQNLPParams(
 
 # Function, variable bounds and gradient definitions
 # Objective function
-def obj(x: np.ndarray[Any, np.dtype[np.float64]]) -> float:
+def obj(x: NDArray[np.float64]) -> float:
     return (
         4 * x[0] ** 2
         - 2.1 * x[0] ** 4
@@ -39,7 +39,7 @@ def obj(x: np.ndarray[Any, np.dtype[np.float64]]) -> float:
 
 
 # Gradient
-def grad(x: np.ndarray[Any, np.dtype[np.float64]]) -> np.ndarray:
+def grad(x: NDArray[np.float64]) -> NDArray[np.float64]:
     return np.array(
         [
             8 * x[0] - 8.4 * x[0] ** 3 + x[0] ** 5 + x[1],
@@ -49,7 +49,7 @@ def grad(x: np.ndarray[Any, np.dtype[np.float64]]) -> np.ndarray:
 
 
 # Variable bounds
-def variable_bounds() -> np.ndarray[Any, np.dtype[np.float64]]:
+def variable_bounds() -> NDArray[np.float64]:
     return np.array([[-3, 3], [-2, 2]])
 
 

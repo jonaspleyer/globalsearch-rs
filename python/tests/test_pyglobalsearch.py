@@ -1,6 +1,6 @@
 import pyglobalsearch as gs
 import numpy as np
-from typing import Any
+from numpy.typing import NDArray
 
 # Create the optimization parameters
 params = gs.PyOQNLPParams(
@@ -14,12 +14,12 @@ params = gs.PyOQNLPParams(
 
 # Function, variable bounds and gradient definitions
 # Objective function
-def obj(x: np.ndarray[Any, np.dtype[np.float64]]) -> float:
+def obj(x: NDArray[np.float64]) -> float:
     return x[0] ** 2 + x[1] ** 2
 
 
 # Gradient
-def grad(x: np.ndarray[Any, np.dtype[np.float64]]) -> np.ndarray:
+def grad(x: NDArray[np.float64]) -> NDArray[np.float64]:
     return np.array(
         [
             2 * x[0],
@@ -29,12 +29,12 @@ def grad(x: np.ndarray[Any, np.dtype[np.float64]]) -> np.ndarray:
 
 
 # Hessian
-def hess(x: np.ndarray[Any, np.dtype[np.float64]]) -> np.ndarray:
+def hess(x: NDArray[np.float64]) -> NDArray[np.float64]:
     return np.array([[2, 0], [0, 2]])
 
 
 # Variable bounds
-def variable_bounds() -> np.ndarray[Any, np.dtype[np.float64]]:
+def variable_bounds() -> NDArray[np.float64]:
     return np.array([[-3, 3], [-2, 2]])
 
 

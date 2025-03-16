@@ -217,6 +217,10 @@ dependencies = [
     { name = "numpy", version = "1.24.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
     { name = "numpy", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+
+[package.optional-dependencies]
+dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -224,9 +228,10 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=1.24.4" },
-    { name = "pytest", specifier = ">=8.3.5" },
-    { name = "ruff", specifier = ">=0.9.9" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.9" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "pytest"
