@@ -242,7 +242,12 @@ fn optimize(
             })
             .collect();
 
-        Ok(solutions.into_py(py))
+        let bound = solutions
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_pyobject(py)?;
+
+        Ok(Py::from(bound))
     })
 }
 
