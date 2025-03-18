@@ -221,9 +221,9 @@ fn optimize(
             wait_cycle: params.wait_cycle,
             threshold_factor: params.threshold_factor,
             distance_factor: params.distance_factor,
-            seed: seed,
+            seed,
             local_solver_type: solver_type,
-            local_solver_config: local_solver_config,
+            local_solver_config,
         };
 
         let mut optimizer =
@@ -232,17 +232,21 @@ fn optimize(
 
         let binding = solution_set.map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        let solutions: Vec<PyObject> = binding
+        let solutions: PyResult<Vec<PyObject>> = binding
             .solutions()
-            .map(|sol| {
+            .map(|sol| -> PyResult<PyObject> {
                 let dict = PyDict::new(py);
-                dict.set_item("x", sol.point.to_vec()).unwrap();
-                dict.set_item("fun", sol.objective).unwrap();
-                dict.into()
+                dict.set_item("x", sol.point.to_vec()).map_err(|e| {
+                    PyErr::new::<PyValueError, _>(format!("Failed to set 'x': {}", e))
+                })?;
+                dict.set_item("fun", sol.objective).map_err(|e| {
+                    PyErr::new::<PyValueError, _>(format!("Failed to set 'fun': {}", e))
+                })?;
+                Ok(dict.into())
             })
             .collect();
 
-        let bound = solutions
+        let bound = solutions?
             .into_iter()
             .collect::<Vec<_>>()
             .into_pyobject(py)?;
