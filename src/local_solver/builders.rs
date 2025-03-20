@@ -154,6 +154,23 @@ pub struct LBFGSBuilder {
 ///
 /// This builder allows for the configuration of the L-BFGS local solver.
 impl LBFGSBuilder {
+    /// Create a new L-BFGS builder
+    pub fn new(
+        max_iter: u64,
+        tolerance_grad: f64,
+        tolerance_cost: f64,
+        history_size: usize,
+        line_search_params: LineSearchParams,
+    ) -> Self {
+        LBFGSBuilder {
+            max_iter,
+            tolerance_grad,
+            tolerance_cost,
+            history_size,
+            line_search_params,
+        }
+    }
+
     /// Build the L-BFGS local solver configuration
     pub fn build(self) -> LocalSolverConfig {
         LocalSolverConfig::LBFGS {
@@ -235,6 +252,27 @@ pub struct NelderMeadBuilder {
 ///
 /// This builder allows for the configuration of the Nelder-Mead local solver.
 impl NelderMeadBuilder {
+    /// Create a new Nelder-Mead builder
+    pub fn new(
+        simplex_delta: f64,
+        sd_tolerance: f64,
+        max_iter: u64,
+        alpha: f64,
+        gamma: f64,
+        rho: f64,
+        sigma: f64,
+    ) -> Self {
+        NelderMeadBuilder {
+            simplex_delta,
+            sd_tolerance,
+            max_iter,
+            alpha,
+            gamma,
+            rho,
+            sigma,
+        }
+    }
+
     /// Build the Nelder-Mead local solver configuration
     pub fn build(self) -> LocalSolverConfig {
         LocalSolverConfig::NelderMead {
@@ -328,6 +366,14 @@ pub struct SteepestDescentBuilder {
 ///
 /// This builder allows for the configuration of the Steepest Descent local solver.
 impl SteepestDescentBuilder {
+    /// Create a new Steepest Descent builder
+    pub fn new(max_iter: u64, line_search_params: LineSearchParams) -> Self {
+        SteepestDescentBuilder {
+            max_iter,
+            line_search_params,
+        }
+    }
+
     /// Build the Steepest Descent local solver configuration
     pub fn build(self) -> LocalSolverConfig {
         LocalSolverConfig::SteepestDescent {
@@ -380,6 +426,23 @@ pub struct TrustRegionBuilder {
 ///
 /// This builder allows for the configuration of the Trust Region local solver.
 impl TrustRegionBuilder {
+    /// Create a new Trust Region builder
+    pub fn new(
+        trust_region_radius_method: TrustRegionRadiusMethod,
+        max_iter: u64,
+        radius: f64,
+        max_radius: f64,
+        eta: f64,
+    ) -> Self {
+        TrustRegionBuilder {
+            trust_region_radius_method,
+            max_iter,
+            radius,
+            max_radius,
+            eta,
+        }
+    }
+
     /// Build the Trust Region local solver configuration
     pub fn build(self) -> LocalSolverConfig {
         LocalSolverConfig::TrustRegion {
@@ -460,6 +523,21 @@ pub struct NewtonCGBuilder {
 ///
 /// This builder allows for the configuration of the Newton-CG method local solver.
 impl NewtonCGBuilder {
+    /// Create a new Newton-CG builder
+    pub fn new(
+        max_iter: u64,
+        curvature_threshold: f64,
+        tolerance: f64,
+        line_search_params: LineSearchParams,
+    ) -> Self {
+        NewtonCGBuilder {
+            max_iter,
+            curvature_threshold,
+            tolerance,
+            line_search_params,
+        }
+    }
+
     /// Build the Newton-CG method local solver configuration
     pub fn build(self) -> LocalSolverConfig {
         LocalSolverConfig::NewtonCG {
@@ -591,6 +669,16 @@ pub struct MoreThuenteBuilder {
 ///
 /// This builder allows for the configuration of the More-Thuente line search method.
 impl MoreThuenteBuilder {
+    /// Create a new More-Thuente builder
+    pub fn new(c1: f64, c2: f64, width_tolerance: f64, bounds: Array1<f64>) -> Self {
+        MoreThuenteBuilder {
+            c1,
+            c2,
+            width_tolerance,
+            bounds,
+        }
+    }
+
     /// Build the More-Thuente line search parameters
     pub fn build(self) -> LineSearchParams {
         LineSearchParams {
@@ -665,6 +753,27 @@ pub struct HagerZhangBuilder {
 ///
 /// This builder allows for the configuration of the Hager-Zhang line search method.
 impl HagerZhangBuilder {
+    /// Create a new Hager-Zhang builder
+    pub fn new(
+        delta: f64,
+        sigma: f64,
+        epsilon: f64,
+        theta: f64,
+        gamma: f64,
+        eta: f64,
+        bounds: Array1<f64>,
+    ) -> Self {
+        HagerZhangBuilder {
+            delta,
+            sigma,
+            epsilon,
+            theta,
+            gamma,
+            eta,
+            bounds,
+        }
+    }
+
     /// Build the Hager-Zhang line search parameters
     pub fn build(self) -> LineSearchParams {
         LineSearchParams {
@@ -1204,6 +1313,204 @@ mod tests_builders {
             .build();
 
         match hagerzhang.method {
+            LineSearchMethod::HagerZhang {
+                delta,
+                sigma,
+                epsilon,
+                theta,
+                gamma,
+                eta,
+                bounds,
+            } => {
+                assert_eq!(delta, 0.2);
+                assert_eq!(sigma, 0.8);
+                assert_eq!(epsilon, 1e-7);
+                assert_eq!(theta, 0.6);
+                assert_eq!(gamma, 0.7);
+                assert_eq!(eta, 0.05);
+                assert_eq!(bounds, array![1e-6, 1e6]);
+            }
+            _ => panic!("Expected HagerZhang line search method"),
+        }
+    }
+
+    #[test]
+    /// Test creating a LBFGSdBuilder using new()
+    fn test_lbfgs_new() {
+        let ls = LineSearchParams::morethuente().c1(1e-5).c2(0.8).build();
+        let lbfgs = LBFGSBuilder::new(500, 1e-8, 1e-8, 5, ls).build();
+        match lbfgs {
+            LocalSolverConfig::LBFGS {
+                max_iter,
+                tolerance_grad,
+                tolerance_cost,
+                history_size,
+                line_search_params,
+            } => {
+                assert_eq!(max_iter, 500);
+                assert_eq!(tolerance_grad, 1e-8);
+                assert_eq!(tolerance_cost, 1e-8);
+                assert_eq!(history_size, 5);
+                match line_search_params.method {
+                    LineSearchMethod::MoreThuente {
+                        c1,
+                        c2,
+                        width_tolerance,
+                        bounds,
+                    } => {
+                        assert_eq!(c1, 1e-5);
+                        assert_eq!(c2, 0.8);
+                        assert_eq!(width_tolerance, 1e-10);
+                        assert_eq!(bounds, array![f64::EPSILON.sqrt(), f64::INFINITY]);
+                    }
+                    _ => panic!("Expected MoreThuente line search method"),
+                }
+            }
+            _ => panic!("Expected L-BFGS local solver"),
+        }
+    }
+
+    #[test]
+    /// Test creating a NelderMeadBuilder using new()
+    fn test_neldermead_new() {
+        let nm = NelderMeadBuilder::new(0.5, 1e-5, 1000, 1.5, 3.0, 0.6, 0.6).build();
+        match nm {
+            LocalSolverConfig::NelderMead {
+                simplex_delta,
+                sd_tolerance,
+                max_iter,
+                alpha,
+                gamma,
+                rho,
+                sigma,
+            } => {
+                assert_eq!(simplex_delta, 0.5);
+                assert_eq!(sd_tolerance, 1e-5);
+                assert_eq!(max_iter, 1000);
+                assert_eq!(alpha, 1.5);
+                assert_eq!(gamma, 3.0);
+                assert_eq!(rho, 0.6);
+                assert_eq!(sigma, 0.6);
+            }
+            _ => panic!("Expected Nelder-Mead local solver"),
+        }
+    }
+
+    #[test]
+    /// Test creating a SteepestDescentBuilder using new()
+    fn test_steepestdescent_new() {
+        let ls = LineSearchParams::morethuente().c1(1e-5).c2(0.8).build();
+        let sd = SteepestDescentBuilder::new(500, ls).build();
+        match sd {
+            LocalSolverConfig::SteepestDescent {
+                max_iter,
+                line_search_params,
+            } => {
+                assert_eq!(max_iter, 500);
+                match line_search_params.method {
+                    LineSearchMethod::MoreThuente {
+                        c1,
+                        c2,
+                        width_tolerance,
+                        bounds,
+                    } => {
+                        assert_eq!(c1, 1e-5);
+                        assert_eq!(c2, 0.8);
+                        assert_eq!(width_tolerance, 1e-10);
+                        assert_eq!(bounds, array![f64::EPSILON.sqrt(), f64::INFINITY]);
+                    }
+                    _ => panic!("Expected MoreThuente line search method"),
+                }
+            }
+            _ => panic!("Expected Steepest Descent local solver"),
+        }
+    }
+
+    #[test]
+    /// Test creating a TrustRegionBuilder using new()
+    fn test_trustregion_new() {
+        let tr = TrustRegionBuilder::new(TrustRegionRadiusMethod::Steihaug, 500, 2.0, 200.0, 0.1)
+            .build();
+        match tr {
+            LocalSolverConfig::TrustRegion {
+                trust_region_radius_method,
+                max_iter,
+                radius,
+                max_radius,
+                eta,
+            } => {
+                assert_eq!(
+                    trust_region_radius_method,
+                    TrustRegionRadiusMethod::Steihaug
+                );
+                assert_eq!(max_iter, 500);
+                assert_eq!(radius, 2.0);
+                assert_eq!(max_radius, 200.0);
+                assert_eq!(eta, 0.1);
+            }
+            _ => panic!("Expected Trust Region local solver"),
+        }
+    }
+
+    #[test]
+    /// Test creating a NewtonCGBuilder using new()
+    fn test_newtoncg_new() {
+        let ls = LineSearchParams::morethuente().c1(1e-5).c2(0.8).build();
+        let ncg = NewtonCGBuilder::new(500, 0.1, 1e-7, ls).build();
+        match ncg {
+            LocalSolverConfig::NewtonCG {
+                max_iter,
+                curvature_threshold,
+                tolerance,
+                line_search_params,
+            } => {
+                assert_eq!(max_iter, 500);
+                assert_eq!(curvature_threshold, 0.1);
+                assert_eq!(tolerance, 1e-7);
+                match line_search_params.method {
+                    LineSearchMethod::MoreThuente {
+                        c1,
+                        c2,
+                        width_tolerance,
+                        bounds,
+                    } => {
+                        assert_eq!(c1, 1e-5);
+                        assert_eq!(c2, 0.8);
+                        assert_eq!(width_tolerance, 1e-10);
+                        assert_eq!(bounds, array![f64::EPSILON.sqrt(), f64::INFINITY]);
+                    }
+                    _ => panic!("Expected MoreThuente line search method"),
+                }
+            }
+            _ => panic!("Expected Newton-CG local solver"),
+        }
+    }
+
+    #[test]
+    /// Test creating a MoreThuenteBuilder using new()
+    fn test_morethuente_new() {
+        let mt = MoreThuenteBuilder::new(1e-5, 0.8, 1e-8, array![1e-5, 1e5]).build();
+        match mt.method {
+            LineSearchMethod::MoreThuente {
+                c1,
+                c2,
+                width_tolerance,
+                bounds,
+            } => {
+                assert_eq!(c1, 1e-5);
+                assert_eq!(c2, 0.8);
+                assert_eq!(width_tolerance, 1e-8);
+                assert_eq!(bounds, array![1e-5, 1e5]);
+            }
+            _ => panic!("Expected MoreThuente line search method"),
+        }
+    }
+
+    #[test]
+    /// Test creating a HagerZhangBuilder using new()
+    fn test_hagerzhang_new() {
+        let hz = HagerZhangBuilder::new(0.2, 0.8, 1e-7, 0.6, 0.7, 0.05, array![1e-6, 1e6]).build();
+        match hz.method {
             LineSearchMethod::HagerZhang {
                 delta,
                 sigma,
