@@ -836,9 +836,12 @@ impl HagerZhangBuilder {
 ///
 /// This implementation sets the default values for the Hager-Zhang builder.
 /// Default values:
-/// - `c1`: 1e-4
-/// - `c2`: 0.9
-/// - `width_tolerance`: 1e-10
+/// - `delta`: 0.1
+/// - `sigma`: 0.9
+/// - `epsilon`: 1e-6
+/// - `theta`: 0.5
+/// - `gamma`: 0.66
+/// - `eta`: 0.01
 /// - `bounds`: [sqrt(EPSILON), INFINITY]
 impl Default for HagerZhangBuilder {
     fn default() -> Self {
