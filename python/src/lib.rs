@@ -1,3 +1,5 @@
+mod builders;
+
 use globalsearch::local_solver::builders::{
     LBFGSBuilder, NelderMeadBuilder, NewtonCGBuilder, SteepestDescentBuilder, TrustRegionBuilder,
 };
@@ -192,11 +194,12 @@ impl Problem for PyProblem {
 /// This function takes a problem, parameters and optionally a local solver and its configuration
 /// and returns the best solution found by the optimizer.
 #[pyfunction]
-#[pyo3(signature = (problem, params, local_solver=None, seed=None))]
+#[pyo3(signature = (problem, params, local_solver=None, local_solver_config=None, seed=None))]
 fn optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
     local_solver: Option<&str>,
+    local_solver_config: Option<PyObject>,
     seed: Option<u64>,
 ) -> PyResult<Py<PyAny>> {
     Python::with_gil(|py| {
@@ -207,12 +210,43 @@ fn optimize(
         let seed = seed.unwrap_or(0);
 
         // Create local solver configuration (default)
-        let local_solver_config = match solver_type {
-            LocalSolverType::LBFGS => LBFGSBuilder::default().build(),
-            LocalSolverType::NewtonCG => NewtonCGBuilder::default().build(),
-            LocalSolverType::TrustRegion => TrustRegionBuilder::default().build(),
-            LocalSolverType::NelderMead => NelderMeadBuilder::default().build(),
-            LocalSolverType::SteepestDescent => SteepestDescentBuilder::default().build(),
+        let local_solver_config = if let Some(config) = local_solver_config {
+            match solver_type {
+                LocalSolverType::LBFGS => {
+                    if let Ok(lbfgs_config) = config.extract::<crate::builders::PyLBFGS>(py) {
+                        lbfgs_config.to_builder().build()
+                    } else {
+                        return Err(PyValueError::new_err(
+                            "Expected PyLBFGS for LBFGS solver type".to_string(),
+                        ));
+                    }
+                }
+                LocalSolverType::NelderMead => {
+                    if let Ok(neldermead_config) =
+                        config.extract::<crate::builders::PyNelderMead>(py)
+                    {
+                        neldermead_config.to_builder().build()
+                    } else {
+                        return Err(PyValueError::new_err(
+                            "Expected PyNelderMead for NelderMead solver type".to_string(),
+                        ));
+                    }
+                }
+                // TODO: Implement other solvers configs
+                // For other solvers, use default configurations
+                LocalSolverType::NewtonCG => NewtonCGBuilder::default().build(),
+                LocalSolverType::TrustRegion => TrustRegionBuilder::default().build(),
+                LocalSolverType::SteepestDescent => SteepestDescentBuilder::default().build(),
+            }
+        } else {
+            // Create default local solver configuration
+            match solver_type {
+                LocalSolverType::LBFGS => LBFGSBuilder::default().build(),
+                LocalSolverType::NewtonCG => NewtonCGBuilder::default().build(),
+                LocalSolverType::TrustRegion => TrustRegionBuilder::default().build(),
+                LocalSolverType::NelderMead => NelderMeadBuilder::default().build(),
+                LocalSolverType::SteepestDescent => SteepestDescentBuilder::default().build(),
+            }
         };
 
         let params: OQNLPParams = OQNLPParams {
@@ -256,10 +290,9 @@ fn optimize(
 }
 
 #[pymodule]
-/// pyGlobalSearch
+/// PyGlobalSearch
 ///
 /// This library provides a Python interface to the `globalsearch-rs` crate.
-/// `globalsearch` is a Rust crate for global optimization.
 ///
 /// `globalsearch-rs` is a Rust implementation of the OQNLP (OptQuest/NLP) algorithm
 /// with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization"
@@ -271,6 +304,11 @@ fn pyglobalsearch(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(optimize, m)?)?;
     m.add_class::<PyOQNLPParams>()?;
     m.add_class::<PyProblem>()?;
+
+    // Builders submodule
+    let builders = PyModule::new(_py, "builders")?;
+    crate::builders::init_module(_py, &builders)?;
+    m.add_submodule(&builders)?;
 
     Ok(())
 }

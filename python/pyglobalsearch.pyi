@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.typing import NDArray
-from typing import Callable, List, Optional, TypedDict
+from typing import Callable, List, Optional, TypedDict, Union, Any
 
 class Solution(TypedDict):
     """
@@ -106,6 +106,7 @@ def optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
     local_solver: Optional[str] = "LBFGS",
+    local_solver_config: Optional[Union[PyLBFGS, PyNelderMead]] = None,
     seed: Optional[int] = 0,
 ) -> Optional[List[Solution]]:
     """
@@ -125,3 +126,117 @@ def optimize(
         objective values or none if no solution is found
     """
     ...
+
+# Builders module
+class HagerZhang:
+    delta: float
+    sigma: float
+    epsilon: float
+    theta: float
+    gamma: float
+    eta: float
+    bounds: List[float]
+
+    def __init__(
+        self,
+        delta: float = 1e-3,
+        sigma: float = 1e-3,
+        epsilon: float = 1e-3,
+        theta: float = 1e-3,
+        gamma: float = 1e-3,
+        eta: float = 1e-3,
+        bounds: List[float] = [0.0, 1.0],
+    ) -> None: ...
+
+class MoreThuente:
+    sigma: float
+    alpha: float
+    beta: float
+    max_iter: int
+    epsilon: float
+    min_step: float
+    max_step: float
+
+    def __init__(
+        self,
+        sigma: float = 1e-4,
+        alpha: float = 1e-4,
+        beta: float = 0.9,
+        max_iter: int = 100,
+        epsilon: float = 1e-6,
+        min_step: float = 1e-20,
+        max_step: float = 1e20,
+    ) -> None: ...
+
+class PyLBFGS:
+    max_iter: int
+    tolerance_grad: float
+    tolerance_cost: float
+    history_size: int
+    line_search_params: Any
+
+    def __init__(
+        self,
+        max_iter: int = 1000,
+        tolerance_grad: float = 1e-6,
+        tolerance_cost: float = 1e-6,
+        history_size: int = 10,
+        line_search_params: Any = None,
+    ) -> None: ...
+
+class PyNelderMead:
+    simplex_delta: float
+    sd_tolerance: float
+    max_iter: int
+    alpha: float
+    gamma: float
+    rho: float
+    sigma: float
+
+    def __init__(
+        self,
+        simplex_delta: float = 0.1,
+        sd_tolerance: float = 2.220446049250313e-16,
+        max_iter: int = 300,
+        alpha: float = 1.0,
+        gamma: float = 2.0,
+        rho: float = 0.5,
+        sigma: float = 0.5,
+    ) -> None: ...
+
+class builders:
+    @staticmethod
+    def hagerzhang(
+        delta: float = 0.1,
+        sigma: float = 0.9,
+        epsilon: float = 1e-6,
+        theta: float = 0.5,
+        gamma: float = 0.66,
+        eta: float = 0.01,
+        bounds: List[float] = [1.490116119384766e-8, 1e20],
+    ) -> HagerZhang: ...
+    @staticmethod
+    def morethunte(
+        c1: float = 1e-4,
+        c2: float = 0.9,
+        width_tolerance: float = 1e-10,
+        bounds: List[float] = [1.490116119384766e-8, 1e20],
+    ) -> MoreThuente: ...
+    @staticmethod
+    def lbfgs(
+        max_iter: int = 300,
+        tolerance_grad: float = 1.490116119384766e-8,
+        tolerance_cost: float = 2.220446049250313e-16,
+        history_size: int = 10,
+        line_search_params: Any = None,
+    ) -> PyLBFGS: ...
+    @staticmethod
+    def nelder_mead(
+        simplex_delta: float = 0.1,
+        sd_tolerance: float = 2.220446049250313e-16,
+        max_iter: int = 300,
+        alpha: float = 1.0,
+        gamma: float = 2.0,
+        rho: float = 0.5,
+        sigma: float = 0.5,
+    ) -> PyNelderMead: ...

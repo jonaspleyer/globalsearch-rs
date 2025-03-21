@@ -1,0 +1,434 @@
+use crate::PyOQNLPParams;
+use globalsearch::local_solver::builders::{
+    HagerZhangBuilder, LBFGSBuilder, LineSearchParams, LocalSolverConfig, MoreThuenteBuilder,
+    NelderMeadBuilder, NewtonCGBuilder, SteepestDescentBuilder, TrustRegionBuilder,
+    TrustRegionRadiusMethod,
+};
+use pyo3::exceptions::PyTypeError;
+use pyo3::prelude::*;
+use std::f64::EPSILON;
+use std::f64::INFINITY;
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyHagerZhang {
+    #[pyo3(get, set)]
+    pub delta: f64,
+    #[pyo3(get, set)]
+    pub sigma: f64,
+    #[pyo3(get, set)]
+    pub epsilon: f64,
+    #[pyo3(get, set)]
+    pub theta: f64,
+    #[pyo3(get, set)]
+    pub gamma: f64,
+    #[pyo3(get, set)]
+    pub eta: f64,
+    #[pyo3(get, set)]
+    pub bounds: Vec<f64>,
+}
+
+#[pymethods]
+impl PyHagerZhang {
+    #[new]
+    #[pyo3(signature = (
+        delta = 0.1,
+        sigma = 0.9,
+        epsilon = 1e-6,
+        theta = 0.5,
+        gamma = 0.66,
+        eta = 0.01,
+        bounds = vec![EPSILON.sqrt(), INFINITY], 
+    ))]
+    fn new(
+        delta: f64,
+        sigma: f64,
+        epsilon: f64,
+        theta: f64,
+        gamma: f64,
+        eta: f64,
+        bounds: Vec<f64>,
+    ) -> Self {
+        PyHagerZhang {
+            delta,
+            sigma,
+            epsilon,
+            theta,
+            gamma,
+            eta,
+            bounds,
+        }
+    }
+}
+
+impl PyHagerZhang {
+    pub fn to_builder(&self) -> HagerZhangBuilder {
+        HagerZhangBuilder::new(
+            self.delta,
+            self.sigma,
+            self.epsilon,
+            self.theta,
+            self.gamma,
+            self.eta,
+            self.bounds.clone().into(),
+        )
+    }
+}
+
+#[pyfunction]
+#[pyo3(
+    text_signature = "(delta: f64, sigma: f64, epsilon: f64, theta: f64, gamma: f64, eta: f64, bounds: List[float])"
+)]
+fn hagerzhang(
+    delta: f64,
+    sigma: f64,
+    epsilon: f64,
+    theta: f64,
+    gamma: f64,
+    eta: f64,
+    bounds: Vec<f64>,
+) -> PyHagerZhang {
+    PyHagerZhang {
+        delta,
+        sigma,
+        epsilon,
+        theta,
+        gamma,
+        eta,
+        bounds,
+    }
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyMoreThuente {
+    #[pyo3(get, set)]
+    pub c1: f64,
+    #[pyo3(get, set)]
+    pub c2: f64,
+    #[pyo3(get, set)]
+    pub width_tolerance: f64,
+    #[pyo3(get, set)]
+    pub bounds: Vec<f64>,
+}
+
+#[pymethods]
+impl PyMoreThuente {
+    #[new]
+    #[pyo3(signature = (
+        c1 = 1e-4,
+        c2 = 0.9,
+        width_tolerance = 1e-10,
+        bounds = vec![EPSILON.sqrt(), INFINITY],
+    ))]
+    fn new(c1: f64, c2: f64, width_tolerance: f64, bounds: Vec<f64>) -> Self {
+        PyMoreThuente {
+            c1,
+            c2,
+            width_tolerance,
+            bounds,
+        }
+    }
+}
+
+impl PyMoreThuente {
+    pub fn to_builder(&self) -> MoreThuenteBuilder {
+        MoreThuenteBuilder::new(
+            self.c1,
+            self.c2,
+            self.width_tolerance,
+            self.bounds.clone().into(),
+        )
+    }
+}
+
+#[pyfunction]
+#[pyo3(text_signature = "(c1: f64, c2: f64, width_tolerance: f64, bounds: List[float])")]
+fn morethuente(c1: f64, c2: f64, width_tolerance: f64, bounds: Vec<f64>) -> PyMoreThuente {
+    PyMoreThuente {
+        c1,
+        c2,
+        width_tolerance,
+        bounds,
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum PyLineSearchMethod {
+    MoreThuente(PyMoreThuente),
+    HagerZhang(PyHagerZhang),
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyLineSearchParams {
+    pub method: PyLineSearchMethod,
+}
+
+#[pymethods]
+impl PyLineSearchParams {
+    #[new]
+    #[pyo3(signature = (method))]
+    fn new(method: PyObject, py: Python) -> PyResult<Self> {
+        if let Ok(more_thuente) = method.extract::<PyMoreThuente>(py) {
+            return Ok(PyLineSearchParams {
+                method: PyLineSearchMethod::MoreThuente(more_thuente),
+            });
+        }
+
+        if let Ok(hager_zhang) = method.extract::<PyHagerZhang>(py) {
+            return Ok(PyLineSearchParams {
+                method: PyLineSearchMethod::HagerZhang(hager_zhang),
+            });
+        }
+
+        Err(PyTypeError::new_err(
+            "Expected PyMoreThuente or PyHagerZhang",
+        ))
+    }
+
+    #[staticmethod]
+    fn morethuente(params: PyMoreThuente) -> Self {
+        PyLineSearchParams {
+            method: PyLineSearchMethod::MoreThuente(params),
+        }
+    }
+
+    #[staticmethod]
+    fn hagerzhang(params: PyHagerZhang) -> Self {
+        PyLineSearchParams {
+            method: PyLineSearchMethod::HagerZhang(params),
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyLBFGS {
+    #[pyo3(get, set)]
+    pub max_iter: u64,
+    #[pyo3(get, set)]
+    pub tolerance_grad: f64,
+    #[pyo3(get, set)]
+    pub tolerance_cost: f64,
+    #[pyo3(get, set)]
+    pub history_size: usize,
+    #[pyo3(get, set)]
+    pub line_search_params: PyLineSearchParams,
+}
+
+#[pymethods]
+impl PyLBFGS {
+    #[new]
+    #[pyo3(signature = (
+        max_iter = 300,
+        tolerance_grad = EPSILON.sqrt(),
+        tolerance_cost = EPSILON,
+        history_size = 10,
+        line_search_params = PyLineSearchParams {
+            method: PyLineSearchMethod::MoreThuente(PyMoreThuente {
+                c1: 1e-4,
+                c2: 0.9,
+                width_tolerance: 1e-10,
+                bounds: vec![EPSILON.sqrt(), INFINITY],
+            }),
+        },
+    ))]
+    fn new(
+        max_iter: u64,
+        tolerance_grad: f64,
+        tolerance_cost: f64,
+        history_size: usize,
+        line_search_params: PyLineSearchParams,
+    ) -> Self {
+        PyLBFGS {
+            max_iter,
+            tolerance_grad,
+            tolerance_cost,
+            history_size,
+            line_search_params,
+        }
+    }
+}
+
+impl PyLBFGS {
+    pub fn to_builder(&self) -> LBFGSBuilder {
+        let line_search_params = match &self.line_search_params.method {
+            PyLineSearchMethod::MoreThuente(params) => LineSearchParams::morethuente()
+                .c1(params.c1)
+                .c2(params.c2)
+                .width_tolerance(params.width_tolerance)
+                .bounds(params.bounds.clone().into())
+                .build(),
+            PyLineSearchMethod::HagerZhang(params) => LineSearchParams::hagerzhang()
+                .delta(params.delta)
+                .sigma(params.sigma)
+                .epsilon(params.epsilon)
+                .theta(params.theta)
+                .gamma(params.gamma)
+                .eta(params.eta)
+                .bounds(params.bounds.clone().into())
+                .build(),
+        };
+
+        LBFGSBuilder::new(
+            self.max_iter,
+            self.tolerance_grad,
+            self.tolerance_cost,
+            self.history_size,
+            line_search_params,
+        )
+    }
+}
+
+#[pyfunction]
+#[pyo3(
+    text_signature = "(max_iter: u64, tolerance_grad: f64, tolerance_cost: f64, history_size: usize, line_search_params: Union[PyMoreThuente, PyHagerZhang])"
+)]
+fn lbfgs(
+    max_iter: u64,
+    tolerance_grad: f64,
+    tolerance_cost: f64,
+    history_size: usize,
+    line_search_params: PyObject,
+    py: Python,
+) -> PyResult<PyLBFGS> {
+    let line_search_params =
+        if let Ok(params) = line_search_params.extract::<PyLineSearchParams>(py) {
+            params
+        } else if let Ok(more_thuente) = line_search_params.extract::<PyMoreThuente>(py) {
+            PyLineSearchParams {
+                method: PyLineSearchMethod::MoreThuente(more_thuente),
+            }
+        } else if let Ok(hager_zhang) = line_search_params.extract::<PyHagerZhang>(py) {
+            PyLineSearchParams {
+                method: PyLineSearchMethod::HagerZhang(hager_zhang),
+            }
+        } else {
+            return Err(PyTypeError::new_err(
+                "Expected PyLineSearchParams, PyMoreThuente, or PyHagerZhang",
+            ));
+        };
+
+    Ok(PyLBFGS {
+        max_iter,
+        tolerance_grad,
+        tolerance_cost,
+        history_size,
+        line_search_params,
+    })
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyNelderMead {
+    #[pyo3(get, set)]
+    pub simplex_delta: f64,
+    #[pyo3(get, set)]
+    pub sd_tolerance: f64,
+    #[pyo3(get, set)]
+    pub max_iter: u64,
+    #[pyo3(get, set)]
+    pub alpha: f64,
+    #[pyo3(get, set)]
+    pub gamma: f64,
+    #[pyo3(get, set)]
+    pub rho: f64,
+    #[pyo3(get, set)]
+    pub sigma: f64,
+}
+
+#[pymethods]
+impl PyNelderMead {
+    #[new]
+    #[pyo3(signature = (
+        simplex_delta = 0.1,
+        sd_tolerance = EPSILON,
+        max_iter = 300,
+        alpha = 1.0,
+        gamma = 2.0,
+        rho = 0.5,
+        sigma = 0.5,
+    ))]
+    fn new(
+        simplex_delta: f64,
+        sd_tolerance: f64,
+        max_iter: u64,
+        alpha: f64,
+        gamma: f64,
+        rho: f64,
+        sigma: f64,
+    ) -> Self {
+        PyNelderMead {
+            simplex_delta,
+            sd_tolerance,
+            max_iter,
+            alpha,
+            gamma,
+            rho,
+            sigma,
+        }
+    }
+}
+
+impl PyNelderMead {
+    pub fn to_builder(&self) -> NelderMeadBuilder {
+        NelderMeadBuilder::new(
+            self.simplex_delta,
+            self.sd_tolerance,
+            self.max_iter,
+            self.alpha,
+            self.gamma,
+            self.rho,
+            self.sigma,
+        )
+    }
+}
+
+#[pyfunction]
+#[pyo3(
+    text_signature = "(simplex_delta: f64, sd_tolerance: f64, max_iter: u64, alpha: f64, gamma: f64, rho: f64, sigma: f64)"
+)]
+fn neldermead(
+    simplex_delta: f64,
+    sd_tolerance: f64,
+    max_iter: u64,
+    alpha: f64,
+    gamma: f64,
+    rho: f64,
+    sigma: f64,
+) -> PyNelderMead {
+    PyNelderMead {
+        simplex_delta,
+        sd_tolerance,
+        max_iter,
+        alpha,
+        gamma,
+        rho,
+        sigma,
+    }
+}
+
+/// Initialize the builders module
+pub fn init_module(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PyHagerZhang>()?;
+    m.add_function(wrap_pyfunction!(hagerzhang, m)?)?;
+    m.setattr("HagerZhang", m.getattr("PyHagerZhang")?)?;
+
+    m.add_class::<PyMoreThuente>()?;
+    m.add_function(wrap_pyfunction!(morethuente, m)?)?;
+    m.setattr("MoreThuente", m.getattr("PyMoreThuente")?)?;
+
+    m.add_class::<PyLBFGS>()?;
+    m.add_function(wrap_pyfunction!(lbfgs, m)?)?;
+    m.setattr("LBFGS", m.getattr("PyLBFGS")?)?;
+
+    m.add_class::<PyNelderMead>()?;
+    m.add_function(wrap_pyfunction!(neldermead, m)?)?;
+    m.setattr("nelder_mead", m.getattr("PyNelderMead")?)?;
+    m.setattr("NelderMead", m.getattr("PyNelderMead")?)?;
+
+    m.add_class::<PyLineSearchParams>()?;
+
+    Ok(())
+}
