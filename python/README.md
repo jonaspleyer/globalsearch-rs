@@ -62,13 +62,15 @@ pip install pyglobalsearch
 3. Define your problem:
 
    ```python
-   def objective(x: np.ndarray[Any, np.dtype[np.float64]]) -> float:
+   from numpy.typing import NDArray
+   
+   def objective(x: NDArray[np.float64]) -> float:
         return x[0] ** 2 + x[1] ** 2
 
-   def gradient(x: np.ndarray[Any, np.dtype[np.float64]]) -> np.ndarray[Any, np.dtype[np.float64]]:
+   def gradient(x: NDArray[np.float64]) -> NDArray[np.float64]:
         return np.array([2 * x[0], 2 * x[1]])
 
-   def variable_bounds() -> np.ndarray[Any, np.dtype[np.float64]]:
+   def variable_bounds() -> NDArray[np.float64]:
         return np.array([[-3, 3], [-2, 2]])
 
    problem = gs.PyProblem(objective, variable_bounds, gradient)
