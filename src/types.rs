@@ -13,8 +13,6 @@ use thiserror::Error;
 // TODO: Implement SR1 when it is fixed in argmin (https://github.com/argmin-rs/argmin/issues/221)
 // Or add it now and print a warning that it is not working as expected in some cases
 
-// TODO: Implement methods with Hessians
-
 #[derive(Debug, Clone)]
 /// Parameters for the OQNLP algorithm
 ///
@@ -245,6 +243,10 @@ pub enum LocalSolverType {
 }
 
 impl LocalSolverType {
+    /// Returns the local solver type from a string
+    ///
+    /// This method is used to convert a string to a `LocalSolverType` enum.
+    /// It is used to set the local solver type for the Python bindings.
     pub fn from_string(s: &str) -> Result<Self, &'static str> {
         match s.to_lowercase().as_str() {
             "lbfgs" => Ok(Self::LBFGS),

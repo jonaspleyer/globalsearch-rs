@@ -209,6 +209,7 @@ src/
 ├── filters.rs # Merit and distance filtering logic
 ├── problem.rs # Problem trait
 └── types.rs # Data structures and parameters
+python/ # Python bindings
 ```
 
 ## Dependencies
