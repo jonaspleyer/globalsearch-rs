@@ -910,6 +910,7 @@ mod tests_builders {
     /// The default values are:
     /// - `simplex_delta`: 0.1
     /// - `sd_tolerance`: EPSILON
+    /// - `max_iter`: 300
     /// - `alpha`: 1.0
     /// - `gamma`: 2.0
     /// - `rho`: 0.5
