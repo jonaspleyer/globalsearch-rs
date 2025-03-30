@@ -139,33 +139,27 @@ class HagerZhang:
 
     def __init__(
         self,
-        delta: float = 1e-3,
-        sigma: float = 1e-3,
-        epsilon: float = 1e-3,
-        theta: float = 1e-3,
-        gamma: float = 1e-3,
-        eta: float = 1e-3,
-        bounds: List[float] = [0.0, 1.0],
+        delta: float = 0.1,
+        sigma: float = 0.9,
+        epsilon: float = 1e-6,
+        theta: float = 0.5,
+        gamma: float = 0.66,
+        eta: float = 0.01,
+        bounds: List[float] = [1.490116119384766e-8, 10e20],
     ) -> None: ...
 
 class MoreThuente:
-    sigma: float
-    alpha: float
-    beta: float
-    max_iter: int
-    epsilon: float
-    min_step: float
-    max_step: float
+    c1: float
+    c2: float
+    width_tolerance: float
+    bounds: List[float]
 
     def __init__(
         self,
-        sigma: float = 1e-4,
-        alpha: float = 1e-4,
-        beta: float = 0.9,
-        max_iter: int = 100,
-        epsilon: float = 1e-6,
-        min_step: float = 1e-20,
-        max_step: float = 1e20,
+        c1: float = 1e-4,
+        c2: float = 0.9,
+        width_tolerance: float = 1e-10,
+        bounds: List[float] = [1.490116119384766e-8, 10e20],
     ) -> None: ...
 
 class PyLBFGS:
@@ -177,9 +171,9 @@ class PyLBFGS:
 
     def __init__(
         self,
-        max_iter: int = 1000,
-        tolerance_grad: float = 1e-6,
-        tolerance_cost: float = 1e-6,
+        max_iter: int = 300,
+        tolerance_grad: float = 1.490116119384766e-8,
+        tolerance_cost: float = 2.220446049250313e-16,
         history_size: int = 10,
         line_search_params: Any = None,
     ) -> None: ...
@@ -204,6 +198,16 @@ class PyNelderMead:
         sigma: float = 0.5,
     ) -> None: ...
 
+class PySteepestDescent:
+    max_iter: int
+    line_search_params: Any
+
+    def __init__(
+        self,
+        max_iter: int = 300,
+        line_search_params: Any = None,
+    ) -> None: ...
+
 class builders:
     @staticmethod
     def hagerzhang(
@@ -213,7 +217,7 @@ class builders:
         theta: float = 0.5,
         gamma: float = 0.66,
         eta: float = 0.01,
-        bounds: List[float] = [1.490116119384766e-8, 1e20],
+        bounds: List[float] = [1.490116119384766e-8, 10e20],
     ) -> HagerZhang: ...
     @staticmethod
     def morethunte(
@@ -240,3 +244,8 @@ class builders:
         rho: float = 0.5,
         sigma: float = 0.5,
     ) -> PyNelderMead: ...
+    @staticmethod
+    def steepest_descent(
+        max_iter: int = 300,
+        line_search_params: Any = None,
+    ) -> PySteepestDescent: ...

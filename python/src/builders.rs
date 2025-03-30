@@ -409,8 +409,106 @@ fn neldermead(
     }
 }
 
+// 
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PySteepestDescent {
+    #[pyo3(get, set)]
+    pub max_iter: u64,
+    #[pyo3(get, set)]
+    pub line_search_params: PyLineSearchParams,
+}
+
+#[pymethods]
+impl PySteepestDescent {
+    #[new]
+    #[pyo3(signature = (
+        max_iter = 300,
+        line_search_params = PyLineSearchParams {
+            method: PyLineSearchMethod::MoreThuente(PyMoreThuente {
+                c1: 1e-4,
+                c2: 0.9,
+                width_tolerance: 1e-10,
+                bounds: vec![EPSILON.sqrt(), INFINITY],
+            }),
+        },
+    ))]
+    fn new(
+        max_iter: u64,
+        line_search_params: PyLineSearchParams,
+    ) -> Self {
+        PySteepestDescent {
+            max_iter,
+            line_search_params,
+        }
+    }
+}
+
+impl PySteepestDescent {
+    pub fn to_builder(&self) -> SteepestDescentBuilder {
+        let line_search_params = match &self.line_search_params.method {
+            PyLineSearchMethod::MoreThuente(params) => LineSearchParams::morethuente()
+                .c1(params.c1)
+                .c2(params.c2)
+                .width_tolerance(params.width_tolerance)
+                .bounds(params.bounds.clone().into())
+                .build(),
+            PyLineSearchMethod::HagerZhang(params) => LineSearchParams::hagerzhang()
+                .delta(params.delta)
+                .sigma(params.sigma)
+                .epsilon(params.epsilon)
+                .theta(params.theta)
+                .gamma(params.gamma)
+                .eta(params.eta)
+                .bounds(params.bounds.clone().into())
+                .build(),
+        };
+
+        SteepestDescentBuilder::new(
+            self.max_iter,
+            line_search_params,
+        )
+    }
+}
+
+#[pyfunction]
+#[pyo3(
+    text_signature = "(max_iter: u64, line_search_params: Union[PyMoreThuente, PyHagerZhang])"
+)]
+fn steepestdescent(
+    max_iter: u64,
+    line_search_params: PyObject,
+    py: Python,
+) -> PyResult<PySteepestDescent> {
+    let line_search_params =
+        if let Ok(params) = line_search_params.extract::<PyLineSearchParams>(py) {
+            params
+        } else if let Ok(more_thuente) = line_search_params.extract::<PyMoreThuente>(py) {
+            PyLineSearchParams {
+                method: PyLineSearchMethod::MoreThuente(more_thuente),
+            }
+        } else if let Ok(hager_zhang) = line_search_params.extract::<PyHagerZhang>(py) {
+            PyLineSearchParams {
+                method: PyLineSearchMethod::HagerZhang(hager_zhang),
+            }
+        } else {
+            return Err(PyTypeError::new_err(
+                "Expected PyLineSearchParams, PyMoreThuente, or PyHagerZhang",
+            ));
+        };
+
+    Ok(PySteepestDescent {
+        max_iter,
+        line_search_params,
+    })
+}
+
+
 /// Initialize the builders module
 pub fn init_module(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PyLineSearchParams>()?;
+
     m.add_class::<PyHagerZhang>()?;
     m.add_function(wrap_pyfunction!(hagerzhang, m)?)?;
     m.setattr("HagerZhang", m.getattr("PyHagerZhang")?)?;
@@ -428,7 +526,9 @@ pub fn init_module(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.setattr("nelder_mead", m.getattr("PyNelderMead")?)?;
     m.setattr("NelderMead", m.getattr("PyNelderMead")?)?;
 
-    m.add_class::<PyLineSearchParams>()?;
+    m.add_class::<PySteepestDescent>()?;
+    m.add_function(wrap_pyfunction!(steepestdescent, m)?)?;
+    m.setattr("SteepestDescent", m.getattr("PySteepestDescent")?)?;
 
     Ok(())
 }

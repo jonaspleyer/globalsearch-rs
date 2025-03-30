@@ -232,11 +232,22 @@ fn optimize(
                         ));
                     }
                 }
+                LocalSolverType::SteepestDescent => {
+                    if let Ok(steepest_descent_config) =
+                        config.extract::<crate::builders::PySteepestDescent>(py)
+                    {
+                        steepest_descent_config.to_builder().build()
+                    } else {
+                        return Err(PyValueError::new_err(
+                            "Expected PySteepestDescent for SteepestDescent solver type"
+                                .to_string(),
+                        ));
+                    }
+                }
                 // TODO: Implement other solvers configs
                 // For other solvers, use default configurations
                 LocalSolverType::NewtonCG => NewtonCGBuilder::default().build(),
                 LocalSolverType::TrustRegion => TrustRegionBuilder::default().build(),
-                LocalSolverType::SteepestDescent => SteepestDescentBuilder::default().build(),
             }
         } else {
             // Create default local solver configuration
