@@ -244,9 +244,17 @@ fn optimize(
                         ));
                     }
                 }
+                LocalSolverType::NewtonCG => {
+                    if let Ok(newtoncg_config) = config.extract::<crate::builders::PyNewtonCG>(py) {
+                        newtoncg_config.to_builder().build()
+                    } else {
+                        return Err(PyValueError::new_err(
+                            "Expected PyNewtonCG for NewtonCG solver type".to_string(),
+                        ));
+                    }
+                }
                 // TODO: Implement other solvers configs
                 // For other solvers, use default configurations
-                LocalSolverType::NewtonCG => NewtonCGBuilder::default().build(),
                 LocalSolverType::TrustRegion => TrustRegionBuilder::default().build(),
             }
         } else {

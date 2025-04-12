@@ -208,6 +208,20 @@ class PySteepestDescent:
         line_search_params: Any = None,
     ) -> None: ...
 
+class PyNewtonCG:
+    max_iter: int
+    curvature_tolerance: float
+    tolerance: float
+    line_search_params: Any
+
+    def __init__(
+        self,
+        max_iter: int = 300,
+        curvature_tolerance: float = 0.0,
+        tolerance: float = 1.490116119384766e-8,
+        line_search_params: Any = None,
+    ) -> None: ...
+
 class builders:
     @staticmethod
     def hagerzhang(
@@ -249,3 +263,10 @@ class builders:
         max_iter: int = 300,
         line_search_params: Any = None,
     ) -> PySteepestDescent: ...
+    @staticmethod
+    def newton_cg(
+        max_iter: int = 300,
+        curvature_tolerance: float = 0.0,
+        tolerance: float = 1.490116119384766e-8,
+        line_search_params: Any = None,
+    ) -> PyNewtonCG: ...
