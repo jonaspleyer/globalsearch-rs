@@ -1,6 +1,5 @@
-use crate::PyOQNLPParams;
 use globalsearch::local_solver::builders::{
-    HagerZhangBuilder, LBFGSBuilder, LineSearchParams, LocalSolverConfig, MoreThuenteBuilder,
+    HagerZhangBuilder, LBFGSBuilder, LineSearchParams, MoreThuenteBuilder,
     NelderMeadBuilder, NewtonCGBuilder, SteepestDescentBuilder, TrustRegionBuilder,
     TrustRegionRadiusMethod,
 };
@@ -609,6 +608,109 @@ let line_search_params =
     })
 }
 
+#[pyclass]
+#[derive(Debug, Clone, PartialEq)]
+pub enum PyTrustRegionRadiusMethod {
+    Cauchy,
+    Steihaug,
+}
+
+#[pymethods]
+impl PyTrustRegionRadiusMethod {
+    #[staticmethod]
+    fn cauchy() -> Self {
+        PyTrustRegionRadiusMethod::Cauchy
+    }
+
+    #[staticmethod]
+    fn steihaug() -> Self {
+        PyTrustRegionRadiusMethod::Steihaug
+    }
+}
+
+impl From<PyTrustRegionRadiusMethod> for TrustRegionRadiusMethod {
+    fn from(method: PyTrustRegionRadiusMethod) -> Self {
+        match method {
+            PyTrustRegionRadiusMethod::Cauchy => TrustRegionRadiusMethod::Cauchy,
+            PyTrustRegionRadiusMethod::Steihaug => TrustRegionRadiusMethod::Steihaug,
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyTrustRegion {
+    #[pyo3(get, set)]
+    pub trust_region_radius_method: PyTrustRegionRadiusMethod,
+    #[pyo3(get, set)]
+    pub max_iter: u64,
+    #[pyo3(get, set)]
+    pub radius: f64,
+    #[pyo3(get, set)]
+    pub max_radius: f64,
+    #[pyo3(get, set)]
+    pub eta: f64,
+}
+
+#[pymethods]
+impl PyTrustRegion {
+    #[new]
+    #[pyo3(signature = (
+        trust_region_radius_method = PyTrustRegionRadiusMethod::Cauchy,
+        max_iter = 300,
+        radius = 1.0,
+        max_radius = 100.0,
+        eta = 0.125,
+    ))]
+    fn new(
+        trust_region_radius_method: PyTrustRegionRadiusMethod,
+        max_iter: u64,
+        radius: f64,
+        max_radius: f64,
+        eta: f64,
+    ) -> Self {
+        PyTrustRegion {
+            trust_region_radius_method,
+            max_iter,
+            radius,
+            max_radius,
+            eta,
+        }
+    }
+}
+
+impl PyTrustRegion {
+    pub fn to_builder(&self) -> TrustRegionBuilder {
+        TrustRegionBuilder::new(
+            self.trust_region_radius_method.clone().into(),
+            self.max_iter,
+            self.radius,
+            self.max_radius,
+            self.eta,
+        )
+    }
+}
+
+#[pyfunction]
+#[pyo3(
+    text_signature = "(trust_region_radius_method: PyTrustRegionRadiusMethod, max_iter: u64, radius: f64, max_radius: f64, eta: f64)"
+)]
+fn trustregion(
+    trust_region_radius_method: PyTrustRegionRadiusMethod,
+    max_iter: u64,
+    radius: f64,
+    max_radius: f64,
+    eta: f64,
+) -> PyTrustRegion {
+    PyTrustRegion {
+        trust_region_radius_method,
+        max_iter,
+        radius,
+        max_radius,
+        eta,
+    }
+}
+
 /// Initialize the builders module
 pub fn init_module(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyLineSearchParams>()?;
@@ -638,6 +740,14 @@ pub fn init_module(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(newtoncg, m)?)?;
     m.setattr("newton_cg", m.getattr("PyNewtonCG")?)?;
     m.setattr("NewtonCG", m.getattr("PyNewtonCG")?)?;
+
+    m.add_class::<PyTrustRegionRadiusMethod>()?;
+    m.setattr("TrustRegionRadiusMethod", m.getattr("PyTrustRegionRadiusMethod")?)?;
+    m.setattr("PyTrustRegionRadiusMethod", m.getattr("PyTrustRegionRadiusMethod")?)?;
+
+    m.add_class::<PyTrustRegion>()?;
+    m.add_function(wrap_pyfunction!(trustregion, m)?)?;
+    m.setattr("TrustRegion", m.getattr("PyTrustRegion")?)?;
 
     Ok(())
 }

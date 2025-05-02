@@ -253,9 +253,17 @@ fn optimize(
                         ));
                     }
                 }
-                // TODO: Implement other solvers configs
-                // For other solvers, use default configurations
-                LocalSolverType::TrustRegion => TrustRegionBuilder::default().build(),
+                LocalSolverType::TrustRegion => {
+                    if let Ok(trustregion_config) =
+                        config.extract::<crate::builders::PyTrustRegion>(py)
+                    {
+                        trustregion_config.to_builder().build()
+                    } else {
+                        return Err(PyValueError::new_err(
+                            "Expected PyTrustRegion for TrustRegion solver type".to_string(),
+                        ));
+                    }
+                }
             }
         } else {
             // Create default local solver configuration

@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.typing import NDArray
-from typing import Callable, List, Optional, TypedDict, Union, Any
+from typing import Callable, List, Optional, TypedDict, Union, Type
 
 class Solution(TypedDict):
     """
@@ -106,7 +106,9 @@ def optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
     local_solver: Optional[str] = "LBFGS",
-    local_solver_config: Optional[Union[PyLBFGS, PyNelderMead]] = None,
+    local_solver_config: Optional[
+        Union[PyLBFGS, PyNelderMead, PySteepestDescent, PyNewtonCG, PyTrustRegion]
+    ] = None,
     seed: Optional[int] = 0,
 ) -> Optional[List[Solution]]:
     """
@@ -230,6 +232,28 @@ class PyNewtonCG:
         line_search_params: PyLineSearchMethod = PyLineSearchMethod.morethunte(),
     ) -> None: ...
 
+class PyTrustRegionRadiusMethod:
+    @staticmethod
+    def cauchy() -> "PyTrustRegionRadiusMethod": ...
+    @staticmethod
+    def steihaug() -> "PyTrustRegionRadiusMethod": ...
+
+class PyTrustRegion:
+    trust_region_radius_method: PyTrustRegionRadiusMethod
+    max_iter: int
+    radius: float
+    max_radius: float
+    eta: float
+
+    def __init__(
+        self,
+        trust_region_radius_method: PyTrustRegionRadiusMethod = PyTrustRegionRadiusMethod.cauchy(),
+        max_iter: int = 300,
+        radius: float = 1.0,
+        max_radius: float = 100.0,
+        eta: float = 0.125,
+    ) -> None: ...
+
 class builders:
     @staticmethod
     def hagerzhang(
@@ -284,3 +308,12 @@ class builders:
             PyLineSearchMethod, HagerZhang, MoreThuente
         ] = MoreThuente(),
     ) -> PyNewtonCG: ...
+    @staticmethod
+    def trustregion(
+        trust_region_radius_method: PyTrustRegionRadiusMethod = PyTrustRegionRadiusMethod.cauchy(),
+        max_iter: int = 300,
+        radius: float = 1.0,
+        max_radius: float = 100.0,
+        eta: float = 0.125,
+    ) -> PyTrustRegion: ...
+    PyTrustRegionRadiusMethod: Type[PyTrustRegionRadiusMethod]
