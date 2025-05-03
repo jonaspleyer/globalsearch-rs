@@ -35,3 +35,7 @@ criterion = { git = "https://github.com/bheisler/criterion.rs", features = [
 [[bench]]
 name = "six_hump_camel"
 harness = false
+
+[[bench]]
+name = "scatter_search"
+harness = false
