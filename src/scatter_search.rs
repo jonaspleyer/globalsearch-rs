@@ -338,12 +338,10 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
                 })
                 .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
 
-            evaluated.sort_by(|a, b| a.1.total_cmp(&b.1));
-            self.reference_set = evaluated
-                .into_iter()
-                .take(self.params.population_size)
-                .map(|(p, _)| p)
-                .collect();
+            let pop_size = self.params.population_size;
+            evaluated.select_nth_unstable_by(pop_size, |a, b| a.1.total_cmp(&b.1));
+            evaluated.truncate(pop_size);
+            self.reference_set = evaluated.into_iter().map(|(p, _)| p).collect();
 
             Ok(())
         }
@@ -359,12 +357,10 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
                 })
                 .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
 
-            evaluated.sort_by(|a, b| a.1.total_cmp(&b.1));
-            self.reference_set = evaluated
-                .into_iter()
-                .take(self.params.population_size)
-                .map(|(p, _)| p)
-                .collect();
+            let pop_size = self.params.population_size;
+            evaluated.select_nth_unstable_by(pop_size, |a, b| a.1.total_cmp(&b.1));
+            evaluated.truncate(pop_size);
+            self.reference_set = evaluated.into_iter().map(|(p, _)| p).collect();
 
             Ok(())
         }
