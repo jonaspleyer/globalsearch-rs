@@ -291,7 +291,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         b: &Array1<f64>,
         seed: u64,
     ) -> Result<Vec<Array1<f64>>, ScatterSearchError> {
-        let mut points = Vec::new();
+        let mut points = Vec::with_capacity(6);
 
         // Linear combinations.
         let directions: Vec<f64> = vec![0.25, 0.5, 0.75, 1.25];
