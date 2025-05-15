@@ -147,6 +147,13 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             .collect();
 
         while ref_set.len() < self.params.population_size {
+            #[cfg(feature = "rayon")]
+            let (max_idx, _) = (0..min_dists.len())
+                .into_par_iter()
+                .map(|i| (i, min_dists[i]))
+                .max_by(|a, b| a.1.total_cmp(&b.1))
+                .ok_or(ScatterSearchError::NoCandidates)?;
+            #[cfg(not(feature = "rayon"))]
             let (max_idx, _) = min_dists
                 .iter()
                 .enumerate()
@@ -238,12 +245,16 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     }
 
     pub fn generate_trial_points(&mut self) -> Result<Vec<Array1<f64>>, ScatterSearchError> {
-        // Create all index pairs.
-        let indices: Vec<(usize, usize)> = (0..self.reference_set.len())
-            .flat_map(|i| ((i + 1)..self.reference_set.len()).map(move |j| (i, j)))
+        // Only use the best k points for combinations
+        let k = (self.reference_set.len() as f64).sqrt() as usize;
+        let k = k.max(2).min(self.reference_set.len());
+
+        // Create combinations only between the best k points
+        let indices: Vec<(usize, usize)> = (0..k)
+            .flat_map(|i| ((i + 1)..k).map(move |j| (i, j)))
             .collect();
 
-        // Pre-allocate the result vector to avoid reallocations
+        // Pre-allocate the result vector
         let n_combinations = indices.len();
         let n_trial_points_per_combo = 6; // 4 linear combinations + 2 random
         let mut trial_points: Vec<Array1<f64>> =
@@ -325,45 +336,82 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         &mut self,
         trials: Vec<Array1<f64>>,
     ) -> Result<(), ScatterSearchError> {
+        // Early termination if no trials
+        if trials.is_empty() {
+            return Ok(());
+        }
+
+        // Evaluate reference set points first
         #[cfg(feature = "rayon")]
-        {
-            let mut evaluated: Vec<(Array1<f64>, f64)> = self
-                .reference_set
-                .iter()
-                .chain(trials.iter())
-                .par_bridge()
-                .map(|point| {
-                    let obj = self.problem.objective(point)?;
-                    Ok((point.clone(), obj))
-                })
-                .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
+        let mut ref_evaluated: Vec<(Array1<f64>, f64)> = self
+            .reference_set
+            .par_iter()
+            .map(|point| {
+                let obj = self.problem.objective(point)?;
+                Ok((point.clone(), obj))
+            })
+            .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
 
-            let pop_size = self.params.population_size;
-            evaluated.select_nth_unstable_by(pop_size, |a, b| a.1.total_cmp(&b.1));
-            evaluated.truncate(pop_size);
-            self.reference_set = evaluated.into_iter().map(|(p, _)| p).collect();
-
-            Ok(())
-        }
         #[cfg(not(feature = "rayon"))]
-        {
-            let mut evaluated: Vec<(Array1<f64>, f64)> = self
-                .reference_set
-                .iter()
-                .chain(trials.iter())
-                .map(|point| {
-                    let obj: f64 = self.problem.objective(point)?;
-                    Ok((point.clone(), obj))
-                })
-                .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
+        let mut ref_evaluated: Vec<(Array1<f64>, f64)> = self
+            .reference_set
+            .iter()
+            .map(|point| {
+                let obj = self.problem.objective(point)?;
+                Ok((point.clone(), obj))
+            })
+            .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
 
-            let pop_size = self.params.population_size;
-            evaluated.select_nth_unstable_by(pop_size, |a, b| a.1.total_cmp(&b.1));
-            evaluated.truncate(pop_size);
-            self.reference_set = evaluated.into_iter().map(|(p, _)| p).collect();
+        // Sort reference set by objective value
+        ref_evaluated.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
-            Ok(())
-        }
+        // Get worst objective value in reference set
+        let worst_obj = ref_evaluated
+            .last()
+            .map(|(_, obj)| *obj)
+            .unwrap_or(f64::INFINITY);
+
+        #[cfg(feature = "rayon")]
+        let trial_evaluated: Vec<(Array1<f64>, f64)> = trials
+            .par_iter()
+            .filter_map(|point| {
+                // Check if point might be better than worst in reference set
+                let obj = self.problem.objective(point).ok()?;
+                if obj < worst_obj {
+                    Some((point.clone(), obj))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        #[cfg(not(feature = "rayon"))]
+        let trial_evaluated: Vec<(Array1<f64>, f64)> = trials
+            .iter()
+            .filter_map(|point| {
+                // Check if point might be better than worst in reference set
+                let obj = self.problem.objective(point).ok()?;
+                if obj < worst_obj {
+                    Some((point.clone(), obj))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Combine and sort all points
+        let mut all_points = ref_evaluated;
+        all_points.extend(trial_evaluated);
+
+        // Keep only the best points
+        let pop_size = self.params.population_size;
+        all_points.select_nth_unstable_by(pop_size, |a, b| a.1.total_cmp(&b.1));
+        all_points.truncate(pop_size);
+
+        // Update reference set
+        self.reference_set = all_points.into_iter().map(|(p, _)| p).collect();
+
+        Ok(())
     }
 
     pub fn best_solution(&self) -> Result<Array1<f64>, ScatterSearchError> {
@@ -543,10 +591,11 @@ mod tests_scatter_search {
 
         let trial_points: Vec<Array1<f64>> = ss.generate_trial_points().unwrap();
 
-        // With 10 points in the reference set, we should have C(10, 2) = 45 combinations
-        // Each combination produces 6 trial points (4 linear combinations + 2 random)
-        // So the reference set has 45 * 6 = 270 trial points
-        assert_eq!(trial_points.len(), 45 * 6);
+        // Compute expected based on subsampling logic: k = floor(sqrt(N)) combinations
+        let n = ss.reference_set.len();
+        let k = (n as f64).sqrt() as usize;
+        let expected = k * (k - 1) / 2 * 6;
+        assert_eq!(trial_points.len(), expected);
     }
 
     #[test]
@@ -676,10 +725,11 @@ mod tests_scatter_search {
 
         let trial_points: Vec<Array1<f64>> = ss.generate_trial_points().unwrap();
 
-        // With 10 points in the reference set, we should have C(10, 2) = 45 combinations
-        // Each combination produces 6 trial points (4 linear combinations + 2 random)
-        // So the reference set has 45 * 6 = 270 trial points
-        assert_eq!(trial_points.len(), 45 * 6);
+        // Compute expected based on subsampling logic: k = floor(sqrt(N)) combinations
+        let n = ss.reference_set.len();
+        let k = (n as f64).sqrt() as usize;
+        let expected = k * (k - 1) / 2 * 6;
+        assert_eq!(trial_points.len(), expected);
     }
 
     #[cfg(feature = "rayon")]
