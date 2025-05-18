@@ -378,7 +378,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
     /// Process a local solution, updating the best solution and filters
     fn process_local_solution(&mut self, solution: LocalSolution) -> Result<bool, OQNLPError> {
-        const EPS: f64 = 1e-6; // TODO: Should we let the user select this?
+        const ABS_TOL: f64 = 1e-8;
+        const REL_TOL: f64 = 1e-6;
 
         let solutions = if let Some(existing) = &self.solution_set {
             existing.solutions.clone()
@@ -393,16 +394,20 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         };
 
         let current_best: &LocalSolution = &solutions[0];
-        let obj_diff: f64 = solution.objective - current_best.objective;
+        let obj1 = solution.objective;
+        let obj2 = current_best.objective;
 
-        let added: bool = if obj_diff < -EPS {
+        let obj_diff = (obj1 - obj2).abs();
+        let tol = ABS_TOL.max(REL_TOL * obj1.abs().max(obj2.abs()));
+
+        let added: bool = if obj1 < obj2 - tol {
             // Found new best solution
             self.solution_set = Some(SolutionSet {
                 solutions: Array1::from(vec![solution.clone()]),
             });
             self.merit_filter.update_threshold(solution.objective);
             false
-        } else if obj_diff.abs() <= EPS && !self.is_duplicate_in_set(&solution, &solutions) {
+        } else if obj_diff <= tol && !self.is_duplicate_in_set(&solution, &solutions) {
             // Similar objective value and not duplicate, add to set
             let mut new_solutions: Vec<LocalSolution> = solutions.to_vec();
             new_solutions.push(solution.clone());
