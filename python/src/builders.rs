@@ -608,7 +608,7 @@ let line_search_params =
     })
 }
 
-#[pyclass]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum PyTrustRegionRadiusMethod {
     Cauchy,
