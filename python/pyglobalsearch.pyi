@@ -14,10 +14,6 @@ class Solution(TypedDict):
     x: List[float]
     fun: float
 
-# class OptimizeResult(TypedDict):
-#     solutions: List[Solution]
-#     best: Solution
-
 class PyOQNLPParams:
     """
     # Parameters for the OQNLP global optimization algorithm.
@@ -32,7 +28,6 @@ class PyOQNLPParams:
     wait_cycle: int
     threshold_factor: float
     distance_factor: float
-
     def __init__(
         self,
         iterations: int = 300,
@@ -72,13 +67,7 @@ class PyProblem:
     objective: Callable[[NDArray[np.float64]], float]
     variable_bounds: Callable[[], NDArray[np.float64]]
     gradient: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]]
-    hessian: Optional[
-        Callable[
-            [NDArray[np.float64]],
-            NDArray[np.float64],
-        ]
-    ]
-
+    hessian: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]]
     def __init__(
         self,
         objective: Callable[[NDArray[np.float64]], float],
@@ -102,41 +91,13 @@ class PyProblem:
         """
         ...
 
-def optimize(
-    problem: PyProblem,
-    params: PyOQNLPParams,
-    local_solver: Optional[str] = "LBFGS",
-    local_solver_config: Optional[
-        Union[PyLBFGS, PyNelderMead, PySteepestDescent, PyNewtonCG, PyTrustRegion]
-    ] = None,
-    seed: Optional[int] = 0,
-) -> Optional[List[Solution]]:
-    """
-    # Perform global optimization on the given problem.
-
-    This function uses a hybrid global-local search algorithm to find the
-    global minimum of the objective function defined in the problem.
-
-    Args:
-        problem: The optimization problem to solve
-        params: Parameters controlling the optimization process
-        local_solver: The algorithm to use for local optimization ("LBFGS" by default)
-        seed: Seed for reproducibility (0 by default)
-
-    Returns:
-        A list of Solution objects containing multiple solutions found and their
-        objective values or none if no solution is found
-    """
-    ...
-
-# Builders module
 class PyLineSearchMethod:
     @staticmethod
     def hagerzhang() -> "PyLineSearchMethod": ...
     @staticmethod
     def morethunte() -> "PyLineSearchMethod": ...
 
-class HagerZhang:
+class HagerZhang(PyLineSearchMethod):
     delta: float
     sigma: float
     epsilon: float
@@ -144,7 +105,6 @@ class HagerZhang:
     gamma: float
     eta: float
     bounds: List[float]
-
     def __init__(
         self,
         delta: float = 0.1,
@@ -156,12 +116,11 @@ class HagerZhang:
         bounds: List[float] = [1.490116119384766e-8, 10e20],
     ) -> None: ...
 
-class MoreThuente:
+class MoreThuente(PyLineSearchMethod):
     c1: float
     c2: float
     width_tolerance: float
     bounds: List[float]
-
     def __init__(
         self,
         c1: float = 1e-4,
@@ -170,13 +129,18 @@ class MoreThuente:
         bounds: List[float] = [1.490116119384766e-8, 10e20],
     ) -> None: ...
 
+class PyLineSearchParams(PyLineSearchMethod):
+    params: Union[HagerZhang, MoreThuente]
+    def __init__(self, params: Union[HagerZhang, MoreThuente]) -> None: ...
+
 class PyLBFGS:
     max_iter: int
     tolerance_grad: float
     tolerance_cost: float
     history_size: int
-    line_search_params: Union[PyLineSearchMethod, HagerZhang, MoreThuente]
-
+    line_search_params: Union[
+        PyLineSearchMethod, HagerZhang, MoreThuente, PyLineSearchParams
+    ]
     def __init__(
         self,
         max_iter: int = 300,
@@ -184,7 +148,7 @@ class PyLBFGS:
         tolerance_cost: float = 2.220446049250313e-16,
         history_size: int = 10,
         line_search_params: Union[
-            PyLineSearchMethod, HagerZhang, MoreThuente
+            PyLineSearchMethod, HagerZhang, MoreThuente, PyLineSearchParams
         ] = MoreThuente(),
     ) -> None: ...
 
@@ -196,7 +160,6 @@ class PyNelderMead:
     gamma: float
     rho: float
     sigma: float
-
     def __init__(
         self,
         simplex_delta: float = 0.1,
@@ -210,26 +173,32 @@ class PyNelderMead:
 
 class PySteepestDescent:
     max_iter: int
-    line_search_params: PyLineSearchMethod
-
+    line_search_params: Union[
+        PyLineSearchMethod, HagerZhang, MoreThuente, PyLineSearchParams
+    ]
     def __init__(
         self,
         max_iter: int = 300,
-        line_search_params: PyLineSearchMethod = PyLineSearchMethod.morethunte(),
+        line_search_params: Union[
+            PyLineSearchMethod, HagerZhang, MoreThuente, PyLineSearchParams
+        ] = PyLineSearchMethod.morethunte(),
     ) -> None: ...
 
 class PyNewtonCG:
     max_iter: int
     curvature_tolerance: float
     tolerance: float
-    line_search_params: PyLineSearchMethod
-
+    line_search_params: Union[
+        PyLineSearchMethod, HagerZhang, MoreThuente, PyLineSearchParams
+    ]
     def __init__(
         self,
         max_iter: int = 300,
         curvature_tolerance: float = 0.0,
         tolerance: float = 1.490116119384766e-8,
-        line_search_params: PyLineSearchMethod = PyLineSearchMethod.morethunte(),
+        line_search_params: Union[
+            PyLineSearchMethod, HagerZhang, MoreThuente, PyLineSearchParams
+        ] = PyLineSearchMethod.morethunte(),
     ) -> None: ...
 
 class PyTrustRegionRadiusMethod:
@@ -244,7 +213,6 @@ class PyTrustRegion:
     radius: float
     max_radius: float
     eta: float
-
     def __init__(
         self,
         trust_region_radius_method: PyTrustRegionRadiusMethod = PyTrustRegionRadiusMethod.cauchy(),
@@ -273,15 +241,22 @@ class builders:
         bounds: List[float] = [1.490116119384766e-8, 1e20],
     ) -> MoreThuente: ...
     @staticmethod
+    def morethuente(
+        c1: float = 1e-4,
+        c2: float = 0.9,
+        width_tolerance: float = 1e-10,
+        bounds: List[float] = [1.490116119384766e-8, 1e20],
+    ) -> MoreThuente: ...
+    @staticmethod
     def lbfgs(
         max_iter: int = 300,
         tolerance_grad: float = 1.490116119384766e-8,
         tolerance_cost: float = 2.220446049250313e-16,
         history_size: int = 10,
         line_search_params: Union[
-            PyLineSearchMethod, HagerZhang, MoreThuente
+            PyLineSearchMethod, HagerZhang, MoreThuente, "PyLineSearchParams"
         ] = MoreThuente(),
-    ) -> PyLBFGS: ...
+    ) -> "PyLBFGS": ...
     @staticmethod
     def nelder_mead(
         simplex_delta: float = 0.1,
@@ -291,23 +266,33 @@ class builders:
         gamma: float = 2.0,
         rho: float = 0.5,
         sigma: float = 0.5,
-    ) -> PyNelderMead: ...
+    ) -> "PyNelderMead": ...
+    @staticmethod
+    def neldermead(
+        simplex_delta: float = 0.1,
+        sd_tolerance: float = 2.220446049250313e-16,
+        max_iter: int = 300,
+        alpha: float = 1.0,
+        gamma: float = 2.0,
+        rho: float = 0.5,
+        sigma: float = 0.5,
+    ) -> "PyNelderMead": ...
     @staticmethod
     def steepest_descent(
         max_iter: int = 300,
         line_search_params: Union[
-            PyLineSearchMethod, HagerZhang, MoreThuente
-        ] = MoreThuente(),
-    ) -> PySteepestDescent: ...
+            PyLineSearchMethod, HagerZhang, MoreThuente, "PyLineSearchParams"
+        ] = PyLineSearchMethod.morethunte(),
+    ) -> "PySteepestDescent": ...
     @staticmethod
     def newton_cg(
         max_iter: int = 300,
         curvature_tolerance: float = 0.0,
         tolerance: float = 1.490116119384766e-8,
         line_search_params: Union[
-            PyLineSearchMethod, HagerZhang, MoreThuente
-        ] = MoreThuente(),
-    ) -> PyNewtonCG: ...
+            PyLineSearchMethod, HagerZhang, MoreThuente, "PyLineSearchParams"
+        ] = PyLineSearchMethod.morethunte(),
+    ) -> "PyNewtonCG": ...
     @staticmethod
     def trustregion(
         trust_region_radius_method: PyTrustRegionRadiusMethod = PyTrustRegionRadiusMethod.cauchy(),
@@ -316,4 +301,42 @@ class builders:
         max_radius: float = 100.0,
         eta: float = 0.125,
     ) -> PyTrustRegion: ...
+
+    # Aliases to global class definitions
+    PyHagerZhang: Type[HagerZhang]
+    PyMoreThuente: Type[MoreThuente]
+    PyLineSearchParams: Type[PyLineSearchParams]
+
+    PyLBFGS: Type[PyLBFGS]
+    PyNelderMead: Type[PyNelderMead]
+    PySteepestDescent: Type[PySteepestDescent]
+    PyNewtonCG: Type[PyNewtonCG]
     PyTrustRegionRadiusMethod: Type[PyTrustRegionRadiusMethod]
+    PyTrustRegion: Type[PyTrustRegion]
+
+def optimize(
+    problem: PyProblem,
+    params: PyOQNLPParams,
+    local_solver: Optional[str] = "LBFGS",
+    local_solver_config: Optional[
+        Union[PyLBFGS, PyNelderMead, PySteepestDescent, PyNewtonCG, PyTrustRegion]
+    ] = None,
+    seed: Optional[int] = 0,
+) -> Optional[List[Solution]]:
+    """
+    # Perform global optimization on the given problem.
+
+    This function uses a hybrid global-local search algorithm to find the
+    global minimum of the objective function defined in the problem.
+
+    Args:
+        problem: The optimization problem to solve
+        params: Parameters controlling the optimization process
+        local_solver: The algorithm to use for local optimization ("LBFGS" by default)
+        seed: Seed for reproducibility (0 by default)
+
+    Returns:
+        A list of Solution objects containing multiple solutions found and their
+        objective values or none if no solution is found
+    """
+    ...
