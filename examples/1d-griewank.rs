@@ -32,7 +32,7 @@ impl Problem for OneDGriewank {
     }
 
     fn variable_bounds(&self) -> Array2<f64> {
-        array![[-600.0, 600.0]]
+        array![[-600.0 + 1.0, 600.0 + 1.0]]
     }
 }
 
@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", solution_set);
 
     let modified_params = OQNLPParams {
-        iterations: 100,
+        iterations: 200,
         wait_cycle: 10,
         threshold_factor: 0.1,
         distance_factor: 0.75,
