@@ -46,8 +46,8 @@ pub enum LocalSolverConfig {
         tolerance_cost: f64,
         /// Number of previous iterations to store in the history
         history_size: usize,
-
-        // l1_regularization: f64, Should this be included? As bool? https://docs.rs/argmin/0.10.0/argmin/solver/quasinewton/struct.LBFGS.html
+        /// L1 regularization coefficient
+        l1_coefficient: Option<f64>,
         /// Line search parameters for the L-BFGS local solver
         line_search_params: LineSearchParams,
     },
@@ -147,6 +147,7 @@ pub struct LBFGSBuilder {
     tolerance_grad: f64,
     tolerance_cost: f64,
     history_size: usize,
+    l1_coefficient: Option<f64>,
     line_search_params: LineSearchParams,
 }
 
@@ -160,6 +161,7 @@ impl LBFGSBuilder {
         tolerance_grad: f64,
         tolerance_cost: f64,
         history_size: usize,
+        l1_coefficient: Option<f64>,
         line_search_params: LineSearchParams,
     ) -> Self {
         LBFGSBuilder {
@@ -167,6 +169,7 @@ impl LBFGSBuilder {
             tolerance_grad,
             tolerance_cost,
             history_size,
+            l1_coefficient,
             line_search_params,
         }
     }
@@ -178,6 +181,7 @@ impl LBFGSBuilder {
             tolerance_grad: self.tolerance_grad,
             tolerance_cost: self.tolerance_cost,
             history_size: self.history_size,
+            l1_coefficient: self.l1_coefficient,
             line_search_params: self.line_search_params,
         }
     }
@@ -211,6 +215,12 @@ impl LBFGSBuilder {
         self.line_search_params = line_search_params;
         self
     }
+
+    /// Set the L1 regularization coefficient
+    pub fn l1_coefficient(mut self, l1_coefficient: Option<f64>) -> Self {
+        self.l1_coefficient = l1_coefficient;
+        self
+    }
 }
 
 /// Default implementation for the L-BFGS builder
@@ -221,6 +231,7 @@ impl LBFGSBuilder {
 /// - `tolerance_grad`: sqrt(EPSILON)
 /// - `tolerance_cost`: EPSILON
 /// - `history_size`: 10
+/// - `l1_coefficient`: None
 /// - `line_search_params`: Default LineSearchParams
 impl Default for LBFGSBuilder {
     fn default() -> Self {
@@ -229,6 +240,7 @@ impl Default for LBFGSBuilder {
             tolerance_grad: f64::EPSILON.sqrt(),
             tolerance_cost: f64::EPSILON,
             history_size: 10,
+            l1_coefficient: None,
             line_search_params: LineSearchParams::default(),
         }
     }
@@ -879,12 +891,14 @@ mod tests_builders {
                 tolerance_grad,
                 tolerance_cost,
                 history_size,
+                l1_coefficient,
                 line_search_params,
             } => {
                 assert_eq!(max_iter, 300);
                 assert_eq!(tolerance_grad, f64::EPSILON.sqrt());
                 assert_eq!(tolerance_cost, f64::EPSILON);
                 assert_eq!(history_size, 10);
+                assert_eq!(l1_coefficient, None);
                 match line_search_params.method {
                     LineSearchMethod::MoreThuente {
                         c1,
@@ -1117,12 +1131,14 @@ mod tests_builders {
                 tolerance_grad,
                 tolerance_cost,
                 history_size,
+                l1_coefficient,
                 line_search_params,
             } => {
                 assert_eq!(max_iter, 500);
                 assert_eq!(tolerance_grad, 1e-8);
                 assert_eq!(tolerance_cost, 1e-8);
                 assert_eq!(history_size, 5);
+                assert_eq!(l1_coefficient, None);
                 match line_search_params.method {
                     LineSearchMethod::MoreThuente {
                         c1,
@@ -1343,19 +1359,21 @@ mod tests_builders {
     /// Test creating a LBFGSdBuilder using new()
     fn test_lbfgs_new() {
         let ls = LineSearchParams::morethuente().c1(1e-5).c2(0.8).build();
-        let lbfgs = LBFGSBuilder::new(500, 1e-8, 1e-8, 5, ls).build();
+        let lbfgs = LBFGSBuilder::new(500, 1e-8, 1e-8, 5, None, ls).build();
         match lbfgs {
             LocalSolverConfig::LBFGS {
                 max_iter,
                 tolerance_grad,
                 tolerance_cost,
                 history_size,
+                l1_coefficient,
                 line_search_params,
             } => {
                 assert_eq!(max_iter, 500);
                 assert_eq!(tolerance_grad, 1e-8);
                 assert_eq!(tolerance_cost, 1e-8);
                 assert_eq!(history_size, 5);
+                assert_eq!(l1_coefficient, None);
                 match line_search_params.method {
                     LineSearchMethod::MoreThuente {
                         c1,

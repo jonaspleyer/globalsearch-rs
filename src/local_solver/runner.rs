@@ -140,15 +140,12 @@ impl<P: Problem> LocalSolver<P> {
             problem: &self.problem,
         };
 
-        // TODO: For now we don't support l1 regularization
-        // Should we support it and default to 0.0? Does it change something in the minimization?
-        // Seems we can pass None?
-
         if let LocalSolverConfig::LBFGS {
             max_iter,
             tolerance_grad,
             tolerance_cost,
             history_size,
+            l1_coefficient,
             line_search_params,
         } = solver_config
         {
@@ -168,11 +165,19 @@ impl<P: Problem> LocalSolver<P> {
                         .with_width_tolerance(*width_tolerance)
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
-                    let solver = LBFGS::new(linesearch, *history_size)
+                    let mut solver = LBFGS::new(linesearch, *history_size)
                         .with_tolerance_cost(*tolerance_cost)
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_tolerance_grad(*tolerance_grad)
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
+
+                    if let Some(l1_coeff) = l1_coefficient {
+                        solver = solver
+                            .with_l1_regularization(*l1_coeff)
+                            .map_err(|e: Error| {
+                                LocalSolverError::InvalidLBFGSConfig(e.to_string())
+                            })?;
+                    }
 
                     let res = Executor::new(cost, solver)
                         .configure(|state| state.param(initial_point).max_iters(*max_iter))
@@ -212,11 +217,19 @@ impl<P: Problem> LocalSolver<P> {
                         .with_bounds(bounds[0], bounds[1])
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
-                    let solver = LBFGS::new(linesearch, *history_size)
+                    let mut solver = LBFGS::new(linesearch, *history_size)
                         .with_tolerance_cost(*tolerance_cost)
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
                         .with_tolerance_grad(*tolerance_grad)
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
+
+                    if let Some(l1_coeff) = l1_coefficient {
+                        solver = solver
+                            .with_l1_regularization(*l1_coeff)
+                            .map_err(|e: Error| {
+                                LocalSolverError::InvalidLBFGSConfig(e.to_string())
+                            })?;
+                    }
 
                     let res = Executor::new(cost, solver)
                         .configure(|state| state.param(initial_point).max_iters(*max_iter))
@@ -926,6 +939,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: HagerZhangBuilder::default().delta(2.0).build(),
             },
         );
@@ -951,6 +965,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: HagerZhangBuilder::default().delta(0.7).sigma(0.5).build(),
             },
         );
@@ -975,6 +990,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: HagerZhangBuilder::default().epsilon(-0.5).build(),
             },
         );
@@ -998,6 +1014,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: HagerZhangBuilder::default().theta(1.5).build(),
             },
         );
@@ -1022,6 +1039,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: HagerZhangBuilder::default().gamma(1.5).build(),
             },
         );
@@ -1046,6 +1064,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: HagerZhangBuilder::default().eta(-0.5).build(),
             },
         );
@@ -1071,6 +1090,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: HagerZhangBuilder::default()
                     .bounds(array![1.0, 0.0])
                     .build(),
@@ -1104,6 +1124,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: MoreThuenteBuilder::default().c1(1.0).c2(0.5).build(),
             },
         );
@@ -1129,6 +1150,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: MoreThuenteBuilder::default()
                     .bounds(array![1.0, 0.0])
                     .build(),
@@ -1155,6 +1177,7 @@ mod tests_local_solvers {
                 tolerance_grad: 1e-6,
                 tolerance_cost: 1e-6,
                 history_size: 5,
+                l1_coefficient: None,
                 line_search_params: MoreThuenteBuilder::default().width_tolerance(-0.5).build(),
             },
         );
