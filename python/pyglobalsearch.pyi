@@ -138,6 +138,7 @@ class PyLBFGS:
     tolerance_grad: float
     tolerance_cost: float
     history_size: int
+    l1_coefficient: Optional[float]
     line_search_params: Union[
         PyLineSearchMethod, HagerZhang, MoreThuente, PyLineSearchParams
     ]
@@ -147,6 +148,7 @@ class PyLBFGS:
         tolerance_grad: float = 1.490116119384766e-8,
         tolerance_cost: float = 2.220446049250313e-16,
         history_size: int = 10,
+        l1_coefficient: Optional[float] = None,
         line_search_params: Union[
             PyLineSearchMethod, HagerZhang, MoreThuente, PyLineSearchParams
         ] = MoreThuente(),
@@ -256,6 +258,7 @@ class builders:
         line_search_params: Union[
             PyLineSearchMethod, HagerZhang, MoreThuente, "PyLineSearchParams"
         ] = MoreThuente(),
+        l1_coefficient: Optional[float] = None,
     ) -> "PyLBFGS": ...
     @staticmethod
     def nelder_mead(

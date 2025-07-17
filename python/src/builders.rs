@@ -213,6 +213,8 @@ pub struct PyLBFGS {
     #[pyo3(get, set)]
     pub history_size: usize,
     #[pyo3(get, set)]
+    pub l1_coefficient: Option<f64>,
+    #[pyo3(get, set)]
     pub line_search_params: PyLineSearchParams,
 }
 
@@ -224,6 +226,7 @@ impl PyLBFGS {
         tolerance_grad = EPSILON.sqrt(),
         tolerance_cost = EPSILON,
         history_size = 10,
+        l1_coefficient = None,
         line_search_params = PyLineSearchParams {
             method: PyLineSearchMethod::MoreThuente(PyMoreThuente {
                 c1: 1e-4,
@@ -238,6 +241,7 @@ impl PyLBFGS {
         tolerance_grad: f64,
         tolerance_cost: f64,
         history_size: usize,
+        l1_coefficient: Option<f64>,
         line_search_params: PyLineSearchParams,
     ) -> Self {
         PyLBFGS {
@@ -245,6 +249,7 @@ impl PyLBFGS {
             tolerance_grad,
             tolerance_cost,
             history_size,
+            l1_coefficient,
             line_search_params,
         }
     }
@@ -275,14 +280,23 @@ impl PyLBFGS {
             self.tolerance_grad,
             self.tolerance_cost,
             self.history_size,
+            self.l1_coefficient,
             line_search_params,
         )
     }
 }
 
 #[pyfunction]
+#[pyo3(signature = (
+    max_iter,
+    tolerance_grad,
+    tolerance_cost,
+    history_size,
+    line_search_params,
+    l1_coefficient = None,
+))]
 #[pyo3(
-    text_signature = "(max_iter: u64, tolerance_grad: f64, tolerance_cost: f64, history_size: usize, line_search_params: Union[PyMoreThuente, PyHagerZhang])"
+    text_signature = "(max_iter: u64, tolerance_grad: f64, tolerance_cost: f64, history_size: usize, line_search_params: Union[PyMoreThuente, PyHagerZhang], l1_coefficient: Optional[float] = None)"
 )]
 fn lbfgs(
     max_iter: u64,
@@ -290,6 +304,7 @@ fn lbfgs(
     tolerance_cost: f64,
     history_size: usize,
     line_search_params: PyObject,
+    l1_coefficient: Option<f64>,
     py: Python,
 ) -> PyResult<PyLBFGS> {
     let line_search_params =
@@ -314,6 +329,7 @@ fn lbfgs(
         tolerance_grad,
         tolerance_cost,
         history_size,
+        l1_coefficient,
         line_search_params,
     })
 }
