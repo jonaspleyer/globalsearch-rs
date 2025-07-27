@@ -21,6 +21,8 @@ jobs:
         run: cargo test --verbose
       - name: Run tests with rayon
         run: cargo test --features rayon --verbose
+      - name: Run tests with checkpointing
+        run: cargo test --features checkpointing --verbose
 
   clippy:
     runs-on: ubuntu-latest
@@ -34,3 +36,5 @@ jobs:
         run: cargo clippy --verbose
       - name: Clippy with rayon
         run: cargo clippy --features "rayon" --verbose
+      - name: Clippy with checkpointing
+        run: cargo clippy --features "checkpointing" --verbose
