@@ -386,7 +386,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             .expect("Failed to create progress bar");
 
         // Adjust progress bar for resumed runs
-        #[cfg(feature = "progress_bar")]
+        #[cfg(all(feature = "progress_bar", feature = "checkpointing"))]
         if resumed_from_checkpoint {
             for _ in 0..self.current_iteration {
                 stage2_bar.update(1).expect("Failed to update progress bar");
