@@ -11,3 +11,6 @@ pub mod oqnlp;
 pub mod problem;
 pub mod scatter_search;
 pub mod types;
+
+#[cfg(feature = "checkpointing")]
+pub mod checkpoint;

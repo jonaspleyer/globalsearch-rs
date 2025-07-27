@@ -16,16 +16,20 @@ rust-version = "1.78"                                                           
 [dependencies]
 argmin = { version = "0.10.0" }
 argmin-math = { version = "0.4.0", features = ["ndarray_latest-nolinalg"] }
-ndarray = "0.15.6"
+ndarray = { version = "0.15.6" }
 rayon = { version = "1.5.3", optional = true }
 thiserror = "2.0.11"
 rand = "0.9.0"
 kdam = { version = "0.6.2", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+bincode = { version = "1.3", optional = true }
+chrono = { version = "0.4", features = ["serde"], optional = true }
 
 [features]
 default = []
 rayon = ["dep:rayon"]
 progress_bar = ["dep:kdam"]
+checkpointing = ["dep:serde", "dep:bincode", "dep:chrono", "ndarray/serde"]
 
 [dev-dependencies]
 criterion = { git = "https://github.com/bheisler/criterion.rs", features = [

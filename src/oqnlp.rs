@@ -78,6 +78,13 @@ use crate::local_solver::runner::LocalSolver;
 use crate::problem::Problem;
 use crate::scatter_search::ScatterSearch;
 use crate::types::{FilterParams, LocalSolution, OQNLPParams, SolutionSet};
+#[cfg(feature = "checkpointing")]
+use crate::{
+    checkpoint::{CheckpointError, CheckpointManager},
+    types::{CheckpointConfig, OQNLPCheckpoint},
+};
+#[cfg(feature = "checkpointing")]
+use chrono;
 #[cfg(feature = "progress_bar")]
 use kdam::{Bar, BarExt};
 use ndarray::Array1;
@@ -132,6 +139,11 @@ pub enum OQNLPError {
     /// Error when creating the distance filter
     #[error("OQNLP Error: Failed to create distance filter. {0}")]
     DistanceFilterError(String),
+
+    /// Error related to checkpointing operations
+    #[cfg(feature = "checkpointing")]
+    #[error("OQNLP Error: Checkpointing error: {0}")]
+    CheckpointError(#[from] CheckpointError),
 }
 
 /// # The main struct for the OQNLP algorithm.
@@ -195,6 +207,30 @@ pub struct OQNLP<P: Problem + Clone> {
 
     /// Verbose flag to enable additional output during the optimization process.
     verbose: bool,
+
+    /// Checkpoint manager for saving and loading optimization state
+    #[cfg(feature = "checkpointing")]
+    checkpoint_manager: Option<CheckpointManager>,
+
+    /// Current iteration number (for checkpointing)
+    #[cfg(feature = "checkpointing")]
+    current_iteration: usize,
+
+    /// Current reference set (for checkpointing)
+    #[cfg(feature = "checkpointing")]
+    current_reference_set: Option<Vec<Array1<f64>>>,
+
+    /// Number of unchanged cycles (for checkpointing)
+    #[cfg(feature = "checkpointing")]
+    unchanged_cycles: usize,
+
+    /// Start time for elapsed time calculation
+    #[cfg(feature = "checkpointing")]
+    start_time: Option<std::time::Instant>,
+
+    /// Current seed for RNG continuation (for checkpointing)
+    #[cfg(feature = "checkpointing")]
+    current_seed: u64,
 }
 
 impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
@@ -249,33 +285,88 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             solution_set: None,
             max_time: None,
             verbose: false,
+            #[cfg(feature = "checkpointing")]
+            checkpoint_manager: None,
+            #[cfg(feature = "checkpointing")]
+            current_iteration: 0,
+            #[cfg(feature = "checkpointing")]
+            current_reference_set: None,
+            #[cfg(feature = "checkpointing")]
+            unchanged_cycles: 0,
+            #[cfg(feature = "checkpointing")]
+            start_time: None,
+            #[cfg(feature = "checkpointing")]
+            current_seed: params.seed,
         })
     }
 
     /// Run the OQNLP algorithm and return the solution set
     pub fn run(&mut self) -> Result<SolutionSet, OQNLPError> {
-        // Stage 1: Initial ScatterSearch iterations and first local call
-        if self.verbose {
-            println!("Starting Stage 1");
+        // Try to resume from checkpoint if enabled
+        #[cfg(feature = "checkpointing")]
+        let resumed_from_checkpoint = self.try_resume_from_checkpoint()?;
+        #[cfg(not(feature = "checkpointing"))]
+        let resumed_from_checkpoint = false;
+
+        // Set start time for elapsed time calculation
+        #[cfg(feature = "checkpointing")]
+        if self.start_time.is_none() {
+            self.start_time = Some(std::time::Instant::now());
         }
 
-        let ss: ScatterSearch<P> = ScatterSearch::new(self.problem.clone(), self.params.clone())
-            .map_err(|_| OQNLPError::ScatterSearchError)?;
-        let (mut ref_set, scatter_candidate) =
-            ss.run().map_err(|_| OQNLPError::ScatterSearchRunError)?;
-        let local_sol: LocalSolution = self
-            .local_solver
-            .solve(scatter_candidate)
-            .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+        // If we resumed from checkpoint, skip Stage 1 and jump to Stage 2
+        let (mut ref_set, mut unchanged_cycles) = if resumed_from_checkpoint {
+            #[cfg(feature = "checkpointing")]
+            {
+                if self.verbose {
+                    println!(
+                        "Resuming from checkpoint at iteration {}",
+                        self.current_iteration
+                    );
+                }
+                let ref_set = self.current_reference_set.clone().unwrap_or_default();
+                let unchanged_cycles = self.unchanged_cycles;
+                (ref_set, unchanged_cycles)
+            }
+            #[cfg(not(feature = "checkpointing"))]
+            unreachable!()
+        } else {
+            // Stage 1: Initial ScatterSearch iterations and first local call
+            if self.verbose {
+                println!("Starting Stage 1");
+            }
 
-        self.merit_filter.update_threshold(local_sol.objective);
+            let ss: ScatterSearch<P> =
+                ScatterSearch::new(self.problem.clone(), self.params.clone())
+                    .map_err(|_| OQNLPError::ScatterSearchError)?;
+            let (ref_set, scatter_candidate) =
+                ss.run().map_err(|_| OQNLPError::ScatterSearchRunError)?;
+            let local_sol: LocalSolution = self
+                .local_solver
+                .solve(scatter_candidate)
+                .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+
+            self.merit_filter.update_threshold(local_sol.objective);
+
+            if self.verbose {
+                println!(
+                    "Stage 1: Local solution found with objective = {:.8}",
+                    local_sol.objective
+                );
+            }
+
+            self.process_local_solution(local_sol)?;
+
+            // Store reference set for checkpointing
+            #[cfg(feature = "checkpointing")]
+            {
+                self.current_reference_set = Some(ref_set.clone());
+            }
+
+            (ref_set, 0)
+        };
 
         if self.verbose {
-            println!(
-                "Stage 1: Local solution found with objective = {:.8}",
-                local_sol.objective
-            );
-
             println!("Starting Stage 2");
         }
 
@@ -286,25 +377,77 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             .unit("it")
             .postfix(&format!(
                 "Objective function: {:.6}",
-                local_sol.objective.clone()
+                self.solution_set
+                    .as_ref()
+                    .and_then(|s| s.best_solution())
+                    .map_or(f64::INFINITY, |s| s.objective)
             ))
             .build()
             .expect("Failed to create progress bar");
 
-        self.process_local_solution(local_sol)?;
+        // Adjust progress bar for resumed runs
+        #[cfg(feature = "progress_bar")]
+        if resumed_from_checkpoint {
+            for _ in 0..self.current_iteration {
+                stage2_bar.update(1).expect("Failed to update progress bar");
+            }
+        }
 
         // Stage 2: Main iterative loop
-        let mut unchanged_cycles: usize = 0;
+        #[cfg(feature = "checkpointing")]
+        let mut rng: StdRng = if resumed_from_checkpoint {
+            // Use the saved seed when resuming from checkpoint
+            StdRng::seed_from_u64(self.current_seed)
+        } else {
+            // Start fresh with base seed + current iteration
+            let seed = self.params.seed + self.current_iteration as u64;
+            self.current_seed = seed;
+            StdRng::seed_from_u64(seed)
+        };
+
+        #[cfg(not(feature = "checkpointing"))]
         let mut rng: StdRng = StdRng::seed_from_u64(self.params.seed);
-        // TODO: Do we need to shuffle the reference set? Is this necessary?
-        ref_set.shuffle(&mut rng);
+
+        // Shuffle reference set if starting fresh
+        if !resumed_from_checkpoint {
+            ref_set.shuffle(&mut rng);
+        }
 
         let start_timer: Option<std::time::Instant> =
             self.max_time.map(|_| std::time::Instant::now());
 
-        for (iter, trial) in ref_set.iter().take(self.params.iterations).enumerate() {
+        // Start from current iteration if resumed, otherwise from 0
+        #[cfg(feature = "checkpointing")]
+        let start_iter = if resumed_from_checkpoint {
+            self.current_iteration
+        } else {
+            0
+        };
+        #[cfg(not(feature = "checkpointing"))]
+        let start_iter = 0;
+
+        for (local_iter, trial) in ref_set
+            .iter()
+            .take(self.params.iterations)
+            .enumerate()
+            .skip(start_iter)
+        {
+            #[cfg(feature = "checkpointing")]
+            {
+                self.current_iteration = local_iter;
+                self.unchanged_cycles = unchanged_cycles;
+            }
+
+            // Update the current seed for checkpointing
+            #[cfg(feature = "checkpointing")]
+            {
+                self.current_seed = self.params.seed + self.current_iteration as u64;
+            }
+
             #[cfg(feature = "progress_bar")]
-            stage2_bar.update(1).expect("Failed to update progress bar");
+            if !resumed_from_checkpoint || local_iter >= start_iter {
+                stage2_bar.update(1).expect("Failed to update progress bar");
+            }
 
             if let (Some(max_secs), Some(start)) = (self.max_time, start_timer) {
                 if start.elapsed().as_secs_f64() > max_secs {
@@ -331,7 +474,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 if self.verbose && added {
                     println!(
                         "Stage 2, iteration {}: Added local solution found with objective = {:.8}",
-                        iter, local_trial.objective
+                        local_iter, local_trial.objective
                     );
                     println!("x0 = {}", local_trial.point);
                 }
@@ -351,7 +494,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     if self.verbose {
                         println!(
                             "Stage 2, iteration {}: Adjusting threshold from {:.8} to {:.8}",
-                            iter,
+                            local_iter,
                             self.merit_filter.threshold,
                             self.merit_filter.threshold + 0.1 * self.merit_filter.threshold.abs()
                         );
@@ -361,7 +504,15 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     unchanged_cycles = 0;
                 }
             }
+
+            // Save checkpoint if enabled and conditions are met
+            #[cfg(feature = "checkpointing")]
+            self.maybe_save_checkpoint()?;
         }
+
+        // Save final checkpoint at the end of optimization
+        #[cfg(feature = "checkpointing")]
+        self.maybe_save_final_checkpoint()?;
 
         self.solution_set
             .clone()
@@ -453,6 +604,241 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     pub fn verbose(mut self) -> Self {
         self.verbose = true;
         self
+    }
+
+    /// Enable checkpointing with the given configuration
+    ///
+    /// This allows saving and resuming the optimization state
+    #[cfg(feature = "checkpointing")]
+    pub fn with_checkpointing(mut self, config: CheckpointConfig) -> Result<Self, OQNLPError> {
+        self.checkpoint_manager = Some(CheckpointManager::new(config)?);
+        Ok(self)
+    }
+
+    /// Try to resume from the latest checkpoint if available
+    ///
+    /// Returns true if resumed from checkpoint, false if starting fresh
+    #[cfg(feature = "checkpointing")]
+    pub fn try_resume_from_checkpoint(&mut self) -> Result<bool, OQNLPError> {
+        if let Some(ref manager) = self.checkpoint_manager {
+            if manager.config().auto_resume && manager.checkpoint_exists() {
+                let checkpoint = manager.load_latest_checkpoint()?;
+                self.restore_from_checkpoint(checkpoint)?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Resume from the latest checkpoint with modified parameters
+    ///
+    /// This allows you to continue optimization with different parameters
+    /// (e.g., more iterations, different population size, etc.)
+    #[cfg(feature = "checkpointing")]
+    pub fn resume_with_modified_params(
+        &mut self,
+        new_params: OQNLPParams,
+    ) -> Result<bool, OQNLPError> {
+        if let Some(ref manager) = self.checkpoint_manager {
+            if manager.checkpoint_exists() {
+                let mut checkpoint = manager.load_latest_checkpoint()?;
+
+                // Keep the old params for comparison
+                let old_iterations = checkpoint.params.iterations;
+                let old_population_size = checkpoint.params.population_size;
+
+                // Handle population size changes
+                if new_params.population_size != old_population_size {
+                    if new_params.population_size > old_population_size {
+                        self.expand_reference_set(
+                            &mut checkpoint.reference_set,
+                            old_population_size,
+                            new_params.population_size,
+                        )?;
+
+                        if self.verbose {
+                            println!(
+                                "Expanded reference set from {} to {} points",
+                                old_population_size, new_params.population_size
+                            );
+                        }
+                    } else {
+                        // Population size decreased, issue warning but continue
+                        eprintln!(
+                            "Warning: New population size ({}) is smaller than original ({}). Using original reference set with {} points.",
+                            new_params.population_size, old_population_size, old_population_size
+                        );
+
+                        if self.verbose {
+                            println!(
+                                "Keeping original reference set size of {} points despite smaller population_size parameter",
+                                old_population_size
+                            );
+                        }
+                    }
+                }
+
+                // Update with new parameters
+                checkpoint.params = new_params.clone();
+
+                self.restore_from_checkpoint(checkpoint)?;
+
+                if self.verbose {
+                    println!(
+                        "Resumed with modified parameters. Iterations changed from {} to {}",
+                        old_iterations, new_params.iterations
+                    );
+                }
+
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Expand the reference set to a larger population size
+    ///
+    /// This method generates additional points to expand an existing reference set
+    /// while maintaining diversity using the same strategy as ScatterSearch
+    #[cfg(feature = "checkpointing")]
+    fn expand_reference_set(
+        &self,
+        ref_set: &mut Vec<Array1<f64>>,
+        old_size: usize,
+        new_size: usize,
+    ) -> Result<(), OQNLPError> {
+        if new_size <= old_size {
+            return Ok(());
+        }
+
+        // Create a temporary ScatterSearch instance to reuse its methods
+        let temp_params = OQNLPParams {
+            population_size: new_size,
+            seed: self.current_seed + ref_set.len() as u64,
+            ..self.params.clone()
+        };
+
+        let mut scatter_search = ScatterSearch::new(self.problem.clone(), temp_params)
+            .map_err(|_| OQNLPError::ScatterSearchError)?;
+
+        // ScatterSearch's diversify_reference_set method to expand our existing set
+        scatter_search
+            .diversify_reference_set(ref_set)
+            .map_err(|_| OQNLPError::ScatterSearchError)?;
+
+        Ok(())
+    }
+
+    /// Resume from a specific checkpoint file with modified parameters
+    #[cfg(feature = "checkpointing")]
+    pub fn resume_from_checkpoint_with_params(
+        &mut self,
+        checkpoint_path: &std::path::Path,
+        new_params: OQNLPParams,
+    ) -> Result<(), OQNLPError> {
+        if let Some(ref manager) = self.checkpoint_manager {
+            let mut checkpoint = manager.load_checkpoint_from_path(checkpoint_path)?;
+
+            // Keep the old params for comparison
+            let old_iterations = checkpoint.params.iterations;
+
+            // Update with new parameters
+            checkpoint.params = new_params.clone();
+
+            self.restore_from_checkpoint(checkpoint)?;
+
+            if self.verbose {
+                println!(
+                    "Resumed from {} with modified parameters. Iterations changed from {} to {}",
+                    checkpoint_path.display(),
+                    old_iterations,
+                    new_params.iterations
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Restore state from a checkpoint
+    #[cfg(feature = "checkpointing")]
+    fn restore_from_checkpoint(&mut self, checkpoint: OQNLPCheckpoint) -> Result<(), OQNLPError> {
+        let solution_count = checkpoint.solution_set.as_ref().map_or(0, |s| s.len());
+
+        self.params = checkpoint.params;
+        self.current_iteration = checkpoint.current_iteration;
+        self.merit_filter
+            .update_threshold(checkpoint.merit_threshold);
+        self.solution_set = checkpoint.solution_set;
+        self.current_reference_set = Some(checkpoint.reference_set);
+        self.unchanged_cycles = checkpoint.unchanged_cycles;
+
+        // Restore the current seed for continuing RNG sequence
+        self.current_seed = checkpoint.current_seed;
+
+        // Restore distance filter solutions
+        self.distance_filter
+            .set_solutions(checkpoint.distance_filter_solutions);
+
+        if self.verbose {
+            println!(
+                "Resumed from checkpoint at iteration {} with {} solutions",
+                checkpoint.current_iteration, solution_count
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Create a checkpoint of the current state
+    #[cfg(feature = "checkpointing")]
+    fn create_checkpoint(&self) -> OQNLPCheckpoint {
+        let elapsed_time = self
+            .start_time
+            .map(|start| start.elapsed().as_secs_f64())
+            .unwrap_or(0.0);
+
+        OQNLPCheckpoint {
+            params: self.params.clone(),
+            current_iteration: self.current_iteration,
+            merit_threshold: self.merit_filter.threshold,
+            solution_set: self.solution_set.clone(),
+            reference_set: self.current_reference_set.clone().unwrap_or_default(),
+            unchanged_cycles: self.unchanged_cycles,
+            elapsed_time,
+            distance_filter_solutions: self.distance_filter.get_solutions().clone(),
+            current_seed: self.current_seed,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    /// Save a checkpoint if checkpointing is enabled and conditions are met
+    #[cfg(feature = "checkpointing")]
+    fn maybe_save_checkpoint(&self) -> Result<(), OQNLPError> {
+        if let Some(ref manager) = self.checkpoint_manager {
+            if self.current_iteration % manager.config().save_frequency == 0 {
+                let checkpoint = self.create_checkpoint();
+                let saved_path = manager.save_checkpoint(&checkpoint, self.current_iteration)?;
+
+                if self.verbose {
+                    println!("Checkpoint saved to: {}", saved_path.display());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Save final checkpoint at the end of optimization (regardless of save_frequency)
+    #[cfg(feature = "checkpointing")]
+    fn maybe_save_final_checkpoint(&self) -> Result<(), OQNLPError> {
+        if let Some(manager) = &self.checkpoint_manager {
+            let checkpoint = self.create_checkpoint();
+            let saved_path = manager.save_checkpoint(&checkpoint, self.current_iteration)?;
+
+            if self.verbose {
+                println!("Final checkpoint saved to: {}", saved_path.display());
+            }
+        }
+        Ok(())
     }
 
     /// Adjust the threshold for the merit filter
@@ -631,6 +1017,18 @@ mod tests_oqnlp {
             solution_set: None,
             max_time: None,
             verbose: false,
+            #[cfg(feature = "checkpointing")]
+            checkpoint_manager: None,
+            #[cfg(feature = "checkpointing")]
+            current_iteration: 0,
+            #[cfg(feature = "checkpointing")]
+            current_reference_set: None,
+            #[cfg(feature = "checkpointing")]
+            unchanged_cycles: 0,
+            #[cfg(feature = "checkpointing")]
+            start_time: None,
+            #[cfg(feature = "checkpointing")]
+            current_seed: params.seed,
         };
 
         // A trial far enough in space but with objective above the threshold
@@ -675,6 +1073,18 @@ mod tests_oqnlp {
             solution_set: None,
             max_time: None,
             verbose: false,
+            #[cfg(feature = "checkpointing")]
+            checkpoint_manager: None,
+            #[cfg(feature = "checkpointing")]
+            current_iteration: 0,
+            #[cfg(feature = "checkpointing")]
+            current_reference_set: None,
+            #[cfg(feature = "checkpointing")]
+            unchanged_cycles: 0,
+            #[cfg(feature = "checkpointing")]
+            start_time: None,
+            #[cfg(feature = "checkpointing")]
+            current_seed: params.seed,
         };
 
         oqnlp.adjust_threshold(10.0);
@@ -712,6 +1122,18 @@ mod tests_oqnlp {
             solution_set: None,
             max_time: None,
             verbose: false,
+            #[cfg(feature = "checkpointing")]
+            checkpoint_manager: None,
+            #[cfg(feature = "checkpointing")]
+            current_iteration: 0,
+            #[cfg(feature = "checkpointing")]
+            current_reference_set: None,
+            #[cfg(feature = "checkpointing")]
+            unchanged_cycles: 0,
+            #[cfg(feature = "checkpointing")]
+            start_time: None,
+            #[cfg(feature = "checkpointing")]
+            current_seed: params.seed,
         };
 
         // Test setting the time limit

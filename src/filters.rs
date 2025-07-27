@@ -17,6 +17,11 @@ pub enum FiltersErrors {
 /// # Merit filter
 ///
 /// The merit filter is used to check if the objective value of a point is below a certain threshold.
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "checkpointing",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct MeritFilter {
     pub threshold: f64,
 }
@@ -49,6 +54,11 @@ impl MeritFilter {
 ///
 /// The distance filter is used to maintain diversity among solutions.
 /// It checks if a point is far enough from the solutions in the filter.
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "checkpointing",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct DistanceFilter {
     solutions: Vec<LocalSolution>, // TODO: Change to ndarray?
     params: FilterParams,
@@ -87,6 +97,18 @@ impl DistanceFilter {
             euclidean_distance_squared(point, &s.point)
                 > self.params.distance_factor * self.params.distance_factor
         })
+    }
+
+    /// Get the current solutions stored in the filter
+    #[cfg(feature = "checkpointing")]
+    pub fn get_solutions(&self) -> &Vec<LocalSolution> {
+        &self.solutions
+    }
+
+    /// Restore solutions from a checkpoint
+    #[cfg(feature = "checkpointing")]
+    pub fn set_solutions(&mut self, solutions: Vec<LocalSolution>) {
+        self.solutions = solutions;
     }
 }
 

@@ -23,6 +23,10 @@
 use ndarray::{array, Array1};
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "checkpointing",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 /// Trust Region Radius Method
 ///
 /// This enum defines the types of trust region radius methods that can be
@@ -33,6 +37,10 @@ pub enum TrustRegionRadiusMethod {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "checkpointing",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 /// Local solver configuration for the OQNLP algorithm
 ///
 /// This enum defines the configuration options for the local solver used in the optimizer, depending on the method used.
@@ -606,6 +614,10 @@ impl Default for NewtonCGBuilder {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "checkpointing",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 /// Line search methods for the local solver
 ///
 /// This enum defines the types of line search methods that can be used in some of the local solver, including MoreThuente, HagerZhang, and Backtracking.
@@ -628,6 +640,10 @@ pub enum LineSearchMethod {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "checkpointing",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 /// Line search parameters for the local solver
 ///
 /// This struct defines the parameters for the line search algorithm used in the local solver. It is only needed for the optimizers that use line search methods.
