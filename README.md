@@ -41,6 +41,8 @@ Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
 
 - 🚀 Parallel execution of initial stage using Rayon
 
+- 🔄 Checkpointing support for long-running optimizations
+
 ## Installation
 
 ### Using as a dependency
@@ -221,6 +223,9 @@ python/ # Python bindings
 - [rand](https://github.com/rust-random/rand)
 - [thiserror](https://github.com/dtolnay/thiserror)
 - [criterion.rs](https://github.com/bheisler/criterion.rs) [dev-dependency]
+- [serde](https://github.com/serde-rs/serde) [feature: `checkpointing`]
+- [chrono](https://github.com/chronotope/chrono) [feature: `checkpointing`]
+- [bincode](https://github.com/bincode-org/bincode) [feature: `checkpointing`]
 
 ## License
 
