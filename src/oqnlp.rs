@@ -208,6 +208,14 @@ pub struct OQNLP<P: Problem + Clone> {
     /// Verbose flag to enable additional output during the optimization process.
     verbose: bool,
 
+    /// Target objective function value to stop optimization early
+    ///
+    /// If set, the optimization will stop when a solution with an objective function value
+    /// less than or equal to this value is found.
+    /// This is useful for problems where a specific target is known and
+    /// can be used to stop the optimization early.
+    target_objective: Option<f64>,
+
     /// Checkpoint manager for saving and loading optimization state
     #[cfg(feature = "checkpointing")]
     checkpoint_manager: Option<CheckpointManager>,
@@ -285,6 +293,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             solution_set: None,
             max_time: None,
             verbose: false,
+            target_objective: None,
             #[cfg(feature = "checkpointing")]
             checkpoint_manager: None,
             #[cfg(feature = "checkpointing")]
@@ -356,6 +365,20 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             }
 
             self.process_local_solution(local_sol)?;
+
+            // Check if target objective has been reached after Stage 1
+            if self.target_objective_reached() {
+                if self.verbose {
+                    println!(
+                        "Stage 1: Target objective {:.8} reached. Stopping optimization.",
+                        self.target_objective.unwrap()
+                    );
+                }
+                return self
+                    .solution_set
+                    .clone()
+                    .ok_or(OQNLPError::NoFeasibleSolution);
+            }
 
             // Store reference set for checkpointing
             #[cfg(feature = "checkpointing")]
@@ -487,6 +510,18 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                         .refresh()
                         .expect("Failed to refresh progress bar");
                 }
+
+                // Check if target objective has been reached
+                if self.target_objective_reached() {
+                    if self.verbose {
+                        println!(
+                            "Stage 2, iteration {}: Target objective {:.8} reached. Stopping optimization.",
+                            local_iter,
+                            self.target_objective.unwrap()
+                        );
+                    }
+                    break;
+                }
             } else {
                 unchanged_cycles += 1;
 
@@ -525,6 +560,16 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         let passes_merit: bool = obj <= self.merit_filter.threshold;
         let passes_distance: bool = self.distance_filter.check(point);
         Ok(passes_merit && passes_distance)
+    }
+
+    /// Check if the target objective has been reached
+    fn target_objective_reached(&self) -> bool {
+        if let (Some(target), Some(solution_set)) = (self.target_objective, &self.solution_set) {
+            if let Some(best) = solution_set.best_solution() {
+                return best.objective <= target;
+            }
+        }
+        false
     }
 
     /// Process a local solution, updating the best solution and filters
@@ -603,6 +648,39 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// This will print additional information about the optimization process
     pub fn verbose(mut self) -> Self {
         self.verbose = true;
+        self
+    }
+
+    /// Set a target objective function value to stop optimization early
+    ///
+    /// If the best solution found has an objective function value less than or equal to this target,
+    /// the optimization will stop early. This can be useful when you know the global optimum
+    /// or want to stop when a "good enough" solution is found.
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - The target objective function value
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use globalsearch::oqnlp::OQNLP;
+    /// # use globalsearch::types::OQNLPParams;
+    /// # use globalsearch::problem::Problem;
+    /// # use globalsearch::types::EvaluationError;
+    /// # use ndarray::{Array1, Array2, array};
+    /// # #[derive(Clone)]
+    /// # struct TestProblem;
+    /// # impl Problem for TestProblem {
+    /// #     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> { Ok(x.sum().powi(2)) }
+    /// #     fn variable_bounds(&self) -> Array2<f64> { array![[-1.0, 1.0]] }
+    /// # }
+    /// let mut oqnlp = OQNLP::new(TestProblem, OQNLPParams::default())
+    ///     .unwrap()
+    ///     .target_objective(0.0);  // Stop when objective <= 0.0
+    /// ```
+    pub fn target_objective(mut self, target: f64) -> Self {
+        self.target_objective = Some(target);
         self
     }
 
@@ -775,6 +853,9 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         // Restore the current seed for continuing RNG sequence
         self.current_seed = checkpoint.current_seed;
 
+        // Restore target objective
+        self.target_objective = checkpoint.target_objective;
+
         // Restore distance filter solutions
         self.distance_filter
             .set_solutions(checkpoint.distance_filter_solutions);
@@ -807,6 +888,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             elapsed_time,
             distance_filter_solutions: self.distance_filter.get_solutions().clone(),
             current_seed: self.current_seed,
+            target_objective: self.target_objective,
             timestamp: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -1017,6 +1099,7 @@ mod tests_oqnlp {
             solution_set: None,
             max_time: None,
             verbose: false,
+            target_objective: None,
             #[cfg(feature = "checkpointing")]
             checkpoint_manager: None,
             #[cfg(feature = "checkpointing")]
@@ -1073,6 +1156,7 @@ mod tests_oqnlp {
             solution_set: None,
             max_time: None,
             verbose: false,
+            target_objective: None,
             #[cfg(feature = "checkpointing")]
             checkpoint_manager: None,
             #[cfg(feature = "checkpointing")]
@@ -1122,6 +1206,7 @@ mod tests_oqnlp {
             solution_set: None,
             max_time: None,
             verbose: false,
+            target_objective: None,
             #[cfg(feature = "checkpointing")]
             checkpoint_manager: None,
             #[cfg(feature = "checkpointing")]
@@ -1210,5 +1295,53 @@ mod tests_oqnlp {
         // Verify that a solution was found
         let sol_set = result.unwrap();
         assert!(sol_set.len() > 0, "Should find at least one solution");
+    }
+
+    #[test]
+    /// Test the target objective functionality
+    fn test_target_objective() {
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 50,
+            population_size: 100,
+            ..Default::default()
+        };
+
+        // Test with a target that should be reached (SixHumpCamel has global minimum around -1.03)
+        let mut oqnlp = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .target_objective(-0.5); // Set target higher than global minimum
+
+        let result = oqnlp.run();
+        assert!(result.is_ok(), "OQNLP should run successfully");
+
+        let sol_set = result.unwrap();
+        let best = sol_set.best_solution().unwrap();
+
+        // The algorithm should have stopped when it found a solution <= -0.5
+        assert!(
+            best.objective <= -0.5,
+            "Best objective {} should be <= target -0.5",
+            best.objective
+        );
+
+        // Test with a target that will never be reached
+        let mut oqnlp2 = OQNLP::new(problem, params).unwrap().target_objective(-10.0); // Set target much lower than possible
+
+        let result2 = oqnlp2.run();
+        assert!(
+            result2.is_ok(),
+            "OQNLP should run successfully even if target not reached"
+        );
+
+        let sol_set2 = result2.unwrap();
+        let best2 = sol_set2.best_solution().unwrap();
+
+        // The algorithm should have run all iterations without reaching the target
+        assert!(
+            best2.objective > -10.0,
+            "Best objective {} should be > impossible target -10.0",
+            best2.objective
+        );
     }
 }

@@ -415,6 +415,9 @@ pub struct OQNLPCheckpoint {
     /// Current seed value for continuing RNG sequence
     pub current_seed: u64,
 
+    /// Target objective function value to stop optimization
+    pub target_objective: Option<f64>,
+
     /// Timestamp of the checkpoint
     pub timestamp: String,
 }
@@ -485,6 +488,13 @@ impl fmt::Display for OQNLPCheckpoint {
         writeln!(f, "  Distance factor: {}", self.params.distance_factor)?;
         writeln!(f, "  Local solver: {:?}", self.params.local_solver_type)?;
         writeln!(f, "  Seed: {}", self.params.seed)?;
+
+        if let Some(target) = self.target_objective {
+            writeln!(f, "  Target objective: {:.8e}", target)?;
+        } else {
+            writeln!(f, "  Target objective: None")?;
+        }
+
         writeln!(f, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")?;
 
         Ok(())
@@ -696,6 +706,7 @@ mod tests_types {
             elapsed_time: 123.45,
             distance_filter_solutions: vec![],
             current_seed: 42,
+            target_objective: Some(-1.5),
             timestamp: "2025-07-27T12:00:00Z".to_string(),
         };
 
@@ -730,6 +741,7 @@ mod tests_types {
             elapsed_time: 15.5,
             distance_filter_solutions: vec![],
             current_seed: 0,
+            target_objective: None,
             timestamp: "2025-07-27T10:00:00Z".to_string(),
         };
 
