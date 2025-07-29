@@ -264,6 +264,7 @@ mod tests_checkpointing {
             elapsed_time: 120.5,
             distance_filter_solutions: vec![],
             current_seed: 10,
+            target_objective: None,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -305,6 +306,7 @@ mod tests_checkpointing {
             elapsed_time: 0.0,
             distance_filter_solutions: vec![],
             current_seed: 0,
+            target_objective: None,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
