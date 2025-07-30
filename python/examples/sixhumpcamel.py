@@ -61,6 +61,9 @@ problem = gs.PyProblem(obj, variable_bounds, grad)
 
 
 # Optimization returns a solution set
+# You can also use target_objective, max_time, and verbose parameters:
+# sol_set = gs.optimize(problem, params, local_solver="LBFGS", seed=0,
+#                      target_objective=-1.0, max_time=30.0, verbose=True)
 sol_set = gs.optimize(problem, params, local_solver="LBFGS", seed=0)
 
 # Solution set is a list of dictionaries or None

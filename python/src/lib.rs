@@ -194,13 +194,16 @@ impl Problem for PyProblem {
 /// This function takes a problem, parameters and optionally a local solver and its configuration
 /// and returns the best solution found by the optimizer.
 #[pyfunction]
-#[pyo3(signature = (problem, params, local_solver=None, local_solver_config=None, seed=None))]
+#[pyo3(signature = (problem, params, local_solver=None, local_solver_config=None, seed=None, target_objective=None, max_time=None, verbose=false))]
 fn optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
     local_solver: Option<&str>,
     local_solver_config: Option<PyObject>,
     seed: Option<u64>,
+    target_objective: Option<f64>,
+    max_time: Option<f64>,
+    verbose: Option<bool>,
 ) -> PyResult<Py<PyAny>> {
     Python::with_gil(|py| {
         // Convert local_solver string to enum
@@ -289,6 +292,20 @@ fn optimize(
 
         let mut optimizer =
             OQNLP::new(problem, params).map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        // Apply optional configurations
+        if let Some(target) = target_objective {
+            optimizer = optimizer.target_objective(target);
+        }
+
+        if let Some(max_secs) = max_time {
+            optimizer = optimizer.max_time(max_secs);
+        }
+
+        if verbose.unwrap_or(false) {
+            optimizer = optimizer.verbose();
+        }
+
         let solution_set = optimizer.run();
 
         let binding = solution_set.map_err(|e| PyValueError::new_err(e.to_string()))?;

@@ -325,6 +325,9 @@ def optimize(
         Union[PyLBFGS, PyNelderMead, PySteepestDescent, PyNewtonCG, PyTrustRegion]
     ] = None,
     seed: Optional[int] = 0,
+    target_objective: Optional[float] = None,
+    max_time: Optional[float] = None,
+    verbose: Optional[bool] = False,
 ) -> Optional[List[Solution]]:
     """
     # Perform global optimization on the given problem.
@@ -336,7 +339,11 @@ def optimize(
         problem: The optimization problem to solve
         params: Parameters controlling the optimization process
         local_solver: The algorithm to use for local optimization ("LBFGS" by default)
+        local_solver_config: Configuration for the local solver (None for default)
         seed: Seed for reproducibility (0 by default)
+        target_objective: Target objective value to stop early when reached (None to disable)
+        max_time: Maximum time in seconds for Stage 2 optimization (None for unlimited)
+        verbose: Enable verbose output during optimization (False by default)
 
     Returns:
         A list of Solution objects containing multiple solutions found and their
