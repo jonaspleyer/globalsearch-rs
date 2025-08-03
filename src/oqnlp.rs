@@ -1344,4 +1344,1563 @@ mod tests_oqnlp {
             best2.objective
         );
     }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test the resume_with_modified_params functionality
+    fn test_resume_with_modified_params() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_resume");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let initial_params = OQNLPParams {
+            iterations: 10,
+            population_size: 20,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_resume".to_string(),
+            save_frequency: 2,
+            keep_all: false,
+            auto_resume: true,
+        };
+
+        // Create and run initial OQNLP with checkpointing to create a checkpoint
+        let mut oqnlp = OQNLP::new(problem.clone(), initial_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config.clone())
+            .unwrap()
+            .verbose();
+
+        // Run for a few iterations to create checkpoints
+        let _result = oqnlp.run();
+
+        // Create a new OQNLP instance with modified parameters
+        let modified_params = OQNLPParams {
+            iterations: 25,      // Increased iterations
+            population_size: 30, // Increased population size
+            ..initial_params
+        };
+
+        let mut oqnlp2 = OQNLP::new(problem.clone(), modified_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap()
+            .verbose();
+
+        // Test resume with modified parameters
+        let resumed = oqnlp2.resume_with_modified_params(modified_params.clone());
+
+        assert!(
+            resumed.is_ok(),
+            "Resume with modified params should succeed"
+        );
+        assert!(resumed.unwrap(), "Should have resumed from checkpoint");
+
+        // Verify that the parameters were updated
+        assert_eq!(oqnlp2.params.iterations, 25);
+        assert_eq!(oqnlp2.params.population_size, 30);
+
+        // Test case where no checkpoint exists
+        let empty_checkpoint_dir = env::temp_dir().join("globalsearch_test_empty");
+        std::fs::create_dir_all(&empty_checkpoint_dir).expect("Failed to create test directory");
+
+        let empty_checkpoint_config = CheckpointConfig {
+            checkpoint_dir: empty_checkpoint_dir.clone(),
+            checkpoint_name: "nonexistent".to_string(),
+            save_frequency: 2,
+            keep_all: false,
+            auto_resume: true,
+        };
+
+        let mut oqnlp3 = OQNLP::new(problem, modified_params.clone())
+            .unwrap()
+            .with_checkpointing(empty_checkpoint_config)
+            .unwrap();
+
+        let not_resumed = oqnlp3.resume_with_modified_params(modified_params);
+        assert!(
+            not_resumed.is_ok(),
+            "Should handle no checkpoint gracefully"
+        );
+        assert!(
+            !not_resumed.unwrap(),
+            "Should return false when no checkpoint exists"
+        );
+
+        // Clean up test directories
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+        let _ = std::fs::remove_dir_all(&empty_checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test resume_with_modified_params with decreased population size
+    fn test_resume_with_modified_params_decreased_population() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_decrease");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let initial_params = OQNLPParams {
+            iterations: 10,
+            population_size: 30,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_decrease".to_string(),
+            save_frequency: 2,
+            keep_all: false,
+            auto_resume: true,
+        };
+
+        // Create and run initial OQNLP with checkpointing
+        let mut oqnlp = OQNLP::new(problem.clone(), initial_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config.clone())
+            .unwrap()
+            .verbose();
+
+        let _result = oqnlp.run();
+
+        // Create modified parameters with decreased population size
+        let modified_params = OQNLPParams {
+            iterations: 15,
+            population_size: 20, // Decreased from 30 to 20
+            ..initial_params
+        };
+
+        let mut oqnlp2 = OQNLP::new(problem, modified_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap()
+            .verbose();
+
+        // Test resume with decreased population size
+        let resumed = oqnlp2.resume_with_modified_params(modified_params);
+
+        assert!(
+            resumed.is_ok(),
+            "Resume with decreased population should succeed"
+        );
+        assert!(resumed.unwrap(), "Should have resumed from checkpoint");
+
+        // The reference set should keep the original size despite the smaller population_size parameter
+        // This is tested implicitly by ensuring the function succeeds without error
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test the expand_reference_set method functionality
+    fn test_expand_reference_set() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_expand");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 10,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_expand".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: true,
+        };
+
+        // Create OQNLP instance
+        let oqnlp = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap();
+
+        // Create a small reference set to expand
+        let mut ref_set = vec![
+            Array1::from(vec![-1.0, -1.0]),
+            Array1::from(vec![0.0, 0.0]),
+            Array1::from(vec![1.0, 1.0]),
+        ];
+        let old_size = ref_set.len();
+        let new_size = 8;
+
+        // Test expanding the reference set
+        let result = oqnlp.expand_reference_set(&mut ref_set, old_size, new_size);
+
+        assert!(result.is_ok(), "expand_reference_set should succeed");
+        assert_eq!(
+            ref_set.len(),
+            new_size,
+            "Reference set should be expanded to new size"
+        );
+
+        // Verify that original points are still there
+        assert!(ref_set.contains(&Array1::from(vec![-1.0, -1.0])));
+        assert!(ref_set.contains(&Array1::from(vec![0.0, 0.0])));
+        assert!(ref_set.contains(&Array1::from(vec![1.0, 1.0])));
+
+        // Verify that new points are within bounds
+        let bounds = problem.variable_bounds();
+        for point in &ref_set {
+            assert!(
+                point.len() == bounds.nrows(),
+                "Point should have correct dimensions"
+            );
+            for (i, &val) in point.iter().enumerate() {
+                assert!(
+                    val >= bounds[[i, 0]] && val <= bounds[[i, 1]],
+                    "Point value {} should be within bounds [{}, {}]",
+                    val,
+                    bounds[[i, 0]],
+                    bounds[[i, 1]]
+                );
+            }
+        }
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test expand_reference_set with edge cases
+    fn test_expand_reference_set_edge_cases() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_expand_edge");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 10,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_expand_edge".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: true,
+        };
+
+        let oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap();
+
+        // Test case 1: new_size <= old_size (should return immediately)
+        let mut ref_set1 = vec![
+            Array1::from(vec![-1.0, -1.0]),
+            Array1::from(vec![0.0, 0.0]),
+            Array1::from(vec![1.0, 1.0]),
+        ];
+        let original_len = ref_set1.len();
+
+        let result1 = oqnlp.expand_reference_set(&mut ref_set1, 5, 3);
+        assert!(
+            result1.is_ok(),
+            "expand_reference_set should handle new_size <= old_size"
+        );
+        assert_eq!(
+            ref_set1.len(),
+            original_len,
+            "Reference set should not change when new_size <= old_size"
+        );
+
+        // Test case 2: new_size == old_size (should return immediately)
+        let mut ref_set2 = vec![Array1::from(vec![-1.0, -1.0]), Array1::from(vec![0.0, 0.0])];
+        let original_len2 = ref_set2.len();
+
+        let result2 = oqnlp.expand_reference_set(&mut ref_set2, original_len2, original_len2);
+        assert!(
+            result2.is_ok(),
+            "expand_reference_set should handle new_size == old_size"
+        );
+        assert_eq!(
+            ref_set2.len(),
+            original_len2,
+            "Reference set should not change when new_size == old_size"
+        );
+
+        // Test case 3: Empty reference set expansion
+        let mut ref_set3: Vec<Array1<f64>> = vec![];
+        let result3 = oqnlp.expand_reference_set(&mut ref_set3, 0, 5);
+        assert!(
+            result3.is_ok(),
+            "expand_reference_set should handle empty reference set"
+        );
+        assert_eq!(
+            ref_set3.len(),
+            5,
+            "Reference set should be expanded from empty to new size"
+        );
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test expand_reference_set integration through resume_with_modified_params
+    fn test_expand_reference_set_integration() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_expand_integration");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let initial_params = OQNLPParams {
+            iterations: 5,
+            population_size: 10,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_expand_integration".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: true,
+        };
+
+        // Create and run initial OQNLP to create a checkpoint
+        let mut oqnlp = OQNLP::new(problem.clone(), initial_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config.clone())
+            .unwrap()
+            .verbose();
+
+        let _result = oqnlp.run();
+
+        // Create modified parameters with significantly larger population size
+        let modified_params = OQNLPParams {
+            iterations: 8,
+            population_size: 25, // Significantly increased from 10 to 25
+            ..initial_params
+        };
+
+        let mut oqnlp2 = OQNLP::new(problem, modified_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap()
+            .verbose();
+
+        // Test resume with modified parameters (this should trigger expand_reference_set internally)
+        let resumed = oqnlp2.resume_with_modified_params(modified_params);
+
+        assert!(
+            resumed.is_ok(),
+            "Resume with larger population should succeed"
+        );
+        assert!(resumed.unwrap(), "Should have resumed from checkpoint");
+
+        // Verify that the parameters were updated
+        assert_eq!(oqnlp2.params.population_size, 25);
+
+        // The internal reference set should have been expanded
+        // This is tested indirectly by ensuring the resume operation succeeds
+        // and the algorithm can continue with the larger population size
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test resume_from_checkpoint_with_params functionality
+    fn test_resume_from_checkpoint_with_params() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_resume_specific");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let initial_params = OQNLPParams {
+            iterations: 8,
+            population_size: 15,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_resume_specific".to_string(),
+            save_frequency: 2,
+            keep_all: true,     // Keep all checkpoints for specific file testing
+            auto_resume: false, // Don't auto-resume to test specific file loading
+        };
+
+        // Create and run initial OQNLP with checkpointing to create checkpoint files
+        let mut oqnlp = OQNLP::new(problem.clone(), initial_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config.clone())
+            .unwrap()
+            .verbose();
+
+        let _result = oqnlp.run();
+
+        // Find the checkpoint file that was created
+        let checkpoint_files: Vec<_> = std::fs::read_dir(&checkpoint_dir)
+            .expect("Failed to read checkpoint directory")
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.extension()? == "bin"
+                    && path.file_name()?.to_str()?.contains("test_resume_specific")
+                {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(
+            !checkpoint_files.is_empty(),
+            "Should have created at least one checkpoint file"
+        );
+
+        // Use the first checkpoint file found
+        let checkpoint_path = &checkpoint_files[0];
+
+        // Create modified parameters
+        let modified_params = OQNLPParams {
+            iterations: 20,      // Increased iterations
+            population_size: 25, // Increased population size
+            ..initial_params
+        };
+
+        // Create a new OQNLP instance
+        let mut oqnlp2 = OQNLP::new(problem.clone(), modified_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap()
+            .verbose();
+
+        // Test resume from specific checkpoint with modified parameters
+        let result =
+            oqnlp2.resume_from_checkpoint_with_params(checkpoint_path, modified_params.clone());
+
+        assert!(
+            result.is_ok(),
+            "Resume from specific checkpoint should succeed"
+        );
+
+        // Verify that the parameters were updated
+        assert_eq!(oqnlp2.params.iterations, 20);
+        assert_eq!(oqnlp2.params.population_size, 25);
+
+        // Verify that the algorithm can continue running with the loaded state
+        let continued_result = oqnlp2.run();
+        assert!(
+            continued_result.is_ok(),
+            "Should be able to continue optimization after resume"
+        );
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test resume_from_checkpoint_with_params with nonexistent file
+    fn test_resume_from_checkpoint_with_params_nonexistent_file() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+        use std::path::PathBuf;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_resume_nonexistent");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 10,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_nonexistent".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        let mut oqnlp = OQNLP::new(problem, params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap();
+
+        // Try to resume from a nonexistent checkpoint file
+        let nonexistent_path = PathBuf::from("nonexistent_checkpoint.bin");
+        let result = oqnlp.resume_from_checkpoint_with_params(&nonexistent_path, params);
+
+        // Should return an error for nonexistent file
+        assert!(
+            result.is_err(),
+            "Should return error for nonexistent checkpoint file"
+        );
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test resume_from_checkpoint_with_params without checkpoint manager
+    fn test_resume_from_checkpoint_with_params_no_manager() {
+        use std::path::PathBuf;
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 10,
+            ..Default::default()
+        };
+
+        // Create OQNLP without checkpointing
+        let mut oqnlp = OQNLP::new(problem, params.clone()).unwrap();
+
+        // Try to resume from checkpoint without checkpoint manager
+        let dummy_path = PathBuf::from("dummy_checkpoint.bin");
+        let result = oqnlp.resume_from_checkpoint_with_params(&dummy_path, params);
+
+        // Should succeed but do nothing when no checkpoint manager is present
+        assert!(
+            result.is_ok(),
+            "Should handle absence of checkpoint manager gracefully"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test resume_from_checkpoint_with_params with different parameter combinations
+    fn test_resume_from_checkpoint_with_params_various_params() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_resume_various");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let initial_params = OQNLPParams {
+            iterations: 6,
+            population_size: 12,
+            distance_factor: 0.1,
+            threshold_factor: 0.3,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_resume_various".to_string(),
+            save_frequency: 1,
+            keep_all: true,
+            auto_resume: false,
+        };
+
+        // Create and run initial OQNLP to create a checkpoint
+        let mut oqnlp = OQNLP::new(problem.clone(), initial_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config.clone())
+            .unwrap()
+            .verbose();
+
+        let _result = oqnlp.run();
+
+        // Find a checkpoint file
+        let checkpoint_files: Vec<_> = std::fs::read_dir(&checkpoint_dir)
+            .expect("Failed to read checkpoint directory")
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.extension()? == "bin" {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(
+            !checkpoint_files.is_empty(),
+            "Should have created checkpoint files"
+        );
+        let checkpoint_path = &checkpoint_files[0];
+
+        // Test 1: Modify only iterations (keeping it within population_size constraint)
+        let modified_params1 = OQNLPParams {
+            iterations: 10, // Increase iterations but keep <= population_size (12)
+            ..initial_params.clone()
+        };
+
+        let mut oqnlp1 = OQNLP::new(problem.clone(), modified_params1.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config.clone())
+            .unwrap();
+
+        let result1 = oqnlp1.resume_from_checkpoint_with_params(checkpoint_path, modified_params1);
+        assert!(
+            result1.is_ok(),
+            "Should handle iterations-only modification"
+        );
+        assert_eq!(oqnlp1.params.iterations, 10);
+
+        // Test 2: Modify multiple parameters
+        let modified_params2 = OQNLPParams {
+            iterations: 25,
+            population_size: 30,
+            distance_factor: 0.05,
+            threshold_factor: 0.4,
+            ..initial_params
+        };
+
+        let mut oqnlp2 = OQNLP::new(problem, modified_params2.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap();
+
+        let result2 = oqnlp2.resume_from_checkpoint_with_params(checkpoint_path, modified_params2);
+        assert!(
+            result2.is_ok(),
+            "Should handle multiple parameter modifications"
+        );
+        assert_eq!(oqnlp2.params.iterations, 25);
+        assert_eq!(oqnlp2.params.population_size, 30);
+        assert!((oqnlp2.params.distance_factor - 0.05).abs() < 1e-10);
+        assert!((oqnlp2.params.threshold_factor - 0.4).abs() < 1e-10);
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test restore_from_checkpoint functionality
+    fn test_restore_from_checkpoint() {
+        use crate::types::{CheckpointConfig, OQNLPCheckpoint};
+        use chrono;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_restore");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let initial_params = OQNLPParams {
+            iterations: 15,
+            population_size: 20,
+            distance_factor: 0.15,
+            threshold_factor: 0.25,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_restore".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        // Create OQNLP instance
+        let mut oqnlp = OQNLP::new(problem.clone(), initial_params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap()
+            .verbose()
+            .target_objective(-0.8);
+
+        // Create some solutions for the checkpoint
+        let solution1 = LocalSolution {
+            objective: -0.5,
+            point: Array1::from(vec![0.1, -0.7]),
+        };
+        let solution2 = LocalSolution {
+            objective: -0.3,
+            point: Array1::from(vec![-0.9, 0.2]),
+        };
+
+        let solution_set = SolutionSet {
+            solutions: Array1::from(vec![solution1.clone(), solution2.clone()]),
+        };
+
+        // Create a mock checkpoint with comprehensive state
+        let checkpoint = OQNLPCheckpoint {
+            params: OQNLPParams {
+                iterations: 25,
+                population_size: 30,
+                distance_factor: 0.08,
+                threshold_factor: 0.35,
+                ..initial_params.clone()
+            },
+            current_iteration: 12,
+            merit_threshold: -0.2,
+            solution_set: Some(solution_set.clone()),
+            reference_set: vec![
+                Array1::from(vec![-1.5, 1.0]),
+                Array1::from(vec![0.5, -1.2]),
+                Array1::from(vec![2.0, 0.8]),
+            ],
+            unchanged_cycles: 3,
+            elapsed_time: 45.67,
+            distance_filter_solutions: vec![solution1.clone(), solution2.clone()],
+            current_seed: 98765,
+            target_objective: Some(-0.9),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        // Test restore_from_checkpoint
+        let result = oqnlp.restore_from_checkpoint(checkpoint.clone());
+
+        assert!(result.is_ok(), "restore_from_checkpoint should succeed");
+
+        // Verify all state was restored correctly
+        assert_eq!(oqnlp.params.iterations, 25, "Iterations should be restored");
+        assert_eq!(
+            oqnlp.params.population_size, 30,
+            "Population size should be restored"
+        );
+        assert!(
+            (oqnlp.params.distance_factor - 0.08).abs() < 1e-10,
+            "Distance factor should be restored"
+        );
+        assert!(
+            (oqnlp.params.threshold_factor - 0.35).abs() < 1e-10,
+            "Threshold factor should be restored"
+        );
+
+        assert_eq!(
+            oqnlp.current_iteration, 12,
+            "Current iteration should be restored"
+        );
+        assert!(
+            (oqnlp.merit_filter.threshold - (-0.2)).abs() < 1e-10,
+            "Merit threshold should be restored"
+        );
+        assert_eq!(
+            oqnlp.unchanged_cycles, 3,
+            "Unchanged cycles should be restored"
+        );
+        assert_eq!(oqnlp.current_seed, 98765, "Current seed should be restored");
+        assert_eq!(
+            oqnlp.target_objective,
+            Some(-0.9),
+            "Target objective should be restored"
+        );
+
+        // Verify solution set was restored
+        let restored_solution_set = oqnlp
+            .solution_set
+            .as_ref()
+            .expect("Solution set should be restored");
+        assert_eq!(
+            restored_solution_set.len(),
+            2,
+            "Solution set should have 2 solutions"
+        );
+        assert!(
+            (restored_solution_set[0].objective - (-0.5)).abs() < 1e-10,
+            "First solution objective should match"
+        );
+        assert!(
+            (restored_solution_set[1].objective - (-0.3)).abs() < 1e-10,
+            "Second solution objective should match"
+        );
+
+        // Verify reference set was restored
+        let restored_ref_set = oqnlp
+            .current_reference_set
+            .as_ref()
+            .expect("Reference set should be restored");
+        assert_eq!(
+            restored_ref_set.len(),
+            3,
+            "Reference set should have 3 points"
+        );
+        assert_eq!(
+            restored_ref_set[0],
+            Array1::from(vec![-1.5, 1.0]),
+            "First reference point should match"
+        );
+        assert_eq!(
+            restored_ref_set[1],
+            Array1::from(vec![0.5, -1.2]),
+            "Second reference point should match"
+        );
+        assert_eq!(
+            restored_ref_set[2],
+            Array1::from(vec![2.0, 0.8]),
+            "Third reference point should match"
+        );
+
+        // Verify distance filter solutions were restored
+        let distance_filter_solutions = oqnlp.distance_filter.get_solutions();
+        assert_eq!(
+            distance_filter_solutions.len(),
+            2,
+            "Distance filter should have 2 solutions"
+        );
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test restore_from_checkpoint with empty solution set
+    fn test_restore_from_checkpoint_empty_solution_set() {
+        use crate::types::{CheckpointConfig, OQNLPCheckpoint};
+        use chrono;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_restore_empty");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 10,
+            population_size: 15,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_restore_empty".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        let mut oqnlp = OQNLP::new(problem, params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap()
+            .verbose();
+
+        // Create checkpoint with no solution set
+        let checkpoint = OQNLPCheckpoint {
+            params: params.clone(),
+            current_iteration: 5,
+            merit_threshold: 100.0,
+            solution_set: None, // No solutions
+            reference_set: vec![Array1::from(vec![0.0, 0.0])],
+            unchanged_cycles: 0,
+            elapsed_time: 10.0,
+            distance_filter_solutions: vec![],
+            current_seed: 12345,
+            target_objective: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let result = oqnlp.restore_from_checkpoint(checkpoint);
+
+        assert!(
+            result.is_ok(),
+            "Should handle empty solution set gracefully"
+        );
+        assert!(
+            oqnlp.solution_set.is_none(),
+            "Solution set should remain None"
+        );
+        assert_eq!(
+            oqnlp.current_iteration, 5,
+            "Current iteration should be restored"
+        );
+        assert!(
+            (oqnlp.merit_filter.threshold - 100.0).abs() < 1e-10,
+            "Merit threshold should be restored"
+        );
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test restore_from_checkpoint with verbose output
+    fn test_restore_from_checkpoint_verbose_output() {
+        use crate::types::{CheckpointConfig, OQNLPCheckpoint};
+        use chrono;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_restore_verbose");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 8,
+            population_size: 12,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_restore_verbose".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        // Test with verbose enabled
+        let mut oqnlp_verbose = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config.clone())
+            .unwrap()
+            .verbose(); // Enable verbose output
+
+        let solution = LocalSolution {
+            objective: -1.2,
+            point: Array1::from(vec![0.5, -0.3]),
+        };
+
+        let solution_set = SolutionSet {
+            solutions: Array1::from(vec![solution]),
+        };
+
+        let checkpoint_with_solutions = OQNLPCheckpoint {
+            params: params.clone(),
+            current_iteration: 7,
+            merit_threshold: -1.0,
+            solution_set: Some(solution_set),
+            reference_set: vec![Array1::from(vec![1.0, 1.0])],
+            unchanged_cycles: 2,
+            elapsed_time: 25.0,
+            distance_filter_solutions: vec![],
+            current_seed: 54321,
+            target_objective: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        // This should print verbose output (iteration 7 with 1 solutions)
+        let result_verbose = oqnlp_verbose.restore_from_checkpoint(checkpoint_with_solutions);
+        assert!(result_verbose.is_ok(), "Verbose restore should succeed");
+
+        // Test with verbose disabled
+        let mut oqnlp_quiet = OQNLP::new(problem, params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap();
+        // No .verbose() call - should be quiet
+
+        let checkpoint_no_solutions = OQNLPCheckpoint {
+            params,
+            current_iteration: 3,
+            merit_threshold: 50.0,
+            solution_set: None,
+            reference_set: vec![Array1::from(vec![-1.0, -1.0])],
+            unchanged_cycles: 1,
+            elapsed_time: 15.0,
+            distance_filter_solutions: vec![],
+            current_seed: 11111,
+            target_objective: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        // This should not print any output (verbose is false)
+        let result_quiet = oqnlp_quiet.restore_from_checkpoint(checkpoint_no_solutions);
+        assert!(result_quiet.is_ok(), "Quiet restore should succeed");
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test restore_from_checkpoint with various edge cases
+    fn test_restore_from_checkpoint_edge_cases() {
+        use crate::types::{CheckpointConfig, OQNLPCheckpoint};
+        use chrono;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_restore_edge");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 8,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_restore_edge".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        let mut oqnlp = OQNLP::new(problem, params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap();
+
+        // Test case 1: Checkpoint at iteration 0
+        let checkpoint_zero = OQNLPCheckpoint {
+            params: params.clone(),
+            current_iteration: 0,
+            merit_threshold: 1000.0,
+            solution_set: None,
+            reference_set: vec![],
+            unchanged_cycles: 0,
+            elapsed_time: 0.0,
+            distance_filter_solutions: vec![],
+            current_seed: 1,
+            target_objective: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let result1 = oqnlp.restore_from_checkpoint(checkpoint_zero);
+        assert!(result1.is_ok(), "Should handle iteration 0 checkpoint");
+        assert_eq!(oqnlp.current_iteration, 0);
+        assert_eq!(oqnlp.unchanged_cycles, 0);
+
+        // Test case 2: Checkpoint with very large merit threshold
+        let checkpoint_large_threshold = OQNLPCheckpoint {
+            params: params.clone(),
+            current_iteration: 2,
+            merit_threshold: f64::MAX / 2.0,
+            solution_set: None,
+            reference_set: vec![Array1::from(vec![0.0, 0.0])],
+            unchanged_cycles: 1,
+            elapsed_time: 5.0,
+            distance_filter_solutions: vec![],
+            current_seed: 999,
+            target_objective: Some(f64::MIN / 2.0),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let result2 = oqnlp.restore_from_checkpoint(checkpoint_large_threshold);
+        assert!(result2.is_ok(), "Should handle large threshold values");
+        assert!((oqnlp.merit_filter.threshold - (f64::MAX / 2.0)).abs() < f64::MAX / 4.0);
+        assert_eq!(oqnlp.target_objective, Some(f64::MIN / 2.0));
+
+        // Test case 3: Checkpoint with many unchanged cycles
+        let checkpoint_many_cycles = OQNLPCheckpoint {
+            params,
+            current_iteration: 4,
+            merit_threshold: 0.0,
+            solution_set: None,
+            reference_set: vec![Array1::from(vec![1.0, -1.0])],
+            unchanged_cycles: 1000,
+            elapsed_time: 100.0,
+            distance_filter_solutions: vec![],
+            current_seed: 777,
+            target_objective: Some(0.0),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let result3 = oqnlp.restore_from_checkpoint(checkpoint_many_cycles);
+        assert!(result3.is_ok(), "Should handle many unchanged cycles");
+        assert_eq!(oqnlp.unchanged_cycles, 1000);
+        assert_eq!(oqnlp.current_seed, 777);
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test create_checkpoint functionality
+    fn test_create_checkpoint() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_create_checkpoint");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 20,
+            population_size: 25,
+            distance_factor: 0.12,
+            threshold_factor: 0.28,
+            seed: 42,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_create".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        // Create OQNLP instance and set up some state
+        let mut oqnlp = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap()
+            .target_objective(-0.75);
+
+        // Manually set up some internal state to test checkpoint creation
+        oqnlp.current_iteration = 8;
+        oqnlp.unchanged_cycles = 2;
+        oqnlp.current_seed = 98765;
+        oqnlp.merit_filter.update_threshold(-0.3);
+
+        // Set up some solutions
+        let solution1 = LocalSolution {
+            objective: -0.6,
+            point: Array1::from(vec![0.2, -0.8]),
+        };
+        let solution2 = LocalSolution {
+            objective: -0.4,
+            point: Array1::from(vec![-0.7, 0.3]),
+        };
+
+        let solution_set = SolutionSet {
+            solutions: Array1::from(vec![solution1.clone(), solution2.clone()]),
+        };
+        oqnlp.solution_set = Some(solution_set);
+
+        // Set up reference set
+        oqnlp.current_reference_set = Some(vec![
+            Array1::from(vec![-2.0, 1.5]),
+            Array1::from(vec![1.0, -1.0]),
+            Array1::from(vec![0.0, 0.0]),
+        ]);
+
+        // Add solutions to distance filter
+        oqnlp.distance_filter.add_solution(solution1.clone());
+        oqnlp.distance_filter.add_solution(solution2.clone());
+
+        // Set start time to test elapsed time calculation
+        oqnlp.start_time = Some(std::time::Instant::now() - std::time::Duration::from_secs(30));
+
+        // Create checkpoint
+        let checkpoint = oqnlp.create_checkpoint();
+
+        // Verify all checkpoint fields are correct
+        assert_eq!(
+            checkpoint.params.iterations, 20,
+            "Parameters should be captured"
+        );
+        assert_eq!(
+            checkpoint.params.population_size, 25,
+            "Parameters should be captured"
+        );
+        assert!(
+            (checkpoint.params.distance_factor - 0.12).abs() < 1e-10,
+            "Parameters should be captured"
+        );
+        assert!(
+            (checkpoint.params.threshold_factor - 0.28).abs() < 1e-10,
+            "Parameters should be captured"
+        );
+        assert_eq!(checkpoint.params.seed, 42, "Parameters should be captured");
+
+        assert_eq!(
+            checkpoint.current_iteration, 8,
+            "Current iteration should be captured"
+        );
+        assert!(
+            (checkpoint.merit_threshold - (-0.3)).abs() < 1e-10,
+            "Merit threshold should be captured"
+        );
+        assert_eq!(
+            checkpoint.unchanged_cycles, 2,
+            "Unchanged cycles should be captured"
+        );
+        assert_eq!(
+            checkpoint.current_seed, 98765,
+            "Current seed should be captured"
+        );
+        assert_eq!(
+            checkpoint.target_objective,
+            Some(-0.75),
+            "Target objective should be captured"
+        );
+
+        // Verify solution set
+        let checkpoint_solutions = checkpoint
+            .solution_set
+            .as_ref()
+            .expect("Solution set should be captured");
+        assert_eq!(
+            checkpoint_solutions.len(),
+            2,
+            "Solution set should have 2 solutions"
+        );
+        assert!(
+            (checkpoint_solutions[0].objective - (-0.6)).abs() < 1e-10,
+            "First solution should match"
+        );
+        assert!(
+            (checkpoint_solutions[1].objective - (-0.4)).abs() < 1e-10,
+            "Second solution should match"
+        );
+
+        // Verify reference set
+        assert_eq!(
+            checkpoint.reference_set.len(),
+            3,
+            "Reference set should have 3 points"
+        );
+        assert_eq!(
+            checkpoint.reference_set[0],
+            Array1::from(vec![-2.0, 1.5]),
+            "Reference point should match"
+        );
+        assert_eq!(
+            checkpoint.reference_set[1],
+            Array1::from(vec![1.0, -1.0]),
+            "Reference point should match"
+        );
+        assert_eq!(
+            checkpoint.reference_set[2],
+            Array1::from(vec![0.0, 0.0]),
+            "Reference point should match"
+        );
+
+        // Verify distance filter solutions
+        assert_eq!(
+            checkpoint.distance_filter_solutions.len(),
+            2,
+            "Distance filter should have 2 solutions"
+        );
+
+        // Verify elapsed time (should be approximately 30 seconds, give or take a few milliseconds)
+        assert!(
+            checkpoint.elapsed_time >= 29.0 && checkpoint.elapsed_time <= 31.0,
+            "Elapsed time should be approximately 30 seconds, got {}",
+            checkpoint.elapsed_time
+        );
+
+        // Verify timestamp is valid RFC3339 format
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&checkpoint.timestamp).is_ok(),
+            "Timestamp should be valid RFC3339 format"
+        );
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test create_checkpoint with empty state
+    fn test_create_checkpoint_empty_state() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_create_empty");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 8,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_create_empty".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        // Create OQNLP instance with minimal state
+        let oqnlp = OQNLP::new(problem, params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap();
+
+        // Create checkpoint with default/empty state
+        let checkpoint = oqnlp.create_checkpoint();
+
+        // Verify checkpoint captures empty/default state correctly
+        assert_eq!(
+            checkpoint.params.iterations, 5,
+            "Parameters should be captured"
+        );
+        assert_eq!(
+            checkpoint.params.population_size, 8,
+            "Parameters should be captured"
+        );
+        assert_eq!(
+            checkpoint.current_iteration, 0,
+            "Should start at iteration 0"
+        );
+        assert_eq!(
+            checkpoint.unchanged_cycles, 0,
+            "Should start with 0 unchanged cycles"
+        );
+        assert_eq!(
+            checkpoint.current_seed, params.seed,
+            "Should have initial seed"
+        );
+        assert_eq!(
+            checkpoint.target_objective, None,
+            "Should have no target objective"
+        );
+
+        // Verify empty collections
+        assert!(
+            checkpoint.solution_set.is_none(),
+            "Solution set should be None initially"
+        );
+        assert!(
+            checkpoint.reference_set.is_empty(),
+            "Reference set should be empty initially"
+        );
+        assert!(
+            checkpoint.distance_filter_solutions.is_empty(),
+            "Distance filter should be empty initially"
+        );
+
+        // Verify elapsed time is 0 when no start time is set
+        assert_eq!(
+            checkpoint.elapsed_time, 0.0,
+            "Elapsed time should be 0 when no start time"
+        );
+
+        // Verify timestamp is valid
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&checkpoint.timestamp).is_ok(),
+            "Timestamp should be valid RFC3339 format"
+        );
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test create_checkpoint with various edge cases
+    fn test_create_checkpoint_edge_cases() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_create_edge");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 10,
+            population_size: 15,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_create_edge".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        let mut oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap()
+            .target_objective(f64::NEG_INFINITY); // Edge case: extreme target
+
+        // Test case 1: Very large iteration number
+        oqnlp.current_iteration = usize::MAX / 2;
+        oqnlp.unchanged_cycles = 999999;
+        oqnlp.current_seed = u64::MAX / 2;
+
+        // Set extreme merit threshold
+        oqnlp.merit_filter.update_threshold(f64::MAX / 2.0);
+
+        // Set start time very far in the past (edge case for elapsed time)
+        oqnlp.start_time = Some(std::time::Instant::now() - std::time::Duration::from_secs(3600)); // 1 hour ago
+
+        let checkpoint1 = oqnlp.create_checkpoint();
+
+        assert_eq!(
+            checkpoint1.current_iteration,
+            usize::MAX / 2,
+            "Should handle large iteration numbers"
+        );
+        assert_eq!(
+            checkpoint1.unchanged_cycles, 999999,
+            "Should handle large unchanged cycles"
+        );
+        assert_eq!(
+            checkpoint1.current_seed,
+            u64::MAX / 2,
+            "Should handle large seed values"
+        );
+        assert!(
+            (checkpoint1.merit_threshold - (f64::MAX / 2.0)).abs() < f64::MAX / 4.0,
+            "Should handle large threshold"
+        );
+        assert_eq!(
+            checkpoint1.target_objective,
+            Some(f64::NEG_INFINITY),
+            "Should handle extreme target objective"
+        );
+        assert!(
+            checkpoint1.elapsed_time >= 3595.0 && checkpoint1.elapsed_time <= 3605.0,
+            "Should handle large elapsed time, got {}",
+            checkpoint1.elapsed_time
+        );
+
+        // Test case 2: Reset to minimal values
+        oqnlp.current_iteration = 0;
+        oqnlp.unchanged_cycles = 0;
+        oqnlp.current_seed = 1;
+        oqnlp.merit_filter.update_threshold(0.0);
+        oqnlp.target_objective = Some(0.0);
+        oqnlp.start_time = Some(std::time::Instant::now()); // Just started
+
+        let checkpoint2 = oqnlp.create_checkpoint();
+
+        assert_eq!(
+            checkpoint2.current_iteration, 0,
+            "Should handle zero iteration"
+        );
+        assert_eq!(
+            checkpoint2.unchanged_cycles, 0,
+            "Should handle zero unchanged cycles"
+        );
+        assert_eq!(checkpoint2.current_seed, 1, "Should handle minimal seed");
+        assert!(
+            (checkpoint2.merit_threshold - 0.0).abs() < 1e-10,
+            "Should handle zero threshold"
+        );
+        assert_eq!(
+            checkpoint2.target_objective,
+            Some(0.0),
+            "Should handle zero target objective"
+        );
+        assert!(
+            checkpoint2.elapsed_time >= 0.0 && checkpoint2.elapsed_time <= 1.0,
+            "Should handle minimal elapsed time, got {}",
+            checkpoint2.elapsed_time
+        );
+
+        // Verify timestamps are different (showing time progression)
+        assert_ne!(
+            checkpoint1.timestamp, checkpoint2.timestamp,
+            "Timestamps should be different"
+        );
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test create_checkpoint multiple times to ensure consistency
+    fn test_create_checkpoint_consistency() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_create_consistency");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 12,
+            population_size: 18,
+            distance_factor: 0.09,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_create_consistency".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        let mut oqnlp = OQNLP::new(problem, params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap();
+
+        // Set up consistent state
+        oqnlp.current_iteration = 6;
+        oqnlp.unchanged_cycles = 1;
+        oqnlp.current_seed = 54321;
+        oqnlp.merit_filter.update_threshold(-0.5);
+
+        let solution = LocalSolution {
+            objective: -0.7,
+            point: Array1::from(vec![0.1, 0.2]),
+        };
+        let solution_set = SolutionSet {
+            solutions: Array1::from(vec![solution.clone()]),
+        };
+        oqnlp.solution_set = Some(solution_set);
+        oqnlp.distance_filter.add_solution(solution);
+
+        // Create multiple checkpoints in quick succession
+        let checkpoint1 = oqnlp.create_checkpoint();
+        std::thread::sleep(std::time::Duration::from_millis(10)); // Small delay
+        let checkpoint2 = oqnlp.create_checkpoint();
+
+        // Most fields should be identical (state hasn't changed)
+        assert_eq!(checkpoint1.params.iterations, checkpoint2.params.iterations);
+        assert_eq!(
+            checkpoint1.params.population_size,
+            checkpoint2.params.population_size
+        );
+        assert_eq!(checkpoint1.current_iteration, checkpoint2.current_iteration);
+        assert_eq!(checkpoint1.merit_threshold, checkpoint2.merit_threshold);
+        assert_eq!(checkpoint1.unchanged_cycles, checkpoint2.unchanged_cycles);
+        assert_eq!(checkpoint1.current_seed, checkpoint2.current_seed);
+        assert_eq!(checkpoint1.target_objective, checkpoint2.target_objective);
+
+        // Solution sets should be identical
+        let sol1 = checkpoint1.solution_set.as_ref().unwrap();
+        let sol2 = checkpoint2.solution_set.as_ref().unwrap();
+        assert_eq!(sol1.len(), sol2.len());
+        assert!((sol1[0].objective - sol2[0].objective).abs() < 1e-10);
+
+        // Reference sets should be identical
+        assert_eq!(checkpoint1.reference_set, checkpoint2.reference_set);
+
+        // Distance filter solutions should be identical
+        assert_eq!(
+            checkpoint1.distance_filter_solutions.len(),
+            checkpoint2.distance_filter_solutions.len()
+        );
+
+        // Timestamps should be different (time has passed)
+        assert_ne!(
+            checkpoint1.timestamp, checkpoint2.timestamp,
+            "Timestamps should be different"
+        );
+
+        // Elapsed times should be very close (but not necessarily identical due to precision)
+        let time_diff = (checkpoint1.elapsed_time - checkpoint2.elapsed_time).abs();
+        assert!(
+            time_diff < 1.0,
+            "Elapsed times should be very close, difference: {}",
+            time_diff
+        );
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
 }
