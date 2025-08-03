@@ -288,6 +288,7 @@ mod tests_checkpointing {
             distance_filter_solutions: vec![],
             current_seed: 10,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -330,6 +331,7 @@ mod tests_checkpointing {
             distance_filter_solutions: vec![],
             current_seed: 0,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -365,6 +367,7 @@ mod tests_checkpointing {
             distance_filter_solutions: vec![],
             current_seed: 0,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -462,6 +465,7 @@ mod tests_checkpointing {
             distance_filter_solutions: vec![],
             current_seed: 0,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -538,6 +542,7 @@ mod tests_checkpointing {
             distance_filter_solutions: vec![],
             current_seed: 0,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -582,6 +587,7 @@ mod tests_checkpointing {
             distance_filter_solutions: vec![],
             current_seed: 0,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -625,6 +631,7 @@ mod tests_checkpointing {
             distance_filter_solutions: vec![],
             current_seed: 0,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -709,6 +716,7 @@ mod tests_checkpointing {
             distance_filter_solutions: vec![],
             current_seed: 42,
             target_objective: Some(-3.0),
+            exclude_out_of_bounds: false,
             timestamp: "2025-08-01T12:00:00Z".to_string(),
         };
 

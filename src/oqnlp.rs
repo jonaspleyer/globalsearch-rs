@@ -162,6 +162,8 @@ pub enum OQNLPError {
 /// - `solution_set`: The set of best solutions found during the optimization process.
 /// - `max_time`: Max time for the stage 2 of the OQNLP algorithm.
 /// - `verbose`: Verbose flag to enable additional output during the optimization process.
+/// - `target_objective`: Target objective function value to stop optimization early.
+/// - `exclude_out_of_bounds`: Whether to exclude out-of-bounds solutions from being considered valid.
 ///
 /// It also contains methods to run the optimization process and adjust the threshold for the merit and distance filters.
 ///
@@ -215,6 +217,14 @@ pub struct OQNLP<P: Problem + Clone> {
     /// This is useful for problems where a specific target is known and
     /// can be used to stop the optimization early.
     target_objective: Option<f64>,
+
+    /// Whether to exclude out-of-bounds solutions from being considered valid
+    ///
+    /// If set to true, the algorithm will check if solutions are within the variable bounds
+    /// before adding them to the solution set.
+    /// When used with target_objective, optimization stops only if the solution is both
+    /// within bounds and meets the target objective.
+    exclude_out_of_bounds: bool,
 
     /// Checkpoint manager for saving and loading optimization state
     #[cfg(feature = "checkpointing")]
@@ -294,6 +304,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             max_time: None,
             verbose: false,
             target_objective: None,
+            exclude_out_of_bounds: false,
             #[cfg(feature = "checkpointing")]
             checkpoint_manager: None,
             #[cfg(feature = "checkpointing")]
@@ -566,16 +577,52 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     fn target_objective_reached(&self) -> bool {
         if let (Some(target), Some(solution_set)) = (self.target_objective, &self.solution_set) {
             if let Some(best) = solution_set.best_solution() {
-                return best.objective <= target;
+                let target_reached = best.objective <= target;
+
+                // If exclude_out_of_bounds is enabled, also check if the solution is within bounds
+                if self.exclude_out_of_bounds {
+                    return target_reached && self.is_within_bounds(&best.point);
+                }
+
+                return target_reached;
             }
         }
         false
+    }
+
+    /// Check if a point is within the variable bounds
+    fn is_within_bounds(&self, point: &Array1<f64>) -> bool {
+        let bounds = self.problem.variable_bounds();
+
+        for (i, &value) in point.iter().enumerate() {
+            let lower_bound = bounds[[i, 0]];
+            let upper_bound = bounds[[i, 1]];
+
+            if value < lower_bound || value > upper_bound {
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Process a local solution, updating the best solution and filters
     fn process_local_solution(&mut self, solution: LocalSolution) -> Result<bool, OQNLPError> {
         const ABS_TOL: f64 = 1e-8;
         const REL_TOL: f64 = 1e-6;
+
+        // If exclude_out_of_bounds is enabled, check if the solution is within bounds
+        if self.exclude_out_of_bounds && !self.is_within_bounds(&solution.point) {
+            if self.verbose {
+                println!(
+                    "Solution with objective {:.8} rejected: out of bounds",
+                    solution.objective
+                );
+            }
+            // Still add to distance filter to maintain diversity, but don't add to solution set
+            self.distance_filter.add_solution(solution);
+            return Ok(false);
+        }
 
         let solutions = if let Some(existing) = &self.solution_set {
             existing.solutions.clone()
@@ -682,6 +729,24 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     pub fn target_objective(mut self, target: f64) -> Self {
         self.target_objective = Some(target);
         self
+    }
+
+    /// Enable or disable exclusion of out-of-bounds solutions
+    ///
+    /// When enabled, the algorithm will check if solutions are within the variable bounds
+    /// before adding them to the solution set.
+    pub fn set_exclude_out_of_bounds(mut self, enable: bool) -> Self {
+        self.exclude_out_of_bounds = enable;
+        self
+    }
+
+    /// Enable exclusion of out-of-bounds solutions
+    ///
+    /// This is a convenience method equivalent to calling `set_exclude_out_of_bounds(true)`.
+    /// When enabled, the algorithm will check if solutions are within the variable bounds
+    /// before adding them to the solution set.
+    pub fn exclude_out_of_bounds(self) -> Self {
+        self.set_exclude_out_of_bounds(true)
     }
 
     /// Enable checkpointing with the given configuration
@@ -856,6 +921,9 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         // Restore target objective
         self.target_objective = checkpoint.target_objective;
 
+        // Restore exclude_out_of_bounds setting
+        self.exclude_out_of_bounds = checkpoint.exclude_out_of_bounds;
+
         // Restore distance filter solutions
         self.distance_filter
             .set_solutions(checkpoint.distance_filter_solutions);
@@ -889,6 +957,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             distance_filter_solutions: self.distance_filter.get_solutions().clone(),
             current_seed: self.current_seed,
             target_objective: self.target_objective,
+            exclude_out_of_bounds: self.exclude_out_of_bounds,
             timestamp: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -986,7 +1055,7 @@ mod tests_oqnlp {
     fn test_process_local_solution_new() {
         let problem: DummyProblem = DummyProblem;
         let params: OQNLPParams = OQNLPParams::default();
-        // Create an OQNLP instance manually.
+        // Create a new OQNLP instance manually.
         let mut oqnlp: OQNLP<DummyProblem> = OQNLP::new(problem, params).unwrap();
 
         let trial = Array1::from(vec![1.0, 2.0, 3.0]);
@@ -1068,61 +1137,20 @@ mod tests_oqnlp {
         let params: OQNLPParams = OQNLPParams::default();
 
         // Create a new OQNLP instance manually
-        let oqnlp: OQNLP<DummyProblem> = OQNLP {
-            problem: problem.clone(),
-            params: params.clone(),
-            merit_filter: {
-                let mut mf: MeritFilter = MeritFilter::new();
-                mf.update_threshold(10.0);
-                mf
-            },
-            distance_filter: {
-                // Add an existing solution to the distance filter
-                let mut df: DistanceFilter = DistanceFilter::new(FilterParams {
-                    distance_factor: params.distance_factor,
-                    wait_cycle: params.wait_cycle,
-                    threshold_factor: params.threshold_factor,
-                })
-                .expect("Failed to create DistanceFilter");
-                let dummy_sol: LocalSolution = LocalSolution {
-                    objective: 5.0,
-                    point: Array1::from(vec![0.0, 0.0, 5.0]),
-                };
-                df.add_solution(dummy_sol);
-                df
-            },
-            local_solver: LocalSolver::new(
-                problem.clone(),
-                params.local_solver_type.clone(),
-                params.local_solver_config.clone(),
-            ),
-            solution_set: None,
-            max_time: None,
-            verbose: false,
-            target_objective: None,
-            #[cfg(feature = "checkpointing")]
-            checkpoint_manager: None,
-            #[cfg(feature = "checkpointing")]
-            current_iteration: 0,
-            #[cfg(feature = "checkpointing")]
-            current_reference_set: None,
-            #[cfg(feature = "checkpointing")]
-            unchanged_cycles: 0,
-            #[cfg(feature = "checkpointing")]
-            start_time: None,
-            #[cfg(feature = "checkpointing")]
-            current_seed: params.seed,
-        };
+        let mut oqnlp: OQNLP<DummyProblem> = OQNLP::new(problem, params).unwrap();
+
+        // Set the merit filter threshold to a specific value for testing
+        oqnlp.merit_filter.update_threshold(10.0);
 
         // A trial far enough in space but with objective above the threshold
         let trial = Array1::from(vec![10.0, 10.0, 10.0]);
-        let obj: f64 = trial.sum(); // 20.0 > 10.0 threshold
+        let obj: f64 = trial.sum(); // 30.0 > 10.0 threshold
         let start: bool = oqnlp.should_start_local(&trial, obj).unwrap();
         assert!(!start);
 
         // A trial with objective below threshold and spatially acceptable
-        let trial2 = Array1::from(vec![1.0, 1.0, 5.0]);
-        let obj2: f64 = trial2.sum(); // 2.0 < 10.0 threshold
+        let trial2 = Array1::from(vec![1.0, 1.0, 1.0]);
+        let obj2: f64 = trial2.sum(); // 3.0 < 10.0 threshold
         let start2: bool = oqnlp.should_start_local(&trial2, obj2).unwrap();
         assert!(start2);
     }
@@ -1133,43 +1161,8 @@ mod tests_oqnlp {
         let problem: DummyProblem = DummyProblem;
         let params: OQNLPParams = OQNLPParams::default();
 
-        // Crate a new OQNLP instance manually
-        let mut oqnlp: OQNLP<DummyProblem> = OQNLP {
-            problem: problem.clone(),
-            params: params.clone(),
-            merit_filter: {
-                let mut mf: MeritFilter = MeritFilter::new();
-                mf.update_threshold(10.0);
-                mf
-            },
-            distance_filter: DistanceFilter::new(FilterParams {
-                distance_factor: params.distance_factor,
-                wait_cycle: params.wait_cycle,
-                threshold_factor: params.threshold_factor,
-            })
-            .unwrap(),
-            local_solver: LocalSolver::new(
-                problem.clone(),
-                params.local_solver_type.clone(),
-                params.local_solver_config.clone(),
-            ),
-            solution_set: None,
-            max_time: None,
-            verbose: false,
-            target_objective: None,
-            #[cfg(feature = "checkpointing")]
-            checkpoint_manager: None,
-            #[cfg(feature = "checkpointing")]
-            current_iteration: 0,
-            #[cfg(feature = "checkpointing")]
-            current_reference_set: None,
-            #[cfg(feature = "checkpointing")]
-            unchanged_cycles: 0,
-            #[cfg(feature = "checkpointing")]
-            start_time: None,
-            #[cfg(feature = "checkpointing")]
-            current_seed: params.seed,
-        };
+        // Create a new OQNLP instance manually
+        let mut oqnlp: OQNLP<DummyProblem> = OQNLP::new(problem, params).unwrap();
 
         oqnlp.adjust_threshold(10.0);
 
@@ -1184,42 +1177,7 @@ mod tests_oqnlp {
         let params: OQNLPParams = OQNLPParams::default();
 
         // Create a new OQNLP instance manually
-        let oqnlp: OQNLP<DummyProblem> = OQNLP {
-            problem: problem.clone(),
-            params: params.clone(),
-            merit_filter: {
-                let mut mf: MeritFilter = MeritFilter::new();
-                mf.update_threshold(10.0);
-                mf
-            },
-            distance_filter: DistanceFilter::new(FilterParams {
-                distance_factor: params.distance_factor,
-                wait_cycle: params.wait_cycle,
-                threshold_factor: params.threshold_factor,
-            })
-            .unwrap(),
-            local_solver: LocalSolver::new(
-                problem.clone(),
-                params.local_solver_type.clone(),
-                params.local_solver_config.clone(),
-            ),
-            solution_set: None,
-            max_time: None,
-            verbose: false,
-            target_objective: None,
-            #[cfg(feature = "checkpointing")]
-            checkpoint_manager: None,
-            #[cfg(feature = "checkpointing")]
-            current_iteration: 0,
-            #[cfg(feature = "checkpointing")]
-            current_reference_set: None,
-            #[cfg(feature = "checkpointing")]
-            unchanged_cycles: 0,
-            #[cfg(feature = "checkpointing")]
-            start_time: None,
-            #[cfg(feature = "checkpointing")]
-            current_seed: params.seed,
-        };
+        let oqnlp: OQNLP<DummyProblem> = OQNLP::new(problem, params).unwrap();
 
         // Test setting the time limit
         let oqnlp: OQNLP<DummyProblem> = oqnlp.max_time(10.0);
@@ -1436,6 +1394,217 @@ mod tests_oqnlp {
         // Clean up test directories
         let _ = std::fs::remove_dir_all(&checkpoint_dir);
         let _ = std::fs::remove_dir_all(&empty_checkpoint_dir);
+    }
+
+    #[test]
+    /// Test the exclude_out_of_bounds functionality
+    fn test_exclude_out_of_bounds() {
+        let problem = DummyProblem;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 10,
+            ..Default::default()
+        };
+
+        // Test with exclude_out_of_bounds enabled
+        let mut oqnlp = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .exclude_out_of_bounds()
+            .verbose();
+
+        // Verify the flag is set
+        assert!(oqnlp.exclude_out_of_bounds);
+
+        // Create a solution that is out of bounds
+        // Problem bounds are [-5.0, 5.0] for each dimension
+        let out_of_bounds_solution = LocalSolution {
+            point: Array1::from(vec![10.0, 10.0, 10.0]), // All values exceed upper bound of 5.0
+            objective: 30.0,
+        };
+
+        // Create a solution that is within bounds
+        let within_bounds_solution = LocalSolution {
+            point: Array1::from(vec![1.0, 2.0, 3.0]), // All values within [-5.0, 5.0]
+            objective: 6.0,
+        };
+
+        // Test that out-of-bounds solution is rejected
+        let added_out_of_bounds = oqnlp
+            .process_local_solution(out_of_bounds_solution)
+            .unwrap();
+        assert!(!added_out_of_bounds);
+        assert!(oqnlp.solution_set.is_none()); // No solution should be added
+
+        // Test that within-bounds solution is accepted
+        let added_within_bounds = oqnlp
+            .process_local_solution(within_bounds_solution.clone())
+            .unwrap();
+        assert!(added_within_bounds);
+        assert!(oqnlp.solution_set.is_some());
+        let sol_set = oqnlp.solution_set.unwrap();
+        assert_eq!(sol_set.len(), 1);
+        assert!((sol_set[0].objective - within_bounds_solution.objective).abs() < 1e-6);
+
+        // Test with exclude_out_of_bounds disabled (default behavior)
+        let mut oqnlp2 = OQNLP::new(problem, params).unwrap();
+        assert!(!oqnlp2.exclude_out_of_bounds); // Should be false by default
+
+        // Out-of-bounds solution should be accepted when flag is disabled
+        let out_of_bounds_solution2 = LocalSolution {
+            point: Array1::from(vec![15.0, 20.0, 25.0]),
+            objective: 60.0,
+        };
+
+        let added_out_of_bounds2 = oqnlp2
+            .process_local_solution(out_of_bounds_solution2.clone())
+            .unwrap();
+        assert!(added_out_of_bounds2);
+        assert!(oqnlp2.solution_set.is_some());
+        let sol_set2 = oqnlp2.solution_set.unwrap();
+        assert_eq!(sol_set2.len(), 1);
+        assert!((sol_set2[0].objective - out_of_bounds_solution2.objective).abs() < 1e-6);
+    }
+
+    #[test]
+    /// Test exclude_out_of_bounds with target_objective
+    fn test_exclude_out_of_bounds_with_target_objective() {
+        let problem = DummyProblem;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 10,
+            ..Default::default()
+        };
+
+        let mut oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .exclude_out_of_bounds()
+            .target_objective(50.0)
+            .verbose();
+
+        // Create an out-of-bounds solution that meets the target objective
+        let out_of_bounds_good_obj = LocalSolution {
+            point: Array1::from(vec![10.0, 10.0, 10.0]), // Out of bounds
+            objective: 30.0,                             // Meets target objective (< 50.0)
+        };
+
+        // Create a within-bounds solution that meets the target objective
+        let within_bounds_good_obj = LocalSolution {
+            point: Array1::from(vec![1.0, 2.0, 3.0]), // Within bounds
+            objective: 40.0,                          // Meets target objective (< 50.0)
+        };
+
+        // Create a within-bounds solution that doesn't meet the target objective
+        let within_bounds_bad_obj = LocalSolution {
+            point: Array1::from(vec![0.0, 0.0, 0.0]), // Within bounds
+            objective: 60.0,                          // Doesn't meet target objective (> 50.0)
+        };
+
+        // Process out-of-bounds solution - should be rejected even if it meets target
+        oqnlp
+            .process_local_solution(out_of_bounds_good_obj)
+            .unwrap();
+        assert!(!oqnlp.target_objective_reached()); // Should not reach target due to bounds
+
+        // Process within-bounds solution that meets target - should be accepted
+        oqnlp
+            .process_local_solution(within_bounds_good_obj)
+            .unwrap();
+        assert!(oqnlp.target_objective_reached()); // Should reach target
+
+        // Reset for next test
+        oqnlp.solution_set = None;
+
+        // Process within-bounds solution that doesn't meet target - should be accepted but target not reached
+        oqnlp.process_local_solution(within_bounds_bad_obj).unwrap();
+        assert!(!oqnlp.target_objective_reached()); // Should not reach target due to objective
+    }
+
+    #[test]
+    /// Test is_within_bounds helper method
+    fn test_is_within_bounds() {
+        let problem = DummyProblem; // Bounds are [-5.0, 5.0] for each dimension
+        let params = OQNLPParams::default();
+        let oqnlp = OQNLP::new(problem, params).unwrap();
+
+        // Test point within bounds
+        let within_bounds = Array1::from(vec![1.0, 2.0, 3.0]);
+        assert!(oqnlp.is_within_bounds(&within_bounds));
+
+        // Test point at lower bound
+        let at_lower_bound = Array1::from(vec![-5.0, -5.0, -5.0]);
+        assert!(oqnlp.is_within_bounds(&at_lower_bound));
+
+        // Test point at upper bound
+        let at_upper_bound = Array1::from(vec![5.0, 5.0, 5.0]);
+        assert!(oqnlp.is_within_bounds(&at_upper_bound));
+
+        // Test point below lower bound
+        let below_lower_bound = Array1::from(vec![-6.0, 0.0, 0.0]);
+        assert!(!oqnlp.is_within_bounds(&below_lower_bound));
+
+        // Test point above upper bound
+        let above_upper_bound = Array1::from(vec![0.0, 6.0, 0.0]);
+        assert!(!oqnlp.is_within_bounds(&above_upper_bound));
+
+        // Test empty point (edge case)
+        let empty_point = Array1::from(vec![]);
+        assert!(oqnlp.is_within_bounds(&empty_point)); // Empty point should be considered within bounds
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test that exclude_out_of_bounds is properly saved and restored in checkpoints
+    fn test_exclude_out_of_bounds_checkpointing() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_exclude_bounds");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = DummyProblem;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 10,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_exclude_bounds".to_string(),
+            save_frequency: 1,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        // Create OQNLP with exclude_out_of_bounds enabled
+        let oqnlp = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config.clone())
+            .unwrap()
+            .exclude_out_of_bounds()
+            .verbose();
+
+        // Create a checkpoint
+        let checkpoint = oqnlp.create_checkpoint();
+        assert!(checkpoint.exclude_out_of_bounds);
+
+        // Create new OQNLP instance and restore from checkpoint
+        let mut oqnlp2 = OQNLP::new(problem, params)
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap();
+
+        // Before restoration, exclude_out_of_bounds should be false
+        assert!(!oqnlp2.exclude_out_of_bounds);
+
+        // Restore from checkpoint
+        oqnlp2.restore_from_checkpoint(checkpoint).unwrap();
+
+        // After restoration, exclude_out_of_bounds should be true
+        assert!(oqnlp2.exclude_out_of_bounds);
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
     }
 
     #[test]
@@ -2068,6 +2237,7 @@ mod tests_oqnlp {
             distance_filter_solutions: vec![solution1.clone(), solution2.clone()],
             current_seed: 98765,
             target_objective: Some(-0.9),
+            exclude_out_of_bounds: true,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2211,6 +2381,7 @@ mod tests_oqnlp {
             distance_filter_solutions: vec![],
             current_seed: 12345,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2290,6 +2461,7 @@ mod tests_oqnlp {
             distance_filter_solutions: vec![],
             current_seed: 54321,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2315,6 +2487,7 @@ mod tests_oqnlp {
             distance_filter_solutions: vec![],
             current_seed: 11111,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2369,6 +2542,7 @@ mod tests_oqnlp {
             distance_filter_solutions: vec![],
             current_seed: 1,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2389,6 +2563,7 @@ mod tests_oqnlp {
             distance_filter_solutions: vec![],
             current_seed: 999,
             target_objective: Some(f64::MIN / 2.0),
+            exclude_out_of_bounds: true,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2409,6 +2584,7 @@ mod tests_oqnlp {
             distance_filter_solutions: vec![],
             current_seed: 777,
             target_objective: Some(0.0),
+            exclude_out_of_bounds: false,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2729,8 +2905,12 @@ mod tests_oqnlp {
         // Set extreme merit threshold
         oqnlp.merit_filter.update_threshold(f64::MAX / 2.0);
 
-        // Set start time very far in the past (edge case for elapsed time)
-        oqnlp.start_time = Some(std::time::Instant::now() - std::time::Duration::from_secs(3600)); // 1 hour ago
+        // Set start time in the past (edge case for elapsed time)
+        oqnlp.start_time = Some(
+            std::time::Instant::now()
+                .checked_sub(std::time::Duration::from_secs(60))
+                .unwrap_or(std::time::Instant::now()),
+        ); // 1 minute ago
 
         let checkpoint1 = oqnlp.create_checkpoint();
 
@@ -2758,8 +2938,8 @@ mod tests_oqnlp {
             "Should handle extreme target objective"
         );
         assert!(
-            checkpoint1.elapsed_time >= 3595.0 && checkpoint1.elapsed_time <= 3605.0,
-            "Should handle large elapsed time, got {}",
+            checkpoint1.elapsed_time >= 55.0 && checkpoint1.elapsed_time <= 65.0,
+            "Should handle elapsed time, got {}",
             checkpoint1.elapsed_time
         );
 

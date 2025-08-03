@@ -418,6 +418,9 @@ pub struct OQNLPCheckpoint {
     /// Target objective function value to stop optimization
     pub target_objective: Option<f64>,
 
+    /// Whether to exclude out-of-bounds solutions from being considered valid
+    pub exclude_out_of_bounds: bool,
+
     /// Timestamp of the checkpoint
     pub timestamp: String,
 }
@@ -494,6 +497,8 @@ impl fmt::Display for OQNLPCheckpoint {
         } else {
             writeln!(f, "  Target objective: None")?;
         }
+
+        writeln!(f, "  Exclude out of bounds: {}", self.exclude_out_of_bounds)?;
 
         writeln!(f, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")?;
 
@@ -707,6 +712,7 @@ mod tests_types {
             distance_filter_solutions: vec![],
             current_seed: 42,
             target_objective: Some(-1.5),
+            exclude_out_of_bounds: true,
             timestamp: "2025-07-27T12:00:00Z".to_string(),
         };
 
@@ -742,6 +748,7 @@ mod tests_types {
             distance_filter_solutions: vec![],
             current_seed: 0,
             target_objective: None,
+            exclude_out_of_bounds: false,
             timestamp: "2025-07-27T10:00:00Z".to_string(),
         };
 
