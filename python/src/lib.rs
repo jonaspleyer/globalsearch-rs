@@ -194,7 +194,7 @@ impl Problem for PyProblem {
 /// This function takes a problem, parameters and optionally a local solver and its configuration
 /// and returns the best solution found by the optimizer.
 #[pyfunction]
-#[pyo3(signature = (problem, params, local_solver=None, local_solver_config=None, seed=None, target_objective=None, max_time=None, verbose=false))]
+#[pyo3(signature = (problem, params, local_solver=None, local_solver_config=None, seed=None, target_objective=None, max_time=None, verbose=false, exclude_out_of_bounds=false))]
 fn optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
@@ -204,6 +204,7 @@ fn optimize(
     target_objective: Option<f64>,
     max_time: Option<f64>,
     verbose: Option<bool>,
+    exclude_out_of_bounds: Option<bool>,
 ) -> PyResult<Py<PyAny>> {
     Python::with_gil(|py| {
         // Convert local_solver string to enum
@@ -304,6 +305,10 @@ fn optimize(
 
         if verbose.unwrap_or(false) {
             optimizer = optimizer.verbose();
+        }
+
+        if exclude_out_of_bounds.unwrap_or(false) {
+            optimizer = optimizer.exclude_out_of_bounds();
         }
 
         let solution_set = optimizer.run();
