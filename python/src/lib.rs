@@ -5,11 +5,10 @@ use globalsearch::local_solver::builders::{
 };
 use globalsearch::oqnlp::OQNLP;
 use globalsearch::problem::Problem;
-use globalsearch::types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams, SolutionSet};
+use globalsearch::types::{EvaluationError, LocalSolverType, OQNLPParams};
 use ndarray::{Array1, Array2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 
 #[pyclass]
 #[derive(Debug, Clone)]
