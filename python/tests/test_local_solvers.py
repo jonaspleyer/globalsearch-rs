@@ -62,7 +62,7 @@ def test_lbfgs_custom_config():
     )
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Optimization returned empty result"
-    assert abs(result[0]["fun"]) < 1e-6  # Should still find minimum
+    assert abs(result[0].fun()) < 1e-6  # Should still find minimum
 
 
 def test_lbfgs_with_hagerzhang_line_search():
@@ -82,7 +82,7 @@ def test_lbfgs_with_hagerzhang_line_search():
         problem_grad, params, local_solver="LBFGS", local_solver_config=custom_lbfgs
     )
     assert result is not None, "Optimization returned None"
-    assert abs(result[0]["fun"]) < 1e-6
+    assert abs(result[0].fun()) < 1e-6
 
 
 def test_nelder_mead_custom_config():
@@ -103,7 +103,7 @@ def test_nelder_mead_custom_config():
         local_solver_config=custom_nelder_mead,
     )
     assert result is not None, "Optimization returned None"
-    assert abs(result[0]["fun"]) < 1e-4  # NelderMead may be less precise
+    assert abs(result[0].fun()) < 1e-4  # NelderMead may be less precise
 
 
 def test_trustregion_custom_config():
@@ -122,7 +122,7 @@ def test_trustregion_custom_config():
         local_solver_config=custom_trustregion,
     )
     assert result is not None, "Optimization returned None"
-    assert abs(result[0]["fun"]) < 1e-6
+    assert abs(result[0].fun()) < 1e-6
 
 
 def test_trustregion_cauchy_method():
@@ -138,4 +138,4 @@ def test_trustregion_cauchy_method():
         local_solver_config=custom_trustregion,
     )
     assert result is not None, "Optimization returned None"
-    assert abs(result[0]["fun"]) < 1e-6
+    assert abs(result[0].fun()) < 1e-6

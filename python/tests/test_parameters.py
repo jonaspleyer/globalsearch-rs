@@ -45,8 +45,8 @@ def test_configure_params():
     result = gs.optimize(problem_grad, custom_params, local_solver="LBFGS")
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Optimization returned empty result"
-    assert result[0]["x"] == [0.0, 0.0]
-    assert result[0]["fun"] == 0.0
+    assert result[0].x() == [0.0, 0.0]
+    assert result[0].fun() == 0.0
 
 
 def test_default_params():
@@ -55,8 +55,8 @@ def test_default_params():
     result = gs.optimize(problem_grad, default_params, local_solver="LBFGS")
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Optimization returned empty result"
-    assert result[0]["x"] == [0.0, 0.0]
-    assert result[0]["fun"] == 0.0
+    assert result[0].x() == [0.0, 0.0]
+    assert result[0].fun() == 0.0
 
 
 def test_default_seed():
@@ -69,8 +69,8 @@ def test_default_seed():
     )  # Default seed
     assert result1 is not None and result2 is not None
     # Results should be identical with same seed
-    assert result1[0]["x"] == result2[0]["x"]
-    assert result1[0]["fun"] == result2[0]["fun"]
+    assert result1[0].x() == result2[0].x()
+    assert result1[0].fun() == result2[0].fun()
 
 
 def test_different_seeds():
@@ -79,8 +79,8 @@ def test_different_seeds():
     result2 = gs.optimize(problem_grad, params, local_solver="LBFGS", seed=123)
     assert result1 is not None and result2 is not None
     # Both should find the global minimum but potentially through different paths
-    assert abs(result1[0]["fun"]) < 1e-10
-    assert abs(result2[0]["fun"]) < 1e-10
+    assert abs(result1[0].fun()) < 1e-10
+    assert abs(result2[0].fun()) < 1e-10
 
 
 def test_convergence_tolerance():
@@ -116,5 +116,5 @@ def test_convergence_tolerance():
 
     assert result_loose is not None and result_tight is not None
     # Both should find the solution, potentially with different precision
-    assert abs(result_loose[0]["fun"]) < 1e-3
-    assert abs(result_tight[0]["fun"]) < 1e-8
+    assert abs(result_loose[0].fun()) < 1e-3
+    assert abs(result_tight[0].fun()) < 1e-8

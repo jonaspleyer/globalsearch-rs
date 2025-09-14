@@ -66,15 +66,6 @@ problem = gs.PyProblem(obj, variable_bounds, grad)
 #                      target_objective=-1.0, max_time=30.0, verbose=True)
 sol_set = gs.optimize(problem, params, local_solver="LBFGS", seed=0)
 
-# Solution set is a list of dictionaries or None
-# Each dictionary contains the solution and its function value
-#
-# Since we use MyPy type hints, we can access the solution and its function value
-# without any runtime error
-if sol_set is not None and len(sol_set) > 0:
-    for sol in sol_set:
-        print("Solution:")
-        print(sol["x"])
-        print(sol["fun"])
-else:
-    print("No solution found")
+# The solution set can be printed or processed further
+# It is a PySolutionSet object
+print(sol_set)

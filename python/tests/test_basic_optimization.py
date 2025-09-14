@@ -46,8 +46,8 @@ def test_optimize_lbfgs():
     result = gs.optimize(problem_grad, params, local_solver="LBFGS")
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Optimization returned empty result"
-    assert result[0]["x"] == [0.0, 0.0]
-    assert result[0]["fun"] == 0.0
+    assert result[0].x() == [0.0, 0.0]
+    assert result[0].fun() == 0.0
 
 
 def test_optimize_trustregion():
@@ -55,8 +55,8 @@ def test_optimize_trustregion():
     result = gs.optimize(problem_full, params, local_solver="TrustRegion")
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Optimization returned empty result"
-    assert result[0]["x"] == [0.0, 0.0]
-    assert result[0]["fun"] == 0.0
+    assert result[0].x() == [0.0, 0.0]
+    assert result[0].fun() == 0.0
 
 
 def test_optimize_lbfgs_full():
@@ -64,8 +64,8 @@ def test_optimize_lbfgs_full():
     result = gs.optimize(problem_full, params, local_solver="LBFGS")
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Optimization returned empty result"
-    assert result[0]["x"] == [0.0, 0.0]
-    assert result[0]["fun"] == 0.0
+    assert result[0].x() == [0.0, 0.0]
+    assert result[0].fun() == 0.0
 
 
 def test_default_local_solver():
@@ -73,8 +73,8 @@ def test_default_local_solver():
     result = gs.optimize(problem_grad, params)  # No local_solver specified
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Optimization returned empty result"
-    assert result[0]["x"] == [0.0, 0.0]
-    assert result[0]["fun"] == 0.0
+    assert result[0].x() == [0.0, 0.0]
+    assert result[0].fun() == 0.0
 
 
 def test_single_variable_problem():
@@ -94,11 +94,11 @@ def test_single_variable_problem():
     )
     result = gs.optimize(single_var_problem, params, local_solver="LBFGS")
     assert result is not None, "Optimization returned None"
-    assert abs(result[0]["x"][0] - 2.0) < 1e-6, (
-        f"Expected x near 2.0, got {result[0]['x'][0]}"
+    assert abs(result[0].x()[0] - 2.0) < 1e-6, (
+        f"Expected x near 2.0, got {result[0].x()[0]}"
     )
-    assert abs(result[0]["fun"] - (-1.0)) < 1e-6, (
-        f"Expected fun near -1.0, got {result[0]['fun']}"
+    assert abs(result[0].fun() - (-1.0)) < 1e-6, (
+        f"Expected fun near -1.0, got {result[0].fun()}"
     )
 
 
@@ -109,8 +109,8 @@ def test_solution_format():
     assert len(result) > 0, "Should return at least one solution"
 
     for solution in result:
-        assert "x" in solution, "Solution should have 'x' key"
-        assert "fun" in solution, "Solution should have 'fun' key"
-        assert isinstance(solution["x"], list), "x should be a list"
-        assert isinstance(solution["fun"], float), "fun should be a float"
-        assert len(solution["x"]) == 2, "x should have 2 elements for this problem"
+        assert hasattr(solution, 'x'), "Solution should have 'x' method"
+        assert hasattr(solution, 'fun'), "Solution should have 'fun' method"
+        assert isinstance(solution.x(), list), "x() should return a list"
+        assert isinstance(solution.fun(), float), "fun() should return a float"
+        assert len(solution.x()) == 2, "x() should have 2 elements for this problem"

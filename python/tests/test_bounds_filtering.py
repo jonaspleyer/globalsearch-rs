@@ -65,6 +65,6 @@ def test_exclude_out_of_bounds_true():
 
     # Check that all solutions are within bounds
     for sol in solutions_filtered:
-        x = sol["x"]
+        x = sol.x()
         assert -1.0 <= x[0] <= 1.0, f"x[0]={x[0]} is out of bounds [-1, 1]"
         assert -1.0 <= x[1] <= 1.0, f"x[1]={x[1]} is out of bounds [-1, 1]"

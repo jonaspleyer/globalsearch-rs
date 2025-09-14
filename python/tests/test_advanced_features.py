@@ -45,9 +45,10 @@ def test_target_objective_reached():
     assert len(result) > 0, "Should return at least one solution"
 
     # The best solution should be at or below the target
-    best_solution = min(result, key=lambda s: s["fun"])
-    assert best_solution["fun"] <= target, (
-        f"Best objective {best_solution['fun']} should be <= target {target}"
+    best_solution = result.best_solution()
+    assert best_solution is not None, "Should have a best solution"
+    assert best_solution.fun() <= target, (
+        f"Best objective {best_solution.fun()} should be <= target {target}"
     )
 
 
@@ -90,10 +91,11 @@ def test_target_objective_and_max_time_combined():
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Should return at least one solution"
 
-    best_solution = min(result, key=lambda s: s["fun"])
+    best_solution = result.best_solution()
+    assert best_solution is not None, "Should have a best solution"
     # Should reach target quickly (global minimum is 0.0)
-    assert best_solution["fun"] <= 0.1, (
-        f"Best objective {best_solution['fun']} should be <= target 0.1"
+    assert best_solution.fun() <= 0.1, (
+        f"Best objective {best_solution.fun()} should be <= target 0.1"
     )
 
 
@@ -107,7 +109,7 @@ def test_target_objective_none():
     assert result1 is not None and result2 is not None
     # Results should be identical when using same seed and no target
     assert len(result1) == len(result2)
-    assert abs(result1[0]["fun"] - result2[0]["fun"]) < 1e-10
+    assert abs(result1[0].fun() - result2[0].fun()) < 1e-10
 
 
 def test_max_time_none():
@@ -120,7 +122,7 @@ def test_max_time_none():
     assert result1 is not None and result2 is not None
     # Results should be identical when using same seed and no time limit
     assert len(result1) == len(result2)
-    assert abs(result1[0]["fun"] - result2[0]["fun"]) < 1e-10
+    assert abs(result1[0].fun() - result2[0].fun()) < 1e-10
 
 
 def test_verbose_false():
@@ -133,4 +135,4 @@ def test_verbose_false():
     assert result1 is not None and result2 is not None
     # Results should be identical when using same seed
     assert len(result1) == len(result2)
-    assert abs(result1[0]["fun"] - result2[0]["fun"]) < 1e-10
+    assert abs(result1[0].fun() - result2[0].fun()) < 1e-10

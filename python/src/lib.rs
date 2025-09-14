@@ -5,7 +5,7 @@ use globalsearch::local_solver::builders::{
 };
 use globalsearch::oqnlp::OQNLP;
 use globalsearch::problem::Problem;
-use globalsearch::types::{EvaluationError, LocalSolverType, OQNLPParams};
+use globalsearch::types::{EvaluationError, LocalSolution, LocalSolverType, OQNLPParams, SolutionSet};
 use ndarray::{Array1, Array2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -24,6 +24,157 @@ pub struct PyOQNLPParams {
     pub threshold_factor: f64,
     #[pyo3(get, set)]
     pub distance_factor: f64,
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyLocalSolution {
+    #[pyo3(get, set)]
+    pub point: Vec<f64>,
+    #[pyo3(get, set)]
+    pub objective: f64,
+}
+
+#[pymethods]
+impl PyLocalSolution {
+    #[new]
+    fn new(point: Vec<f64>, objective: f64) -> Self {
+        PyLocalSolution { point, objective }
+    }
+
+    /// Returns the objective function value at the solution point
+    /// 
+    /// Same as `objective` field
+    /// 
+    /// This method is similar to the `fun` method in `SciPy.optimize` result
+    fn fun(&self) -> f64 {
+        self.objective
+    }
+
+    /// Returns the solution point as a list of float values
+    ///
+    /// Same as `point` field
+    ///
+    /// This method is similar to the `x` method in `SciPy.optimize` result
+    fn x(&self) -> Vec<f64> {
+        self.point.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PyLocalSolution(point={:?}, objective={})",
+            self.point, self.objective
+        )
+    }
+
+    fn __str__(&self) -> String {
+        format!(
+            "Solution(x={:?}, fun={})",
+            self.point, self.objective
+        )
+    }
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PySolutionSet {
+    #[pyo3(get)]
+    pub solutions: Vec<PyLocalSolution>,
+}
+
+#[pymethods]
+impl PySolutionSet {
+    #[new]
+    fn new(solutions: Vec<PyLocalSolution>) -> Self {
+        PySolutionSet { solutions }
+    }
+
+    /// Returns the number of solutions stored in the set.
+    fn __len__(&self) -> usize {
+        self.solutions.len()
+    }
+
+    /// Returns true if the solution set contains no solutions.
+    fn is_empty(&self) -> bool {
+        self.solutions.is_empty()
+    }
+
+    /// Returns the best solution in the set based on the objective function value.
+    fn best_solution(&self) -> Option<PyLocalSolution> {
+        self.solutions
+            .iter()
+            .min_by(|a, b| a.objective.partial_cmp(&b.objective).unwrap())
+            .cloned()
+    }
+
+    /// Returns the solution at the given index.
+    fn __getitem__(&self, index: usize) -> PyResult<PyLocalSolution> {
+        self.solutions
+            .get(index)
+            .cloned()
+            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyIndexError, _>("Index out of range"))
+    }
+
+    /// Returns an iterator over the solutions in the set.
+    fn __iter__(slf: PyRef<'_, Self>) -> PyResult<Py<PySolutionSetIterator>> {
+        let iter = PySolutionSetIterator {
+            inner: slf.solutions.clone(),
+            index: 0,
+        };
+        Py::new(slf.py(), iter)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PySolutionSet(solutions={:?})", self.solutions)
+    }
+
+    fn __str__(&self) -> String {
+        let mut result = String::from("Solution Set\n");
+        result.push_str(&format!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"));
+        result.push_str(&format!("Total solutions: {}\n", self.solutions.len()));
+        
+        if !self.solutions.is_empty() {
+            if let Some(best) = self.best_solution() {
+                result.push_str(&format!("Best objective value: {:.8e}\n", best.objective));
+            }
+        }
+        result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+        for (i, solution) in self.solutions.iter().enumerate() {
+            result.push_str(&format!("Solution #{}\n", i + 1));
+            result.push_str(&format!("  Objective: {:.8e}\n", solution.objective));
+            result.push_str(&format!("  Parameters: {:?}\n", solution.point));
+
+            if i < self.solutions.len() - 1 {
+                result.push_str("――――――――――――――――――――――――――――――――――――\n");
+            }
+        }
+        
+        result
+    }
+}
+
+#[pyclass]
+struct PySolutionSetIterator {
+    inner: Vec<PyLocalSolution>,
+    index: usize,
+}
+
+#[pymethods]
+impl PySolutionSetIterator {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyLocalSolution> {
+        if slf.index < slf.inner.len() {
+            let result = slf.inner[slf.index].clone();
+            slf.index += 1;
+            Some(result)
+        } else {
+            None
+        }
+    }
 }
 
 #[pymethods]
@@ -205,7 +356,7 @@ fn optimize(
     max_time: Option<f64>,
     verbose: Option<bool>,
     exclude_out_of_bounds: Option<bool>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<PySolutionSet> {
     Python::with_gil(|py| {
         // Convert local_solver string to enum
         let solver_type = LocalSolverType::from_string(local_solver.unwrap_or("lbfgs"))
@@ -315,26 +466,16 @@ fn optimize(
 
         let binding = solution_set.map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        let solutions: PyResult<Vec<PyObject>> = binding
+        // Convert Rust SolutionSet to Python PySolutionSet
+        let py_solutions: Vec<PyLocalSolution> = binding
             .solutions()
-            .map(|sol| -> PyResult<PyObject> {
-                let dict = PyDict::new(py);
-                dict.set_item("x", sol.point.to_vec()).map_err(|e| {
-                    PyErr::new::<PyValueError, _>(format!("Failed to set 'x': {}", e))
-                })?;
-                dict.set_item("fun", sol.objective).map_err(|e| {
-                    PyErr::new::<PyValueError, _>(format!("Failed to set 'fun': {}", e))
-                })?;
-                Ok(dict.into())
+            .map(|sol| PyLocalSolution {
+                point: sol.point.to_vec(),
+                objective: sol.objective,
             })
             .collect();
 
-        let bound = solutions?
-            .into_iter()
-            .collect::<Vec<_>>()
-            .into_pyobject(py)?;
-
-        Ok(Py::from(bound))
+        Ok(PySolutionSet::new(py_solutions))
     })
 }
 
@@ -353,6 +494,8 @@ fn pyglobalsearch(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(optimize, m)?)?;
     m.add_class::<PyOQNLPParams>()?;
     m.add_class::<PyProblem>()?;
+    m.add_class::<PyLocalSolution>()?;
+    m.add_class::<PySolutionSet>()?;
 
     // Builders submodule
     let builders = PyModule::new(_py, "builders")?;

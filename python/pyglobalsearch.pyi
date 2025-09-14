@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.typing import NDArray
-from typing import Callable, List, Optional, TypedDict, Union, Type
+from typing import Callable, List, Optional, TypedDict, Union, Type, Iterator
 
 class Solution(TypedDict):
     """
@@ -13,6 +13,100 @@ class Solution(TypedDict):
 
     x: List[float]
     fun: float
+
+class PyLocalSolution:
+    """
+    # A local solution in the parameter space
+
+    This class represents a solution point in the parameter space along with the objective function value at that point.
+    """
+
+    point: List[float]
+    objective: float
+
+    def __init__(self, point: List[float], objective: float) -> None:
+        """
+        # Initialize a local solution.
+
+        Args:
+            point: The solution point in the parameter space
+            objective: The objective function value at the solution point
+        """
+        ...
+
+    def fun(self) -> float:
+        """
+        # Returns the objective function value at the solution point
+
+        Same as `objective` field
+
+        This method is similar to the `fun` method in `SciPy.optimize` result
+        """
+        ...
+
+    def x(self) -> List[float]:
+        """
+        # Returns the solution point as a list of float values
+
+        Same as `point` field
+
+        This method is similar to the `x` method in `SciPy.optimize` result
+        """
+        ...
+
+class PySolutionSet:
+    """
+    # A set of local solutions
+
+    This class represents a set of local solutions in the parameter space
+    including the solution points and their corresponding objective function values.
+
+    The solutions are stored as a list of `PyLocalSolution` objects.
+
+    The `PySolutionSet` class supports indexing, iteration, and provides methods
+    to get the number of solutions and find the best solution.
+    """
+
+    solutions: List[PyLocalSolution]
+
+    def __init__(self, solutions: List[PyLocalSolution]) -> None:
+        """
+        # Initialize a solution set.
+
+        Args:
+            solutions: List of PyLocalSolution objects
+        """
+        ...
+
+    def __len__(self) -> int:
+        """
+        # Returns the number of solutions stored in the set.
+        """
+        ...
+
+    def is_empty(self) -> bool:
+        """
+        # Returns true if the solution set contains no solutions.
+        """
+        ...
+
+    def best_solution(self) -> Optional[PyLocalSolution]:
+        """
+        # Returns the best solution in the set based on the objective function value.
+        """
+        ...
+
+    def __getitem__(self, index: int) -> PyLocalSolution:
+        """
+        # Returns the solution at the given index.
+        """
+        ...
+
+    def __iter__(self) -> Iterator[PyLocalSolution]:
+        """
+        # Returns an iterator over the solutions in the set.
+        """
+        ...
 
 class PyOQNLPParams:
     """
@@ -329,7 +423,7 @@ def optimize(
     max_time: Optional[float] = None,
     verbose: Optional[bool] = False,
     exclude_out_of_bounds: Optional[bool] = False,
-) -> Optional[List[Solution]]:
+) -> PySolutionSet:
     """
     # Perform global optimization on the given problem.
 
@@ -348,7 +442,7 @@ def optimize(
         exclude_out_of_bounds: Exclude out-of-bounds solutions from consideration (False by default)
 
     Returns:
-        A list of Solution objects containing multiple solutions found and their
-        objective values or none if no solution is found
+        A PySolutionSet object containing multiple solutions found and their
+        objective values
     """
     ...

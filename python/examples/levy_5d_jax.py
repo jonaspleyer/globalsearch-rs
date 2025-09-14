@@ -114,8 +114,8 @@ if sol_set is not None and len(sol_set) > 0:
     print("=" * 50)
 
     for i, sol in enumerate(sol_set, 1):
-        x_opt = sol["x"]
-        f_opt = sol["fun"]
+        x_opt = sol.x()
+        f_opt = sol.fun()
 
         print(f"Solution #{i}:")
         print(f"  Parameters: {x_opt}")

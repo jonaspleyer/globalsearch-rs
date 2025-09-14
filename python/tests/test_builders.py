@@ -59,7 +59,7 @@ def test_builders_lbfgs():
         problem_grad, params, local_solver="LBFGS", local_solver_config=lbfgs_config
     )
     assert result is not None, "Optimization returned None"
-    assert abs(result[0]["fun"]) < 1e-6
+    assert abs(result[0].fun()) < 1e-6
 
 
 def test_builders_nelder_mead():
@@ -80,7 +80,7 @@ def test_builders_nelder_mead():
         local_solver_config=nelder_mead_config,
     )
     assert result is not None, "Optimization returned None"
-    assert abs(result[0]["fun"]) < 1e-4
+    assert abs(result[0].fun()) < 1e-4
 
 
 def test_builders_trustregion():
@@ -99,7 +99,7 @@ def test_builders_trustregion():
         local_solver_config=trustregion_config,
     )
     assert result is not None, "Optimization returned None"
-    assert abs(result[0]["fun"]) < 1e-6
+    assert abs(result[0].fun()) < 1e-6
 
 
 def test_builders_hagerzhang():
@@ -125,4 +125,4 @@ def test_builders_hagerzhang():
         problem_grad, params, local_solver="LBFGS", local_solver_config=lbfgs_config
     )
     assert result is not None, "Optimization returned None"
-    assert abs(result[0]["fun"]) < 1e-6
+    assert abs(result[0].fun()) < 1e-6
