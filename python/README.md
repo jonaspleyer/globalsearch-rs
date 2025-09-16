@@ -120,8 +120,8 @@ The Python bindings are still in development and may not be fully functional. Th
 
 Additionally, the Python bindings have limitations:
 
-- No support for custom local solver configurations
-- No support for rayon parallelism of stage one
+- No support for parallelism of stage one
+- No support for checkpointing
 
 ## License
 

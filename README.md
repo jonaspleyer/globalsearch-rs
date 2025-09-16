@@ -210,7 +210,8 @@ src/
 │   └── runner.rs # Local solver runner
 ├── filters.rs # Merit and distance filtering logic
 ├── problem.rs # Problem trait
-└── types.rs # Data structures and parameters
+├── types.rs # Data structures and parameters
+└── checkpoint.rs # Checkpointing module
 python/ # Python bindings
 ```
 
