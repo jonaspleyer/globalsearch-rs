@@ -11,6 +11,8 @@
 //!  - Nelder-Mead: Only requires the objective function
 //!  - Steepest Descent: Requires gradient and linesearch
 //!  - Trust Region: Requires gradient and hessian
+//!  - Newton-CG: Requires gradient and hessian
+//!  - COBYLA: Only requires the objective function
 
 use crate::local_solver::builders::{LineSearchMethod, LocalSolverConfig, TrustRegionRadiusMethod};
 use crate::problem::Problem;
@@ -46,6 +48,9 @@ pub enum LocalSolverError {
 
     #[error("Local Solver Error: Invalid LocalSolverConfig for Newton-CG method solver. {0}")]
     InvalidNewtonCG(String),
+
+    #[error("Local Solver Error: Invalid LocalSolverConfig for COBYLA solver. {0}")]
+    InvalidCOBYLAConfig(String),
 
     #[error("Local Solver Error: Failed to run local solver. {0}")]
     RunFailed(String),
@@ -100,6 +105,9 @@ impl<P: Problem> LocalSolver<P> {
             }
             LocalSolverType::NewtonCG => {
                 self.solve_newton_cg(initial_point, &self.local_solver_config)
+            }
+            LocalSolverType::COBYLA => {
+                self.solve_cobyla(initial_point, &self.local_solver_config)
             }
         }
     }
@@ -747,6 +755,83 @@ impl<P: Problem> LocalSolver<P> {
             ))
         }
     }
+
+    /// Solve the optimization problem using the COBYLA local solver
+    fn solve_cobyla(
+        &self,
+        initial_point: Array1<f64>,
+        solver_config: &LocalSolverConfig,
+    ) -> Result<LocalSolution, LocalSolverError> {
+        if let LocalSolverConfig::COBYLA {
+            max_iter,
+            initial_step_size,
+            ftol_rel,
+            ftol_abs,
+            xtol_rel,
+            xtol_abs,
+        } = solver_config
+        {
+            // Convert initial point to Vec<f64> as required by COBYLA
+            let x0: Vec<f64> = initial_point.to_vec();
+
+            // Create the objective function for COBYLA (needs 2 arguments: x and user_data)
+            let objective = |x: &[f64], _user_data: &mut ()| -> f64 {
+                let point = Array1::from_vec(x.to_vec());
+                
+                match self.problem.objective(&point) {
+                    Ok(value) => value,
+                    Err(_) => f64::INFINITY,
+                }
+            };
+
+            let constraint_funcs = self.problem.constraints();
+            let problem_bounds = self.problem.variable_bounds();
+            
+            if problem_bounds.nrows() != x0.len() {
+                return Err(LocalSolverError::InvalidCOBYLAConfig(
+                    format!("Problem bounds dimension mismatch: expected {} bounds for {} variables, got {} bounds", 
+                           x0.len(), x0.len(), problem_bounds.nrows())
+                ));
+            }
+            
+            let bounds: Vec<(f64, f64)> = (0..x0.len())
+                .map(|i| (problem_bounds[[i, 0]], problem_bounds[[i, 1]]))
+                .collect();
+
+            match cobyla::minimize(
+                objective,
+                &x0,
+                &bounds,
+                &constraint_funcs,
+                (),
+                *max_iter as usize,
+                cobyla::RhoBeg::All(*initial_step_size),
+                Some(cobyla::StopTols {
+                    ftol_rel: *ftol_rel,
+                    ftol_abs: *ftol_abs,
+                    xtol_rel: *xtol_rel,
+                    xtol_abs: if *xtol_abs > 0.0 { vec![*xtol_abs; x0.len()] } else { vec![] },
+                }),
+            ) {
+                Ok((_status, solution_x, objective_value)) => {
+                    let solution_point = Array1::from_vec(solution_x);
+
+                    Ok(LocalSolution {
+                        point: solution_point,
+                        objective: objective_value,
+                    })
+                }
+                Err(e) => Err(LocalSolverError::RunFailed(format!(
+                    "COBYLA solver failed: {:?}",
+                    e
+                ))),
+            }
+        } else {
+            Err(LocalSolverError::InvalidCOBYLAConfig(
+                "Error parsing solver configuration".to_string(),
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -772,6 +857,28 @@ mod tests_local_solvers {
 
         fn variable_bounds(&self) -> Array2<f64> {
             array![[-3.0, 3.0], [-2.0, 2.0]]
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct ConstrainedQuadratic;
+
+    impl Problem for ConstrainedQuadratic {
+        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+            // Simple quadratic: (x-1)² + (y-1)²
+            Ok((x[0] - 1.0).powi(2) + (x[1] - 1.0).powi(2))
+        }
+
+        fn variable_bounds(&self) -> Array2<f64> {
+            array![[0.0, 2.0], [0.0, 2.0]]
+        }
+
+
+
+        fn constraints(&self) -> Vec<fn(&[f64], &mut ()) -> f64> {
+            vec![
+                |x: &[f64], _: &mut ()| 1.5 - x[0] - x[1], // x + y <= 1.5 -> 1.5 - x - y >= 0
+            ]
         }
     }
 
@@ -1219,5 +1326,85 @@ mod tests_local_solvers {
                 "Invalid parameter: \"`TrustRegion`: eta must be in [0, 1/4).\"".to_string()
             )
         );
+    }
+
+    #[test]
+    /// Test the COBYLA local solver with a problem that doesn't
+    /// have a gradient. Since COBYLA doesn't require a gradient,
+    /// the local solver should run without an error.
+    fn test_cobyla_no_gradient() {
+        let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
+
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::COBYLA,
+            LocalSolverConfig::COBYLA {
+                max_iter: 1000,
+                initial_step_size: 1.0,
+                ftol_rel: 1e-6,
+                ftol_abs: 1e-8,
+                xtol_rel: 0.0,
+                xtol_abs: 0.0,
+            },
+        );
+
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+        let res: LocalSolution = local_solver.solve(initial_point).unwrap();
+        // COBYLA should find a reasonable solution for the Six Hump Camel function
+        // The global minimum is around -1.0316, but COBYLA might not find the exact global minimum
+        assert!(res.objective < 0.0); // Should at least find a negative value
+    }
+
+    #[test]
+    /// Test COBYLA with constraints using a simple quadratic problem
+    fn test_cobyla_with_constraints() {
+        let problem: ConstrainedQuadratic = ConstrainedQuadratic;
+
+        let local_solver: LocalSolver<ConstrainedQuadratic> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::COBYLA,
+            LocalSolverConfig::COBYLA {
+                max_iter: 500,
+                initial_step_size: 0.5,
+                ftol_rel: 1e-6,
+                ftol_abs: 1e-8,
+                xtol_rel: 0.0,
+                xtol_abs: 0.0,
+            },
+        );
+
+        let initial_point: Array1<f64> = array![0.5, 0.5];
+        let res: LocalSolution = local_solver.solve(initial_point).unwrap();
+        
+        // Check that the solution respects bounds
+        assert!(res.point[0] >= 0.0 && res.point[0] <= 2.0);
+        assert!(res.point[1] >= 0.0 && res.point[1] <= 2.0);
+        
+        // Check that the constraint is approximately satisfied (with tolerance)
+        let constraint_value = res.point[0] + res.point[1] - 1.5;
+        assert!(constraint_value <= 0.01); // Small tolerance for numerical errors
+        
+        // The constrained optimum should be around (0.75, 0.75) with objective ~0.125
+        // With penalty method, the result may be slightly different
+        let expected_obj = 0.125;
+        assert!((res.objective - expected_obj).abs() < 0.2, 
+                "Expected objective ~{}, got {}", expected_obj, res.objective);
+    }
+
+    #[test]
+    /// Test that constraint evaluation works correctly
+    fn test_constraint_evaluation() {
+        let problem = ConstrainedQuadratic;
+        let constraints = problem.constraints();
+        
+        // Test constraint at a point that satisfies it
+        let feasible_point = array![0.5, 0.5];
+        let constraint_val = constraints[0](&[feasible_point[0], feasible_point[1]], &mut ());
+        assert!(constraint_val > 0.0); // Should be positive (satisfied in COBYLA convention)
+        
+        // Test constraint at a point that violates it
+        let infeasible_point = array![1.0, 1.0];
+        let constraint_val = constraints[0](&[infeasible_point[0], infeasible_point[1]], &mut ());
+        assert!(constraint_val < 0.0); // Should be negative (violated in COBYLA convention)
     }
 }
