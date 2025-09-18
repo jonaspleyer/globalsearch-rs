@@ -168,7 +168,7 @@ pub struct PyLineSearchParams {
 impl PyLineSearchParams {
     #[new]
     #[pyo3(signature = (method))]
-    fn new(method: PyObject, py: Python) -> PyResult<Self> {
+    fn new(method: Py<pyo3::PyAny>, py: Python) -> PyResult<Self> {
         if let Ok(more_thuente) = method.extract::<PyMoreThuente>(py) {
             return Ok(PyLineSearchParams {
                 method: PyLineSearchMethod::MoreThuente(more_thuente),
@@ -303,7 +303,7 @@ fn lbfgs(
     tolerance_grad: f64,
     tolerance_cost: f64,
     history_size: usize,
-    line_search_params: PyObject,
+    line_search_params: Py<pyo3::PyAny>,
     l1_coefficient: Option<f64>,
     py: Python,
 ) -> PyResult<PyLBFGS> {
@@ -491,7 +491,7 @@ impl PySteepestDescent {
 )]
 fn steepestdescent(
     max_iter: u64,
-    line_search_params: PyObject,
+    line_search_params: Py<pyo3::PyAny>,
     py: Python,
 ) -> PyResult<PySteepestDescent> {
     let line_search_params =
@@ -596,7 +596,7 @@ fn newtoncg(
     max_iter: u64,
     curvature_threshold: f64,
     tolerance: f64,
-    line_search_params: PyObject,
+    line_search_params: Py<pyo3::PyAny>,
     py: Python,
 ) -> PyResult<PyNewtonCG> {
 let line_search_params =

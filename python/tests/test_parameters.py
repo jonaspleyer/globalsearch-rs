@@ -52,7 +52,7 @@ def test_configure_params():
 def test_default_params():
     """Test default PyOQNLPParams."""
     default_params = gs.PyOQNLPParams()
-    result = gs.optimize(problem_grad, default_params, local_solver="LBFGS")
+    result = gs.optimize(problem_grad, default_params)  # Use default solver
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Optimization returned empty result"
     assert result[0].x() == [0.0, 0.0]

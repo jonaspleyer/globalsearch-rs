@@ -147,7 +147,7 @@ class PyProblem:
     # Defines an optimization problem to be solved.
 
     Contains the objective function, variable bounds, and optionally
-    gradient and hessian functions, depending on the local solver used.
+    gradient, hessian, and constraint functions, depending on the local solver used.
 
     The objective function, gradient and hessian should take a single
     argument, a numpy array of float values, and return a float, numpy array or
@@ -156,18 +156,25 @@ class PyProblem:
     The variable bounds function should take no arguments and return a numpy
     array of float values representing the lower and upper bounds for each
     variable in the optimization problem.
+
+    The constraints should be a list of constraint functions. Each constraint
+    function should take a single argument (a numpy array of float values)
+    and return a float representing the constraint value. A constraint is
+    satisfied when constraint(x) >= 0.
     """
 
     objective: Callable[[NDArray[np.float64]], float]
     variable_bounds: Callable[[], NDArray[np.float64]]
     gradient: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]]
     hessian: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]]
+    constraints: Optional[List[Callable[[NDArray[np.float64]], float]]]
     def __init__(
         self,
         objective: Callable[[NDArray[np.float64]], float],
         variable_bounds: Callable[[], NDArray[np.float64]],
         gradient: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]] = None,
         hessian: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]] = None,
+        constraints: Optional[List[Callable[[NDArray[np.float64]], float]]] = None,
     ) -> None:
         """
         # Initialize an optimization problem.
@@ -177,11 +184,15 @@ class PyProblem:
         The gradient and hessian functions are optional, but should be provided
         if the local solver requires them.
 
+        The constraints are optional and should be provided as a list of constraint
+        functions if the local solver supports constraints (e.g., COBYLA).
+
         Args:
             objective: Function that computes the objective value to be minimized
             variable_bounds: Function that returns an array of [lower, upper] bounds for each variable
             gradient: Optional function that computes the gradient of the objective
             hessian: Optional function that computes the Hessian of the objective
+            constraints: Optional list of constraint functions. Each constraint is satisfied when constraint(x) >= 0
         """
         ...
 
@@ -441,7 +452,7 @@ class builders:
 def optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
-    local_solver: Optional[str] = "LBFGS",
+    local_solver: Optional[str] = "COBYLA",
     local_solver_config: Optional[
         Union[
             PyLBFGS,
@@ -467,7 +478,7 @@ def optimize(
     Args:
         problem: The optimization problem to solve
         params: Parameters controlling the optimization process
-        local_solver: The algorithm to use for local optimization ("LBFGS" by default)
+        local_solver: The algorithm to use for local optimization ("COBYLA" by default)
         local_solver_config: Configuration for the local solver (None for default)
         seed: Seed for reproducibility (0 by default)
         target_objective: Target objective value to stop early when reached (None to disable)
