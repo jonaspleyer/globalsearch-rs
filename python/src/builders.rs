@@ -1,5 +1,5 @@
 use globalsearch::local_solver::builders::{
-    HagerZhangBuilder, LBFGSBuilder, LineSearchParams, MoreThuenteBuilder,
+    COBYLABuilder, HagerZhangBuilder, LBFGSBuilder, LineSearchParams, MoreThuenteBuilder,
     NelderMeadBuilder, NewtonCGBuilder, SteepestDescentBuilder, TrustRegionBuilder,
     TrustRegionRadiusMethod,
 };
@@ -727,6 +727,110 @@ fn trustregion(
     }
 }
 
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyCOBYLA {
+    #[pyo3(get, set)]
+    pub max_iter: u64,
+    #[pyo3(get, set)]
+    pub step_size: f64,
+    #[pyo3(get, set)]
+    pub ftol_rel: Option<f64>,
+    #[pyo3(get, set)]
+    pub ftol_abs: Option<f64>,
+    #[pyo3(get, set)]
+    pub xtol_rel: Option<f64>,
+    #[pyo3(get, set)]
+    pub xtol_abs: Option<f64>,
+}
+
+#[pymethods]
+impl PyCOBYLA {
+    #[new]
+    #[pyo3(signature = (
+        max_iter = 300,
+        step_size = 1.0,
+        ftol_rel = None,
+        ftol_abs = None,
+        xtol_rel = None,
+        xtol_abs = None,
+    ))]
+    fn new(
+        max_iter: u64,
+        step_size: f64,
+        ftol_rel: Option<f64>,
+        ftol_abs: Option<f64>,
+        xtol_rel: Option<f64>,
+        xtol_abs: Option<f64>,
+    ) -> Self {
+        PyCOBYLA {
+            max_iter,
+            step_size,
+            ftol_rel,
+            ftol_abs,
+            xtol_rel,
+            xtol_abs,
+        }
+    }
+}
+
+impl PyCOBYLA {
+    pub fn to_builder(&self) -> COBYLABuilder {
+        let mut builder = COBYLABuilder::new(
+            self.max_iter,
+            self.step_size,
+        );
+        
+        if let Some(ftol_rel) = self.ftol_rel {
+            builder = builder.ftol_rel(ftol_rel);
+        }
+        
+        if let Some(ftol_abs) = self.ftol_abs {
+            builder = builder.ftol_abs(ftol_abs);
+        }
+        
+        if let Some(xtol_rel) = self.xtol_rel {
+            builder = builder.xtol_rel(xtol_rel);
+        }
+        
+        if let Some(xtol_abs) = self.xtol_abs {
+            builder = builder.xtol_abs(xtol_abs);
+        }
+        
+        builder
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+    max_iter = 300,
+    step_size = 1.0,
+    ftol_rel = None,
+    ftol_abs = None,
+    xtol_rel = None,
+    xtol_abs = None,
+))]
+#[pyo3(
+    text_signature = "(max_iter: int = 300, step_size: float = 1.0, ftol_rel: Optional[float] = None, ftol_abs: Optional[float] = None, xtol_rel: Optional[float] = None, xtol_abs: Optional[float] = None)"
+)]
+fn cobyla(
+    max_iter: u64,
+    step_size: f64,
+    ftol_rel: Option<f64>,
+    ftol_abs: Option<f64>,
+    xtol_rel: Option<f64>,
+    xtol_abs: Option<f64>,
+) -> PyCOBYLA {
+    PyCOBYLA {
+        max_iter,
+        step_size,
+        ftol_rel,
+        ftol_abs,
+        xtol_rel,
+        xtol_abs,
+    }
+}
+
 /// Initialize the builders module
 pub fn init_module(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyLineSearchParams>()?;
@@ -764,6 +868,10 @@ pub fn init_module(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTrustRegion>()?;
     m.add_function(wrap_pyfunction!(trustregion, m)?)?;
     m.setattr("TrustRegion", m.getattr("PyTrustRegion")?)?;
+
+    m.add_class::<PyCOBYLA>()?;
+    m.add_function(wrap_pyfunction!(cobyla, m)?)?;
+    m.setattr("COBYLA", m.getattr("PyCOBYLA")?)?;
 
     Ok(())
 }

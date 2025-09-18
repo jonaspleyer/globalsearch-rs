@@ -1,7 +1,7 @@
 mod builders;
 
 use globalsearch::local_solver::builders::{
-    LBFGSBuilder, NelderMeadBuilder, NewtonCGBuilder, SteepestDescentBuilder, TrustRegionBuilder,
+    COBYLABuilder, LBFGSBuilder, NelderMeadBuilder, NewtonCGBuilder, SteepestDescentBuilder, TrustRegionBuilder,
 };
 use globalsearch::oqnlp::OQNLP;
 use globalsearch::problem::Problem;
@@ -418,6 +418,15 @@ fn optimize(
                         ));
                     }
                 }
+                LocalSolverType::COBYLA => {
+                    if let Ok(cobyla_config) = config.extract::<crate::builders::PyCOBYLA>(py) {
+                        cobyla_config.to_builder().build()
+                    } else {
+                        return Err(PyValueError::new_err(
+                            "Expected PyCOBYLA for COBYLA solver type".to_string(),
+                        ));
+                    }
+                }
             }
         } else {
             // Create default local solver configuration
@@ -427,6 +436,7 @@ fn optimize(
                 LocalSolverType::TrustRegion => TrustRegionBuilder::default().build(),
                 LocalSolverType::NelderMead => NelderMeadBuilder::default().build(),
                 LocalSolverType::SteepestDescent => SteepestDescentBuilder::default().build(),
+                LocalSolverType::COBYLA => COBYLABuilder::default().build(),
             }
         };
 

@@ -318,6 +318,23 @@ class PyTrustRegion:
         eta: float = 0.125,
     ) -> None: ...
 
+class PyCOBYLA:
+    max_iter: int
+    step_size: float
+    ftol_rel: Optional[float]
+    ftol_abs: Optional[float]
+    xtol_rel: Optional[float]
+    xtol_abs: Optional[float]
+    def __init__(
+        self,
+        max_iter: int = 300,
+        step_size: float = 1.0,
+        ftol_rel: Optional[float] = None,
+        ftol_abs: Optional[float] = None,
+        xtol_rel: Optional[float] = None,
+        xtol_abs: Optional[float] = None,
+    ) -> None: ...
+
 class builders:
     @staticmethod
     def hagerzhang(
@@ -398,6 +415,15 @@ class builders:
         max_radius: float = 100.0,
         eta: float = 0.125,
     ) -> PyTrustRegion: ...
+    @staticmethod
+    def cobyla(
+        max_iter: int = 300,
+        step_size: float = 1.0,
+        ftol_rel: Optional[float] = None,
+        ftol_abs: Optional[float] = None,
+        xtol_rel: Optional[float] = None,
+        xtol_abs: Optional[float] = None,
+    ) -> PyCOBYLA: ...
 
     # Aliases to global class definitions
     PyHagerZhang: Type[HagerZhang]
@@ -410,13 +436,21 @@ class builders:
     PyNewtonCG: Type[PyNewtonCG]
     PyTrustRegionRadiusMethod: Type[PyTrustRegionRadiusMethod]
     PyTrustRegion: Type[PyTrustRegion]
+    PyCOBYLA: Type[PyCOBYLA]
 
 def optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
     local_solver: Optional[str] = "LBFGS",
     local_solver_config: Optional[
-        Union[PyLBFGS, PyNelderMead, PySteepestDescent, PyNewtonCG, PyTrustRegion]
+        Union[
+            PyLBFGS,
+            PyNelderMead,
+            PySteepestDescent,
+            PyNewtonCG,
+            PyTrustRegion,
+            PyCOBYLA,
+        ]
     ] = None,
     seed: Optional[int] = 0,
     target_objective: Optional[float] = None,
