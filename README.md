@@ -141,6 +141,7 @@ Or use `cargo add globalsearch` in your project directory.
            ]
        }
    }
+   ```
 
    Depending on your choice of local solver, you might need to implement the `gradient` and `hessian` methods. Learn more about the local solver configuration in the [argmin docs](https://docs.rs/argmin/latest/argmin/solver/index.html) or the [`LocalSolverType`](https://docs.rs/globalsearch/latest/globalsearch/types/enum.LocalSolverType.html).
 
