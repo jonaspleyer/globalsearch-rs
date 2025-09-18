@@ -848,7 +848,7 @@ mod tests_types {
         assert!(display_output.contains("Elapsed time: 123.45s"));
         assert!(display_output.contains("Population size: 500"));
         assert!(display_output.contains("Wait cycle: 20"));
-        assert!(display_output.contains("Local solver: LBFGS"));
+        assert!(display_output.contains("Local solver: COBYLA"));
     }
 
     #[test]
