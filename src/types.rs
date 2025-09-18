@@ -4,7 +4,7 @@
 //! including the parameters for the algorithm, filtering mechanisms,
 //! solution set, local solutions, local solver types, and local solver configurations.
 
-use crate::local_solver::builders::{LBFGSBuilder, LocalSolverConfig};
+use crate::local_solver::builders::{COBYLABuilder, LocalSolverConfig};
 use crate::problem::Problem;
 use ndarray::Array1;
 use std::fmt;
@@ -76,8 +76,8 @@ impl Default for OQNLPParams {
     /// - `wait_cycle`: 15
     /// - `threshold_factor`: 0.2
     /// - `distance_factor`: 0.75
-    /// - `local_solver_type`: `LocalSolverType::LBFGS`
-    /// - `local_solver_config`: `LBFGSBuilder::default().build()`
+    /// - `local_solver_type`: `LocalSolverType::COBYLA`
+    /// - `local_solver_config`: `COBYLABuilder::default().build()`
     /// - `seed`: 0
     fn default() -> Self {
         Self {
@@ -86,8 +86,8 @@ impl Default for OQNLPParams {
             wait_cycle: 15,
             threshold_factor: 0.2,
             distance_factor: 0.75,
-            local_solver_type: LocalSolverType::LBFGS,
-            local_solver_config: LBFGSBuilder::default().build(),
+            local_solver_type: LocalSolverType::COBYLA,
+            local_solver_config: COBYLABuilder::default().build(),
             seed: 0,
         }
     }
@@ -818,8 +818,8 @@ mod tests_types {
                 threshold_factor: 0.3,
                 distance_factor: 0.8,
                 seed: 42,
-                local_solver_type: LocalSolverType::LBFGS,
-                local_solver_config: crate::local_solver::builders::LBFGSBuilder::default().build(),
+                local_solver_type: LocalSolverType::COBYLA,
+                local_solver_config: crate::local_solver::builders::COBYLABuilder::default().build(),
             },
             current_iteration: 50,
             merit_threshold: 1.25,
