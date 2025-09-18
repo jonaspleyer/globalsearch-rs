@@ -79,7 +79,7 @@ pip install pyglobalsearch
 4. Run the optimization:
 
    ```python
-   result = gs.optimize(problem, params, local_solver="LBFGS", seed=0)
+   result = gs.optimize(problem, params, local_solver="COBYLA", seed=0)
    print(result)
    ```
 
@@ -122,6 +122,7 @@ Additionally, the Python bindings have limitations:
 
 - No support for parallelism of stage one
 - No support for checkpointing
+- Maximum number of constraints is 1000
 
 ## License
 

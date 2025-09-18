@@ -37,7 +37,7 @@ Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
 
 - 🎯 Multistart heuristic framework for global optimization
 
-- 📦 Local optimization using the argmin crate \[3\]
+- 📦 Local optimization using the cobyla \[3\] and argmin crate \[4\]
 
 - 🚀 Parallel execution of initial stage using Rayon
 
@@ -104,6 +104,12 @@ Or use `cargo add globalsearch` in your project directory.
        fn variable_bounds(&self) -> Array2<f64> {
            array![[..., ...], [..., ...]] // Lower and upper bounds for each variable
        }
+
+         fn constraints(&self) -> Vec<fn(&[f64], &mut ()) -> f64> {
+              vec![
+                ..., // Optional: Constraint functions here, only valid with COBYLA
+              ]
+         }
    }
    ```
 
@@ -115,12 +121,30 @@ Or use `cargo add globalsearch` in your project directory.
        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError>;
        fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError>;
        fn variable_bounds(&self) -> Array2<f64>;
+       fn constraints(&self) -> Vec<fn(&[f64], &mut ()) -> f64>;
    }
    ```
 
+   The `constraints` method allows you to define constraint functions for constrained optimization problems. Constraints should follow the sign convention:
+   - **Positive or zero**: constraint satisfied  
+   - **Negative**: constraint violated
+
+   Example:
+
+   ```rust
+   impl Problem for MinimizeProblem {
+       // ...
+       fn constraints(&self) -> Vec<fn(&[f64], &mut ()) -> f64> {
+           vec![
+               |x: &[f64], _: &mut ()| 1.0 - x[0] - x[1], // x[0] + x[1] <= 1.0
+               |x: &[f64], _: &mut ()| x[0] - 0.5,        // x[0] >= 0.5
+           ]
+       }
+   }
+
    Depending on your choice of local solver, you might need to implement the `gradient` and `hessian` methods. Learn more about the local solver configuration in the [argmin docs](https://docs.rs/argmin/latest/argmin/solver/index.html) or the [`LocalSolverType`](https://docs.rs/globalsearch/latest/globalsearch/types/enum.LocalSolverType.html).
 
-   > 🔴 **Note:** Variable bounds are only used in the scatter search phase of the algorithm. The local solver is unconstrained (See [argmin issue #137](https://github.com/argmin-rs/argmin/issues/137)) and therefor can return solutions out of bounds.
+   > 🔴 **Note:** If using a solver that isn't COBYLA, variable bounds are only used in the scatter search phase of the algorithm. The local solver is unconstrained (See [argmin issue #137](https://github.com/argmin-rs/argmin/issues/137)) and therefor can return solutions out of bounds. You can use OQNLP's `exclude_out_of_bounds` method to handle this if needed.
 
 2. Set OQNLP parameters
 
@@ -138,6 +162,12 @@ Or use `cargo add globalsearch` in your project directory.
        local_solver_config: SteepestDescentBuilder::default().build(),
        seed: 0,
    };
+   ```
+
+   Or use the default parameters (which use COBYLA):
+
+   ```rust
+   let params = OQNLPParams::default();
    ```
 
    Where `OQNLPParams` is defined as:
@@ -164,6 +194,7 @@ Or use `cargo add globalsearch` in your project directory.
        SteepestDescent,
        TrustRegion,
        NewtonCG,
+       COBYLA,
    }
    ```
 
@@ -218,6 +249,7 @@ python/ # Python bindings
 ## Dependencies
 
 - [argmin](https://github.com/argmin-rs/argmin)
+- [COBYLA](https://github.com/relf/cobyla)
 - [ndarray](https://github.com/rust-ndarray/ndarray)
 - [rayon](https://github.com/rayon-rs/rayon) [feature: `rayon`]
 - [kdam](https://github.com/clitic/kdam) [feature: `progress_bar`]
@@ -238,4 +270,6 @@ Distributed under the MIT License. See [`LICENSE.txt`](https://github.com/German
 
 \[2\] GlobalSearch. The MathWorks, Inc. Available at: <https://www.mathworks.com/help/gads/globalsearch.html> (Accessed: 27 January 2025)
 
-\[3\] Kroboth, S. argmin{}. Available at: <https://argmin-rs.org/> (Accessed: 25 January 2025)
+\[3\] Rémi Lafage. cobyla - a pure Rust implementation. GitHub repository. MIT License. Available at: <https://github.com/relf/cobyla> (Accessed: 17 September 2025)
+
+\[4\] Kroboth, S. argmin{}. Available at: <https://argmin-rs.org/> (Accessed: 25 January 2025)
