@@ -1,18 +1,67 @@
-//! # Local Solver Runner module
+//! # Local Solver Runner Module
 //!
-//! This module contains the implementation of the local solver runner, which is used to solve optimization problems locally.
+//! This module implements the execution engine for local optimization algorithms,
+//! providing a unified interface between the OQNLP framework and the `cobyla` and `argmin`
+//! crates.
 //!
-//! The local solver runner uses the `argmin` crate to run the local solvers.
+//! ## Architecture
 //!
-//! ## Local Solvers
+//! The runner acts as an adapter layer that:
+//! - Converts problem definitions to `cobyla` or`argmin`-compatible formats
+//! - Manages solver configuration and initialization
+//! - Handles execution and result extraction
+//! - Provides error handling and recovery mechanisms
 //!
-//! The local solvers currently supported are:
-//!  - L-BFGS: Requires gradient and linesearch
-//!  - Nelder-Mead: Only requires the objective function
-//!  - Steepest Descent: Requires gradient and linesearch
-//!  - Trust Region: Requires gradient and hessian
-//!  - Newton-CG: Requires gradient and hessian
-//!  - COBYLA: Only requires the objective function
+//! ## Supported Local Solvers
+//!
+//! ### Gradient-Based Algorithms
+//! These methods require gradient information and are typically more efficient
+//! for smooth problems:
+//!
+//! #### L-BFGS (Limited-memory BFGS)
+//! - **Requirements**: Objective function + Gradient + Line Search
+//! - **Memory**: Limited-memory quasi-Newton approximation
+//! - **Line Search**: Requires compatible line search method
+//!
+//! #### Steepest Descent
+//! - **Requirements**: Objective function + Gradient + Line Search
+//! - **Method**: Simple gradient descent with line search
+//! - **Line Search**: Requires compatible line search method
+//!
+//! #### Trust Region
+//! - **Requirements**: Objective function + Gradient + Hessian
+//! - **Method**: Second-order optimization with adaptive step sizing
+//!
+//! #### Newton-CG
+//! - **Requirements**: Objective function + Gradient + Hessian + Line Search
+//! - **Method**: Newton direction via conjugate gradient
+//! - **Line Search**: Requires compatible line search method
+//!
+//! ### Derivative-Free Algorithms
+//! These methods only require function evaluations and are suitable for
+//! non-smooth, discontinuous, or noisy problems:
+//!
+//! #### Nelder-Mead
+//! - **Requirements**: Objective function only
+//! - **Method**: Simplex-based direct search
+//!
+//! #### COBYLA (Constrained Optimization BY Linear Approximation)
+//! - **Requirements**: Objective function (optional constraints support)
+//! - **Method**: Trust region with linear constraint approximation
+//!
+//! ## Error Handling
+//!
+//! The runner provides comprehensive error handling for common failure modes:
+//! - Invalid solver configurations
+//! - Numerical instabilities during optimization
+//! - Function evaluation failures
+//! - Convergence failures
+//!
+//! ## Integration with OQNLP
+//!
+//! Local solvers are automatically invoked by OQNLP at strategic points:
+//! 1. **Reference set refinement** in Stage 1
+//! 2. **Candidate solution polishing** in Stage 2
 
 use crate::local_solver::builders::{LineSearchMethod, LocalSolverConfig, TrustRegionRadiusMethod};
 use crate::problem::Problem;
@@ -810,7 +859,7 @@ impl<P: Problem> LocalSolver<P> {
                     ftol_rel: *ftol_rel,
                     ftol_abs: *ftol_abs,
                     xtol_rel: *xtol_rel,
-                    xtol_abs: if *xtol_abs > 0.0 { vec![*xtol_abs; x0.len()] } else { vec![] },
+                    xtol_abs: if xtol_abs.is_empty() { vec![] } else { xtol_abs.clone() },
                 }),
             ) {
                 Ok((_status, solution_x, objective_value)) => {
@@ -1344,7 +1393,7 @@ mod tests_local_solvers {
                 ftol_rel: 1e-6,
                 ftol_abs: 1e-8,
                 xtol_rel: 0.0,
-                xtol_abs: 0.0,
+                xtol_abs: vec![],
             },
         );
 
@@ -1369,7 +1418,7 @@ mod tests_local_solvers {
                 ftol_rel: 1e-6,
                 ftol_abs: 1e-8,
                 xtol_rel: 0.0,
-                xtol_abs: 0.0,
+                xtol_abs: vec![],
             },
         );
 

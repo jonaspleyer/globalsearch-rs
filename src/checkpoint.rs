@@ -1,7 +1,62 @@
-//! # Checkpoint module
+//! # Checkpointing Module
 //!
-//! This module provides functionality for saving and loading OQNLP optimization state,
-//! allowing users to resume long-running optimizations from where they left off.
+//! This module provides robust checkpointing functionality for OQNLP optimizations,
+//! enabling users to save and resume long-running optimization processes. This is
+//! particularly valuable for expensive function evaluations or time-constrained environments.
+//!
+//! ## Features
+//!
+//! ### Automatic State Persistence
+//! - **Complete State Capture**: Saves all algorithm state including reference sets,
+//!   filter parameters, iteration counters, and random number generator state
+//! - **Configurable Frequency**: Control how often checkpoints are saved
+//! - **Binary Format**: Efficient serialization using bincode for fast I/O
+//!
+//! ### Flexible Resume Options
+//! - **Exact Resume**: Continue optimization with identical parameters
+//! - **Modified Resume**: Restart with updated parameters (e.g., more iterations)
+//! - **Auto-Resume**: Automatically detect and load existing checkpoints
+//!
+//! ### Checkpoint Management
+//! - **Multiple Strategies**: Keep all checkpoints or maintain only the latest
+//! - **Custom Naming**: User-defined checkpoint file naming schemes
+//! - **Directory Organization**: Configurable checkpoint storage locations
+//! - **Cleanup Utilities**: Automatic management of old checkpoint files
+//!
+//! ## Usage Patterns
+//!
+//! ### Basic Checkpointing
+//! ```rust
+//! use globalsearch::checkpoint::CheckpointManager;
+//! use globalsearch::types::CheckpointConfig;
+//! use std::path::PathBuf;
+//!
+//! let config = CheckpointConfig {
+//!     checkpoint_dir: PathBuf::from("./checkpoints"),
+//!     checkpoint_name: "optimization".to_string(),
+//!     save_frequency: 50,  // Save every 50 iterations
+//!     keep_all: false,     // Keep only latest checkpoint
+//!     auto_resume: true,   // Auto-resume if checkpoint exists
+//! };
+//!
+//! let manager = CheckpointManager::new(config)?;
+//! # Ok::<(), globalsearch::checkpoint::CheckpointError>(())
+//! ```
+//!
+//! ### Long-Running Optimizations
+//! Ideal for scenarios where:
+//! - Function evaluations are expensive (minutes to hours per evaluation)
+//! - Optimization runs for days or weeks
+//! - System reliability is a concern
+//! - Parameter tuning requires multiple restart attempts
+//!
+//! ## Error Handling
+//!
+//! The module provides comprehensive error handling for:
+//! - File system I/O failures
+//! - Serialization/deserialization errors
+//! - Missing or corrupted checkpoint files
+//! - Invalid checkpoint data
 
 use crate::types::{CheckpointConfig, OQNLPCheckpoint};
 use std::fs;
@@ -10,10 +65,38 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-/// Checkpoint-related errors
+/// Errors that can occur during checkpointing operations.
 ///
-/// Errors related to checkpointing functionality, including IO errors,
-/// serialization issues, and missing checkpoints.
+/// This enum covers all possible failure modes when working with checkpoint
+/// files, providing detailed error information for debugging and error handling.
+///
+/// ## Error Categories
+///
+/// ### I/O Errors
+/// File system operations can fail due to:
+/// - Insufficient disk space
+/// - Permission issues
+/// - Network storage problems
+/// - Directory creation failures
+///
+/// ### Serialization Errors
+/// Data encoding/decoding failures from:
+/// - Corrupted checkpoint files
+/// - Version incompatibilities
+/// - Incomplete file writes
+/// - Memory allocation issues
+///
+/// ### Missing Checkpoints
+/// Occurs when trying to load non-existent checkpoints:
+/// - File was deleted or moved
+/// - Incorrect file path specification
+/// - First run without existing checkpoints
+///
+/// ### Invalid Data
+/// Checkpoint files that cannot be processed:
+/// - Wrong file format
+/// - Truncated or corrupted data
+/// - Incompatible algorithm versions
 pub enum CheckpointError {
     /// IO error when reading/writing checkpoint files
     #[error("IO error: {0}")]
@@ -32,11 +115,62 @@ pub enum CheckpointError {
     InvalidCheckpoint(String),
 }
 
-/// Checkpoint manager for OQNLP optimization
+/// Manages checkpoint creation, storage, and retrieval for OQNLP optimizations.
 ///
-/// This struct manages saving and loading checkpoints for OQNLP optimizations.
-/// It handles the configuration for checkpoints, including directory, naming, and frequency.
-/// It provides methods to save the current optimization state and load the latest checkpoint.
+/// The `CheckpointManager` handles all aspects of optimization state persistence,
+/// from initial configuration to final cleanup. It abstracts away the complexity
+/// of file management and serialization.
+///
+/// ## Core Responsibilities
+///
+/// - **Configuration Management**: Handle checkpoint directory and naming settings
+/// - **State Serialization**: Convert optimization state to/from binary format
+/// - **File Operations**: Manage checkpoint file creation, reading, and cleanup
+/// - **Error Handling**: Provide detailed error information for troubleshooting
+///
+/// ## Checkpoint Strategies
+///
+/// ### Single Checkpoint Mode (`keep_all = false`)
+/// - Maintains only the most recent checkpoint
+/// - Overwrites previous checkpoint on each save
+/// - Minimal disk space usage
+/// - Best for routine checkpointing
+///
+/// ### Archive Mode (`keep_all = true`)
+/// - Preserves all checkpoint files with iteration numbers
+/// - Enables rollback to any previous state
+/// - Higher disk space requirements
+/// - Best for experimental optimization
+///
+/// ## Example Usage
+///
+/// ```rust
+/// use globalsearch::checkpoint::CheckpointManager;
+/// use globalsearch::types::{CheckpointConfig, OQNLPCheckpoint};
+/// use std::path::PathBuf;
+///
+/// // Configure checkpoint management
+/// let config = CheckpointConfig {
+///     checkpoint_dir: PathBuf::from("./my_optimization_checkpoints"),
+///     checkpoint_name: "expensive_problem".to_string(),
+///     save_frequency: 25,
+///     keep_all: true,  // Archive all checkpoints
+///     auto_resume: false,
+/// };
+///
+/// let manager = CheckpointManager::new(config)?;
+///
+/// // Check if previous optimization exists
+/// if manager.checkpoint_exists() {
+///     println!("Found existing checkpoint, resuming optimization...");
+///     let checkpoint = manager.load_latest_checkpoint()?;
+///     // Resume optimization from checkpoint
+/// } else {
+///     println!("Starting fresh optimization...");
+///     // Start new optimization
+/// }
+/// # Ok::<(), globalsearch::checkpoint::CheckpointError>(())
+/// ```
 pub struct CheckpointManager {
     config: CheckpointConfig,
 }

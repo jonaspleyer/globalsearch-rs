@@ -1,8 +1,44 @@
-//! # Optimization problem trait module
+//! # Optimization Problem Trait Module
 //!
-//! This module contains the `Problem` trait, which defines the methods that an optimization problem must implement, including the objective function, gradient and variable bounds.
+//! This module defines the [`Problem`] trait, which provides a standardized interface
+//! for optimization problems in the globalsearch-rs library. Any optimization problem
+//! must implement this trait to be compatible with the OQNLP algorithm.
 //!
-//! ## Example
+//! ## Problem Trait Overview
+//!
+//! The [`Problem`] trait defines the mathematical structure of an optimization problem
+//! through several key methods:
+//!
+//! ### Required Methods
+//! - [`objective`](Problem::objective): The objective function to minimize
+//! - [`variable_bounds`](Problem::variable_bounds): Box constraints for variables
+//!
+//! ### Optional Methods (Depending on Local Solver Requirements)
+//! - [`gradient`](Problem::gradient): First-order derivatives
+//! - [`hessian`](Problem::hessian): Second-order derivatives  
+//! - [`constraints`](Problem::constraints): General inequality constraints, only valid with the COBYLA local solver
+//!
+//! ## Implementation Guidelines
+//!
+//! ### Objective Function
+//! - **Return Type**: `Result<f64, EvaluationError>` for error handling
+//! - **Convention**: Lower values indicate better solutions (minimization)
+//! - **Error Handling**: Return `EvaluationError` for invalid inputs or computation failures
+//!
+//! ### Variable Bounds
+//! - **Format**: 2D array where each row is `[lower_bound, upper_bound]`
+//! - **Requirement**: Must be finite and well-defined
+//! - **Purpose**: Defines the feasible region for optimization
+//!
+//! ### Constraints (Optional, only valid with the COBYLA local solver)
+//! - **Sign Convention**: 
+//!   - `g(x) ≥ 0`: Constraint satisfied
+//!   - `g(x) < 0`: Constraint violated
+//! - **Return Type**: Vector of constraint function closures
+//! - **Use Cases**: Nonlinear inequality constraints beyond simple bounds
+//!
+//! ## Example: Six-Hump Camel Function
+//! 
 //! ```rust
 //! /// References:
 //! ///

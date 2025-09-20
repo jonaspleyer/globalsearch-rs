@@ -1,8 +1,60 @@
-//! # OQNLP module
+//! # OQNLP (OptQuest for Nonlinear Programming) Module
 //!
 //! The OQNLP (OptQuest/NLP) algorithm is a global optimization algorithm that combines scatter search with local optimization methods.
+//! This module implements the OQNLP global optimization algorithm, which combines
+//! the systematic exploration of scatter search with the local refinement capabilities
+//! of classical optimization methods.
 //!
-//! ## Example
+//! ## Algorithm Overview
+//!
+//! OQNLP is a hybrid metaheuristic that operates through a two-stage process:
+//!
+//! ### Stage 1: Reference Set Construction
+//! - **Population Initialization**: Generate diverse candidate solutions within bounds
+//! - **Quality Evaluation**: Assess all candidates using the objective function
+//! - **Local Optimization**: Apply local solvers to the best candidate
+//!
+//! ### Stage 2: Iterative Improvement
+//! - **Merit Filtering**: Optimize only solutions meeting quality thresholds
+//! - **Distance Filtering**: Ensure sufficient diversity between solutions
+//! - **Local Refinement**: Use local solvers to polish selected candidates
+//! - **Solution Set Update**: Replace inferior solutions with new discoveries
+//!
+//! ## Key Features
+//!
+//! ### Global Search Capability
+//! - **Systematic Exploration**: Scatter search prevents premature convergence
+//! - **Diversity Maintenance**: Distance filters ensure broad search coverage
+//! - **Multi-modal Optimization**: Can find multiple local optima simultaneously
+//!
+//! ### Local Refinement
+//! - **Gradient-Based Methods**: L-BFGS, trust region, Newton-CG for smooth problems
+//! - **Derivative-Free Methods**: Nelder-Mead, COBYLA for non-smooth problems
+//! - **Flexible Configuration**: Easily switch between different local solvers
+//!
+//! ### Robustness Features
+//! - **Checkpointing Support**: Resume long optimizations from saved states
+//! - **Constraint Handling**: Support for bound and general nonlinear constraints using COBYLA
+//! - **Error Recovery**: Graceful handling of function evaluation failures
+//!
+//! ## Mathematical Formulation
+//!
+//! OQNLP solves optimization problems of the form:
+//!
+//! ```text
+//! minimize    f(x)
+//! subject to  lₙ ≤ xₙ ≤ uₙ    (bound constraints)
+//!             gₙ(x) ≥ 0        (inequality constraints)
+//! ```
+//!
+//! Where:
+//! - `f(x)`: Objective function to minimize
+//! - `x`: Decision variables vector
+//! - `lₙ, uₙ`: Lower and upper bounds for variable i
+//! - `gₙ(x)`: Inequality constraint functions
+//!
+//! ## Example: Six-Hump Camel Function
+//!
 //! ```rust
 //! // Molga, M., & Smutnicki, C. Test functions for optimization needs (April 3, 2005), pp. 27-28. Retrieved January 2025, from https://robertmarks.org/Classes/ENGR5358/Papers/functions.pdf
 //! use globalsearch::local_solver::builders::{TrustRegionBuilder, TrustRegionRadiusMethod};
@@ -95,11 +147,6 @@ use thiserror::Error;
 
 // TODO: We could do batched stage 2 to implement rayon parallelism
 
-// TODO: Set penalty functions?
-// How should we do this? Two different OQNLP implementations?
-// -> UnconstrainedOQNLP
-// -> ConstrainedOQNLP
-
 #[derive(Debug, Error)]
 /// ONQLP errors
 pub enum OQNLPError {
@@ -146,107 +193,155 @@ pub enum OQNLPError {
     CheckpointError(#[from] CheckpointError),
 }
 
-/// # The main struct for the OQNLP algorithm.
+/// Main OQNLP optimization algorithm implementation.
 ///
-/// This struct contains the optimization problem, algorithm parameters, filtering mechanisms,
-/// and local solver, managing the optimization process.
+/// This struct encapsulates the complete OQNLP (OptQuest for Nonlinear Programming) algorithm,
+/// which combines scatter search with local optimization methods to solve global optimization
+/// problems efficiently.
 ///
-/// The OQNLP algorithm is a global optimization algorithm that combines scatter search with local optimization methods.
+/// ## Algorithm Components
 ///
-/// The struct contains the following fields:
-/// - `problem`: The optimization problem to be solved.
-/// - `params`: Parameters controlling the behavior of the OQNLP algorithm.
-/// - `merit_filter`: The merit filter used to maintain a threshold for the objective function.
-/// - `distance_filter`: The distance filter used to maintain diversity among solutions.
-/// - `local_solver`: The local solver responsible for refining solutions.
-/// - `solution_set`: The set of best solutions found during the optimization process.
-/// - `max_time`: Max time for the stage 2 of the OQNLP algorithm.
-/// - `verbose`: Verbose flag to enable additional output during the optimization process.
-/// - `target_objective`: Target objective function value to stop optimization early.
-/// - `exclude_out_of_bounds`: Whether to exclude out-of-bounds solutions from being considered valid.
+/// The OQNLP struct manages several key algorithmic components:
 ///
-/// It also contains methods to run the optimization process and adjust the threshold for the merit and distance filters.
+/// ### Core Algorithm Elements
+/// - **Problem Definition**: The optimization problem implementing the [`Problem`] trait
+/// - **Algorithm Parameters**: Configuration via [`OQNLPParams`] controlling behavior
+/// - **Filtering Mechanisms**: Merit and distance filters for solution quality and diversity
+/// - **Local Solver**: Refinement of candidate solutions using classical optimization methods
 ///
-/// The new method creates a new OQNLP instance with the given optimization problem and parameters,
-/// while the run method executes the optimization process and returns the solution set.
+/// ### Solution Management
+/// - **Solution Set**: Collection of high-quality solutions discovered during optimization
+/// - **Reference Set**: Internal population of candidate solutions for scatter search
+/// - **Checkpointing**: Optional state persistence for long-running optimizations
+///
+/// ## Optimization Process
+///
+/// The algorithm operates through a two-stage process:
+///
+/// 1. **Stage 1 (Initialization)**: Build initial reference set via scatter search
+/// 2. **Stage 2 (Refinement)**: Iteratively improve solutions through local optimization
+///
+/// ## Configuration Options
+///
+/// ### Time Control
+/// - [`max_time()`](OQNLP::max_time): Set maximum optimization time
+/// - [`target_objective()`](OQNLP::target_objective): Early stopping criterion
+///
+/// ### Solution Quality
+/// - [`exclude_out_of_bounds()`](OQNLP::exclude_out_of_bounds): Enforce variable bounds
+/// - [`verbose()`](OQNLP::verbose): Enable detailed progress output
+///
+#[cfg_attr(feature = "checkpointing", doc = "### State Persistence")]
+#[cfg_attr(feature = "checkpointing", doc = "- [`with_checkpointing()`](Self::with_checkpointing): Enable automatic state saving")]
+#[cfg_attr(feature = "checkpointing", doc = "- [`resume_with_modified_params()`](Self::resume_with_modified_params): Continue with new parameters")]
+///
+/// ## Example Usage
+///
+/// ```rust
+/// use globalsearch::{oqnlp::OQNLP, types::OQNLPParams, problem::Problem, types::EvaluationError};
+/// use ndarray::{array, Array1, Array2};
+///
+/// #[derive(Clone)]
+/// struct QuadraticProblem;
+///
+/// impl Problem for QuadraticProblem {
+///     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+///         Ok(x[0].powi(2) + x[1].powi(2))  // Minimize x² + y²
+///     }
+///
+///     fn variable_bounds(&self) -> Array2<f64> {
+///         array![[-5.0, 5.0], [-5.0, 5.0]]  // x, y ∈ [-5, 5]
+///     }
+/// }
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let problem = QuadraticProblem;
+/// let params = OQNLPParams::default();
+///
+/// let mut optimizer = OQNLP::new(problem, params)?
+///     .target_objective(0.01)  // Stop when f(x) ≤ 0.01
+///     .max_time(60.0)          // Maximum 60 seconds
+///     .verbose();              // Show progress
+///
+/// let solutions = optimizer.run()?;
+/// println!("Found {} solutions", solutions.len());
+/// # Ok(())
+/// # }
+/// ```
 pub struct OQNLP<P: Problem + Clone> {
-    /// The optimization problem to be solved.
+    /// Optimization problem definition.
     ///
-    /// This defines the objective function, gradient and constraints for the optimization process.
+    /// Defines the objective function, constraints, and variable bounds for the optimization.
     problem: P,
 
-    /// Parameters controlling the behavior of the OQNLP algorithm.
+    /// Algorithm configuration parameters.
     ///
-    /// These include total iterations, stage 1 iterations, waitcycles, and population settings.
+    /// Controls population size, iterations, convergence criteria, and local solver selection.
     params: OQNLPParams,
+    /// Merit filter for solution quality control.
+    ///
+    /// Maintains dynamic threshold to accept only improving or competitive solutions.
     merit_filter: MeritFilter,
 
-    /// The distance filter used to maintain diversity among solutions.
+    /// Distance filter for population diversity.
     ///
-    /// It ensures that solutions are well-spaced.
+    /// Enforces minimum separation between solutions to prevent clustering.
     distance_filter: DistanceFilter,
 
-    /// The local solver responsible for refining solutions.
+    /// Local optimization solver interface.
     ///
-    /// It applies a local optimization method, using argmin to find the best solution.
+    /// Refines candidate solutions using classical optimization algorithms.
     local_solver: LocalSolver<P>,
 
-    /// The set of best solutions found during the optimization process.
+    /// Collection of high-quality solutions discovered.
     ///
-    /// If no solution has been found yet, it remains `None`.
+    /// Maintains the best solutions found during optimization. Initially `None`.
     solution_set: Option<SolutionSet>,
 
-    /// Max time for the stage 2 of the OQNLP algorithm.
+    /// Maximum optimization time limit (seconds).
     ///
-    /// If the time limit is reached, the algorithm will stop and return the
-    /// solution set found so far.
-    ///
-    /// The time limit is in seconds and it starts timing after the
-    /// first local search.
-    ///
-    /// It is optional and can be set to `None` to disable the time limit.
+    /// When set, optimization stops after this duration in Stage 2.
+    /// Timer starts after the first local search completes.
     max_time: Option<f64>,
 
     /// Verbose flag to enable additional output during the optimization process.
     verbose: bool,
 
-    /// Target objective function value to stop optimization early
+    /// Early stopping criterion based on objective value.
     ///
-    /// If set, the optimization will stop when a solution with an objective function value
-    /// less than or equal to this value is found.
-    /// This is useful for problems where a specific target is known and
-    /// can be used to stop the optimization early.
+    /// Optimization stops when a solution with objective ≤ this value is found.
+    /// Useful when the global optimum or "good enough" threshold is known.
     target_objective: Option<f64>,
 
-    /// Whether to exclude out-of-bounds solutions from being considered valid
+    /// Variable bounds enforcement flag.
     ///
-    /// If set to true, the algorithm will check if solutions are within the variable bounds
-    /// before adding them to the solution set.
-    /// When used with target_objective, optimization stops only if the solution is both
-    /// within bounds and meets the target objective.
+    /// When `true`, solutions outside variable bounds are rejected.
+    /// Combined with `target_objective`, both conditions must be satisfied.
     exclude_out_of_bounds: bool,
 
-    /// Checkpoint manager for saving and loading optimization state
+    /// Checkpoint manager for state persistence (optional).
+    ///
+    /// Handles saving and loading optimization state for long-running problems.
     #[cfg(feature = "checkpointing")]
     checkpoint_manager: Option<CheckpointManager>,
 
-    /// Current iteration number (for checkpointing)
+    /// Current iteration counter for checkpointing.
     #[cfg(feature = "checkpointing")]
     current_iteration: usize,
 
-    /// Current reference set (for checkpointing)
+    /// Active reference set for scatter search state.
     #[cfg(feature = "checkpointing")]
     current_reference_set: Option<Vec<Array1<f64>>>,
 
-    /// Number of unchanged cycles (for checkpointing)
+    /// Counter for cycles without solution improvement.
     #[cfg(feature = "checkpointing")]
     unchanged_cycles: usize,
 
-    /// Start time for elapsed time calculation
+    /// Optimization start timestamp for elapsed time tracking.
     #[cfg(feature = "checkpointing")]
     start_time: Option<std::time::Instant>,
 
-    /// Current seed for RNG continuation (for checkpointing)
+    /// Current random seed for reproducible continuation.
     #[cfg(feature = "checkpointing")]
     current_seed: u64,
 }

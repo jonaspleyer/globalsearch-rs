@@ -1,14 +1,46 @@
-//! # Scatter Search module
+//! # Scatter Search Module
 //!
-//! This module contains the implementation of the Scatter Search algorithm.
+//! This module implements the Scatter Search metaheuristic, which forms the foundation
+//! of the OQNLP global optimization algorithm. Scatter Search is a population-based
+//! optimization method that systematically explores the solution space.
 //!
-//! The Scatter Search algorithm is a population-based optimization algorithm
-//! that uses a reference set of solutions to generate new candidate solutions.
+//! ## Algorithm Overview
 //!
-//! The algorithm is divided into three main steps:
-//!  1. Initialization of the reference set
-//!  2. Diversification of the reference set
-//!  3. Generation of trial points and evaluation
+//! The Scatter Search algorithm operates through three main phases:
+//!
+//! ### 1. Initialization: Generate diverse initial solutions within variable bounds
+//!
+//! ### 2. Diversification: Create new candidate solutions through systematic combination
+//!
+//! ### 3. Intensification: Generate trial points from reference set combinations
+//!
+//! ## Example Usage
+//!
+//! ```rust
+//! use globalsearch::scatter_search::ScatterSearch;
+//! use globalsearch::types::OQNLPParams;
+//! # use globalsearch::problem::Problem;
+//! # use globalsearch::types::EvaluationError;
+//! # use ndarray::{Array1, Array2, array};
+//! #
+//! # #[derive(Debug, Clone)]
+//! # struct TestProblem;
+//! # impl Problem for TestProblem {
+//! #     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+//! #         Ok(x[0].powi(2) + x[1].powi(2))
+//! #     }
+//! #     fn variable_bounds(&self) -> Array2<f64> {
+//! #         array![[-5.0, 5.0], [-5.0, 5.0]]
+//! #     }
+//! # }
+//!
+//! let problem = TestProblem;
+//! let params = OQNLPParams::default();
+//!
+//! let scatter_search = ScatterSearch::new(problem, params)?;
+//! let (reference_set, best_solution) = scatter_search.run()?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 use crate::problem::Problem;
 use crate::types::OQNLPParams;
@@ -24,7 +56,29 @@ use rayon::prelude::*;
 #[cfg(feature = "progress_bar")]
 use kdam::{Bar, BarExt};
 
-/// Struct to hold the bounds of the variables
+/// Variable bounds container for optimization problems.
+///
+/// This struct stores the lower and upper bounds for each optimization variable,
+/// providing a convenient way to manage box constraints during the scatter search process.
+///
+/// # Fields
+///
+/// - `lower`: Array of lower bounds for each variable
+/// - `upper`: Array of upper bounds for each variable
+///
+/// Both arrays must have the same length, corresponding to the problem dimension.
+///
+/// # Example
+///
+/// ```rust
+/// use globalsearch::scatter_search::VariableBounds;
+/// use ndarray::array;
+///
+/// let bounds = VariableBounds {
+///     lower: array![-10.0, -5.0, 0.0],   // Lower bounds for x1, x2, x3
+///     upper: array![10.0, 5.0, 1.0],    // Upper bounds for x1, x2, x3
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct VariableBounds {
     pub lower: Array1<f64>,
@@ -32,7 +86,10 @@ pub struct VariableBounds {
 }
 
 #[derive(Debug, Error)]
-/// Error type for Scatter Search
+/// Error types that can occur during scatter search operations.
+///
+/// These errors represent various failure modes that can happen during
+/// the scatter search algorithm execution.
 pub enum ScatterSearchError {
     /// Error when the reference set is empty
     #[error("Scatter Search Error: No candidates left.")]

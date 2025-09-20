@@ -1,24 +1,82 @@
-//! # Local Solver Builders module.
+//! # Local Solver Builders Module
 //!
-//! This module contains the builders.
-//! The builders allow for the creation and configuration of the local solvers,
-//! including the L-BFGS, Nelder-Mead, Steepest Descent, Trust Region, Newton-CG, and COBYLA methods.
+//! This module provides builder patterns for configuring local optimization algorithms
+//! used within the OQNLP framework. Each builder allows fine-tuned control over
+//! algorithm parameters and behavior.
 //!
-//! ## Example
+//! ## Builder Pattern Benefits
+//!
+//! - **Type Safety**: Compile-time validation of configuration parameters
+//! - **Default Values**: Sensible defaults for all parameters
+//! - **Fluent Interface**: Chain method calls for readable configuration
+//! - **Flexibility**: Easy parameter customization without breaking changes
+//!
+//! ## Supported Algorithms
+//!
+//! ### Quasi-Newton Methods
+//! - [`LBFGSBuilder`] - Limited-memory BFGS for unconstrained optimization
+//!
+//! ### Direct Search Methods  
+//! - [`NelderMeadBuilder`] - Simplex-based derivative-free optimization
+//!
+//! ### Gradient Methods
+//! - [`SteepestDescentBuilder`] - Basic gradient descent with line search
+//!
+//! ### Trust Region Methods
+//! - [`TrustRegionBuilder`] - Advanced second-order optimization
+//!
+//! ### Newton Methods
+//! - [`NewtonCGBuilder`] - Newton method with conjugate gradient solver
+//!
+//! ### Constrained Methods
+//! - [`COBYLABuilder`] - Constrained optimization without derivatives
+//!
+//! ## Line Search Algorithms
+//! - [`HagerZhangBuilder`] - Hager-Zhang line search (recommended)
+//! - [`MoreThuenteBuilder`] - Moré-Thuente line search (robust)
+//!
+//! ## Configuration Examples
+//!
+//! ### High-Performance L-BFGS Setup
 //! ```rust
-//! use globalsearch::local_solver::builders::{HagerZhangBuilder, LBFGSBuilder};
+//! use globalsearch::local_solver::builders::{LBFGSBuilder, HagerZhangBuilder};
 //!
-//! // L-BFGS local solver configuration
 //! let lbfgs = LBFGSBuilder::default()
-//!             .max_iter(500)
-//!             .tolerance_grad(1e-8)
-//!             .build();
+//!     .max_iter(1000)           // More iterations for difficult problems
+//!     .tolerance_grad(1e-10)    // High precision
+//!     .history_size(20)         // Larger memory for better approximation
+//!     .line_search_params(      // Custom line search
+//!         HagerZhangBuilder::default()
+//!             .delta(0.01)      // Stricter sufficient decrease
+//!             .sigma(0.99)      // More thorough search
+//!             .build()
+//!     )
+//!     .build();
+//! ```
 //!
-//! // Hager-Zhang line search configuration
-//! let hager_zhang = HagerZhangBuilder::default()
-//!                     .delta(0.1)
-//!                     .sigma(0.9)
-//!                     .build();
+//! ### Robust Nelder-Mead for Noisy Functions
+//! ```rust
+//! use globalsearch::local_solver::builders::NelderMeadBuilder;
+//!
+//! let nelder_mead = NelderMeadBuilder::default()
+//!     .simplex_delta(0.1)       // Appropriate initial step size
+//!     .sd_tolerance(1e-6)       // Convergence based on std deviation
+//!     .max_iter(2000)           // More iterations for convergence
+//!     .alpha(1.2)               // Slightly more aggressive reflection
+//!     .gamma(2.5)               // More expansion for exploration
+//!     .build();
+//! ```
+//!
+//! ### Trust Region for Second-Order Problems
+//! ```rust
+//! use globalsearch::local_solver::builders::{TrustRegionBuilder, TrustRegionRadiusMethod};
+//!
+//! let trust_region = TrustRegionBuilder::default()
+//!     .method(TrustRegionRadiusMethod::Steihaug)
+//!     .radius(0.5)              // Conservative initial radius
+//!     .max_radius(10.0)         // Allow large steps when beneficial
+//!     .eta(0.1)                 // Accept steps with modest improvement
+//!     .build();
 //! ```
 use ndarray::{array, Array1};
 
@@ -27,10 +85,29 @@ use ndarray::{array, Array1};
     feature = "checkpointing",
     derive(serde::Serialize, serde::Deserialize)
 )]
-/// Trust Region Radius Method
+/// Trust region subproblem solution methods.
 ///
-/// This enum defines the types of trust region radius methods that can be
-/// used in the Trust Region local solver, including Cauchy and Steihaug.
+/// This enum specifies the algorithm used to solve the trust region subproblem,
+/// which determines the step direction and length within the trust region.
+///
+/// ## Methods
+///
+/// ### Cauchy Point
+/// - **Algorithm**: Steepest descent direction scaled to trust region boundary
+/// - **Complexity**: O(n) - very fast
+/// - **Quality**: Basic approximation, sufficient for many problems
+/// - **Best for**: Simple problems, when speed is critical
+///
+/// ### Steihaug
+/// - **Algorithm**: Truncated conjugate gradient method
+/// - **Complexity**: O(k (Thv + n)), for k iterations - moderate computational cost
+/// - **Quality**: High-quality approximate solution to subproblem
+/// - **Best for**: Problems where Hessian information is valuable
+///
+/// ## Selection Guidelines
+///
+/// - Use **Cauchy** for rapid prototyping or when function evaluations dominate
+/// - Use **Steihaug** for production optimization requiring high solution quality
 pub enum TrustRegionRadiusMethod {
     Cauchy,
     Steihaug,
@@ -147,8 +224,10 @@ pub enum LocalSolverConfig {
         /// Absolute parameter tolerance
         ///
         /// Convergence criterion based on absolute change in parameters.
-        /// Default is 0 (disabled).
-        xtol_abs: f64,
+        /// Each element corresponds to the absolute tolerance for that variable.
+        /// The algorithm stops when all x\[i\] change by less than xtol_abs\[i\].
+        /// Default is empty vector (disabled).
+        xtol_abs: Vec<f64>,
     },
 }
 
@@ -228,7 +307,7 @@ impl Clone for LocalSolverConfig {
                     ftol_rel: *ftol_rel,
                     ftol_abs: *ftol_abs,
                     xtol_rel: *xtol_rel,
-                    xtol_abs: *xtol_abs,
+                    xtol_abs: xtol_abs.clone(),
                 }
             }
         }
@@ -262,9 +341,29 @@ impl LocalSolverConfig {
 }
 
 #[derive(Debug, Clone)]
-/// L-BFGS builder struct
+/// Configuration builder for L-BFGS (Limited-memory Broyden-Fletcher-Goldfarb-Shanno) optimization.
 ///
-/// This struct allows for the configuration of the L-BFGS local solver.
+/// L-BFGS is a quasi-Newton method that approximates the inverse Hessian using
+/// a limited amount of memory. It's particularly effective for smooth, unconstrained
+/// optimization problems with many variables.
+///
+/// ## Algorithm Characteristics
+/// - **Memory efficient**: Stores only the last `m` updates (typically 5-20)
+/// - **Superlinear convergence**: Near second-order convergence rate
+/// - **Gradient-based**: Requires first-order derivatives
+/// - **Unconstrained**: Best for problems without constraints
+///
+/// ## When to Use
+/// - Large-scale smooth optimization problems
+/// - When gradient information is available and reliable
+/// - Problems where Hessian computation is expensive
+/// - When memory usage needs to be controlled
+///
+/// ## Configuration Parameters
+/// - **Convergence**: `tolerance_grad`, `tolerance_cost`, `max_iter`
+/// - **Memory**: `history_size` controls approximation quality vs. memory usage
+/// - **Regularization**: `l1_coefficient` for sparse solutions
+/// - **Line Search**: Configurable algorithm for step size determination
 pub struct LBFGSBuilder {
     max_iter: u64,
     tolerance_grad: f64,
@@ -274,9 +373,27 @@ pub struct LBFGSBuilder {
     line_search_params: LineSearchParams,
 }
 
-/// L-BFGS Builder
+/// L-BFGS Configuration Builder
 ///
-/// This builder allows for the configuration of the L-BFGS local solver.
+/// Provides a fluent interface for configuring the L-BFGS optimization algorithm.
+/// All parameters have sensible defaults but can be customized for specific problems.
+///
+/// ## Example Usage
+/// ```rust
+/// use globalsearch::local_solver::builders::{LBFGSBuilder, HagerZhangBuilder};
+///
+/// // High-precision configuration for smooth problems
+/// let config = LBFGSBuilder::default()
+///     .max_iter(1000)
+///     .tolerance_grad(1e-12)
+///     .history_size(20)  // More memory for better approximation
+///     .line_search_params(
+///         HagerZhangBuilder::default()
+///             .delta(0.01)   // Stricter sufficient decrease
+///             .build()
+///     )
+///     .build();
+/// ```
 impl LBFGSBuilder {
     /// Create a new L-BFGS builder
     pub fn new(
@@ -309,37 +426,82 @@ impl LBFGSBuilder {
         }
     }
 
-    /// Set the maximum number of iterations for the L-BFGS local solver
+    /// Set the maximum number of iterations for the L-BFGS algorithm.
+    ///
+    /// Controls the maximum number of optimization steps before termination.
+    /// Higher values allow more thorough optimization but increase computation time.
+    ///
+    /// # Recommended Values
+    /// - **Small problems** (< 100 variables): 100-500
+    /// - **Medium problems** (100-1000 variables): 500-1000
+    /// - **Large problems** (> 1000 variables): 1000-5000
     pub fn max_iter(mut self, max_iter: u64) -> Self {
         self.max_iter = max_iter;
         self
     }
 
-    /// Set the tolerance for the gradient
+    /// Set the gradient tolerance for convergence.
+    ///
+    /// The algorithm terminates when the gradient norm falls below this threshold.
+    /// Smaller values provide more precise solutions but require more iterations.
+    ///
+    /// # Recommended Values
+    /// - **Standard precision**: 1e-6 to 1e-8
+    /// - **High precision**: 1e-10 to 1e-12
+    /// - **Fast approximation**: 1e-4 to 1e-6
     pub fn tolerance_grad(mut self, tolerance_grad: f64) -> Self {
         self.tolerance_grad = tolerance_grad;
         self
     }
 
-    /// Set the tolerance for the cost function
+    /// Set the cost function tolerance for convergence.
+    ///
+    /// The algorithm terminates when the relative change in function value
+    /// falls below this threshold between consecutive iterations.
+    ///
+    /// # Recommended Values
+    /// - **Standard**: 1e-8 to 1e-12
+    /// - **Loose**: 1e-6 (for noisy functions)
+    /// - **Tight**: 1e-15 (for smooth, well-conditioned problems)
     pub fn tolerance_cost(mut self, tolerance_cost: f64) -> Self {
         self.tolerance_cost = tolerance_cost;
         self
     }
 
-    /// Set the number of previous iterations to store in the history
+    /// Set the L-BFGS history size (memory parameter).
+    ///
+    /// Controls how many previous iterations are used to approximate the inverse Hessian.
+    /// Larger values provide better approximation but use more memory.
+    ///
+    /// # Recommended Values
+    /// - **Memory constrained**: 3-7
+    /// - **Standard**: 10-15
+    /// - **High quality**: 20-50
+    /// - **Diminishing returns**: > 50
     pub fn history_size(mut self, history_size: usize) -> Self {
         self.history_size = history_size;
         self
     }
 
-    /// Set the line search parameters for the L-BFGS local solver
+    /// Set the line search parameters for step size determination.
+    ///
+    /// Line search quality significantly affects L-BFGS performance.
+    /// Use HagerZhang for efficiency or MoreThuente for robustness.
     pub fn line_search_params(mut self, line_search_params: LineSearchParams) -> Self {
         self.line_search_params = line_search_params;
         self
     }
 
-    /// Set the L1 regularization coefficient
+    /// Set the L1 regularization coefficient for sparse solutions.
+    ///
+    /// When set, promotes sparsity in the solution by adding L1 penalty.
+    /// Useful for feature selection and compressed sensing problems.
+    ///
+    /// # Values
+    /// - **None**: No regularization (default)
+    /// - **Small**: 1e-6 to 1e-3 (subtle sparsity)
+    /// - **Medium**: 1e-3 to 1e-1 (moderate sparsity)
+    /// - **Large**: > 1e-1 (strong sparsity)
     pub fn l1_coefficient(mut self, l1_coefficient: Option<f64>) -> Self {
         self.l1_coefficient = l1_coefficient;
         self
@@ -370,9 +532,30 @@ impl Default for LBFGSBuilder {
 }
 
 #[derive(Debug, Clone)]
-/// Nelder-Mead builder struct
+/// Configuration builder for Nelder-Mead simplex optimization algorithm.
 ///
-/// This struct allows for the configuration of the Nelder-Mead local solver, including the simplex delta, sample standard deviation tolerance, the reflection coefficient, the expansion coefficient, the contraction coefficient, and the shrinkage coefficient.
+/// The Nelder-Mead method is a direct search algorithm that doesn't require
+/// gradient information. It maintains a simplex (geometric shape with n+1 vertices
+/// in n-dimensional space) and iteratively improves it through geometric operations.
+///
+/// ## Algorithm Characteristics
+/// - **Derivative-free**: Works with discontinuous or noisy functions
+/// - **Robust**: Handles non-smooth optimization landscapes
+/// - **Simple**: Few parameters to tune
+/// - **Slower convergence**: Linear convergence rate
+///
+/// ## When to Use
+/// - Functions without available gradients
+/// - Noisy or discontinuous objective functions
+/// - Black-box optimization problems
+/// - Small to medium-dimensional problems (typically < 20 variables)
+/// - When robustness is more important than speed
+///
+/// ## Simplex Operations
+/// - **Reflection** (`alpha`): Standard operation to move away from worst point
+/// - **Expansion** (`gamma`): Aggressive step when reflection succeeds
+/// - **Contraction** (`rho`): Conservative step when reflection fails
+/// - **Shrinkage** (`sigma`): Global reduction when all else fails
 pub struct NelderMeadBuilder {
     simplex_delta: f64,
     sd_tolerance: f64,
@@ -383,9 +566,25 @@ pub struct NelderMeadBuilder {
     sigma: f64,
 }
 
-/// Nelder-Mead Builder
+/// Nelder-Mead Configuration Builder
 ///
-/// This builder allows for the configuration of the Nelder-Mead local solver.
+/// Provides a fluent interface for configuring the Nelder-Mead simplex algorithm.
+/// The default parameters work well for most problems, but can be tuned for
+/// specific characteristics like function roughness or convergence requirements.
+///
+/// ## Example Usage
+/// ```rust
+/// use globalsearch::local_solver::builders::NelderMeadBuilder;
+///
+/// // Configuration for noisy objective functions
+/// let config = NelderMeadBuilder::default()
+///     .simplex_delta(0.1)     // Appropriate step size for problem scale
+///     .sd_tolerance(1e-6)     // Looser tolerance for noisy functions
+///     .max_iter(2000)         // More iterations for difficult convergence
+///     .alpha(1.2)             // Slightly more aggressive reflection
+///     .gamma(2.5)             // Enhanced expansion for exploration
+///     .build();
+/// ```
 impl NelderMeadBuilder {
     /// Create a new Nelder-Mead builder
     pub fn new(
@@ -490,17 +689,54 @@ impl Default for NelderMeadBuilder {
 }
 
 #[derive(Debug, Clone)]
-/// Steepest Descent builder struct
+/// Configuration builder for Steepest Descent (Gradient Descent) optimization.
 ///
-/// This struct allows for the configuration of the Steepest Descent local solver, including the maximum number of iterations and the line search parameters.
+/// Steepest Descent is the most basic gradient-based optimization algorithm.
+/// It moves in the direction of the negative gradient at each iteration,
+/// with step size determined by line search.
+///
+/// ## Algorithm Characteristics
+/// - **Simple**: Easy to understand and implement
+/// - **Linear convergence**: Slow but steady progress
+/// - **Gradient-based**: Requires first-order derivatives
+/// - **Memory efficient**: Minimal memory requirements
+///
+/// ## When to Use
+/// - Educational purposes or algorithm prototyping
+/// - When simplicity is preferred over speed
+/// - Problems where more advanced methods fail
+/// - Initial iterations of more complex algorithms
+/// - Very large-scale problems with memory constraints
+///
+/// ## Performance Notes
+/// - Slow convergence, especially near optimum
+/// - Can zigzag on ill-conditioned problems
+/// - Line search quality significantly affects performance
 pub struct SteepestDescentBuilder {
     max_iter: u64,
     line_search_params: LineSearchParams,
 }
 
-/// Steepest Descent Builder
+/// Steepest Descent Configuration Builder
 ///
-/// This builder allows for the configuration of the Steepest Descent local solver.
+/// Provides a fluent interface for configuring the steepest descent algorithm.
+/// While simple, proper line search configuration is crucial for performance.
+///
+/// ## Example Usage
+/// ```rust
+/// use globalsearch::local_solver::builders::{SteepestDescentBuilder, HagerZhangBuilder};
+///
+/// // Enhanced configuration with better line search
+/// let config = SteepestDescentBuilder::default()
+///     .max_iter(5000)  // More iterations due to slow convergence
+///     .line_search_params(
+///         HagerZhangBuilder::default()
+///             .delta(0.01)     // Stricter decrease requirement
+///             .sigma(0.99)     // More thorough search
+///             .build()
+///     )
+///     .build();
+/// ```
 impl SteepestDescentBuilder {
     /// Create a new Steepest Descent builder
     pub fn new(max_iter: u64, line_search_params: LineSearchParams) -> Self {
@@ -547,9 +783,28 @@ impl Default for SteepestDescentBuilder {
 }
 
 #[derive(Debug, Clone)]
-/// Trust Region builder struct
+/// Configuration builder for Trust Region optimization methods.
 ///
-/// This struct allows for the configuration of the Trust Region local solver.
+/// Trust Region methods solve optimization problems by repeatedly minimizing
+/// a quadratic model within a "trust region" - a neighborhood where the model
+/// is believed to be accurate. The trust region radius adapts based on the
+/// quality of the model predictions.
+///
+/// ## Algorithm Characteristics
+/// - **Second-order**: Uses Hessian information for faster convergence
+/// - **Robust**: Adaptive radius provides stability
+/// - **Superlinear convergence**: Near Newton-like performance
+///
+/// ## When to Use
+/// - Smooth optimization problems with available Hessian
+/// - When robustness is important (compared to line search Newton)
+/// - Medium-scale problems where Hessian computation is feasible
+/// - Problems with potential numerical difficulties
+///
+/// ## Trust Region Management
+/// - **Radius adaptation**: Automatically adjusts based on model quality
+/// - **Subproblem solver**: Cauchy point (fast) or Steihaug (accurate)
+/// - **Acceptance criteria**: `eta` parameter controls step acceptance
 pub struct TrustRegionBuilder {
     trust_region_radius_method: TrustRegionRadiusMethod,
     max_iter: u64,
@@ -558,9 +813,25 @@ pub struct TrustRegionBuilder {
     eta: f64,
 }
 
-/// Trust Region Builder
+/// Trust Region Configuration Builder
 ///
-/// This builder allows for the configuration of the Trust Region local solver.
+/// Provides a fluent interface for configuring trust region optimization methods.
+/// The choice of subproblem solver and radius management parameters significantly
+/// affects performance and robustness.
+///
+/// ## Example Usage
+/// ```rust
+/// use globalsearch::local_solver::builders::{TrustRegionBuilder, TrustRegionRadiusMethod};
+///
+/// // High-quality configuration for smooth problems
+/// let config = TrustRegionBuilder::default()
+///     .method(TrustRegionRadiusMethod::Steihaug)  // More accurate subproblem solver
+///     .radius(0.5)                                // Conservative initial radius
+///     .max_radius(10.0)                           // Allow large steps when beneficial
+///     .eta(0.1)                                   // Accept steps with modest improvement
+///     .max_iter(1000)
+///     .build();
+/// ```
 impl TrustRegionBuilder {
     /// Create a new Trust Region builder
     pub fn new(
@@ -645,9 +916,27 @@ impl Default for TrustRegionBuilder {
 }
 
 #[derive(Debug, Clone)]
-/// Newton-CG builder struct
+/// Configuration builder for Newton-CG (Newton-Conjugate Gradient) optimization.
 ///
-/// This struct allows for the configuration of the Newton-CG method local solver.
+/// Newton-CG combines Newton's method with conjugate gradient for solving
+/// the Newton linear system. This avoids explicit Hessian inversion while
+/// maintaining fast convergence properties of Newton's method.
+///
+/// ## Algorithm Characteristics
+/// - **Second-order**: Uses Hessian information
+/// - **Superlinear convergence**: Fast convergence near optimum
+/// - **Scalable**: Suitable for large-scale problems
+///
+/// ## When to Use
+/// - Large-scale smooth optimization problems
+/// - When Hessian information is available
+/// - Problems where direct Hessian methods are too expensive
+/// - When faster convergence than L-BFGS is needed
+///
+/// ## Key Features
+/// - **Curvature detection**: Handles negative curvature gracefully
+/// - **Inexact Newton**: CG iterations can be terminated early
+/// - **Line search**: Ensures global convergence
 pub struct NewtonCGBuilder {
     max_iter: u64,
     curvature_threshold: f64,
@@ -655,9 +944,29 @@ pub struct NewtonCGBuilder {
     line_search_params: LineSearchParams,
 }
 
-/// Newton-CG method Builder
+/// Newton-CG Configuration Builder
 ///
-/// This builder allows for the configuration of the Newton-CG method local solver.
+/// Provides a fluent interface for configuring the Newton-CG algorithm.
+/// The combination of curvature threshold and CG tolerance controls the
+/// trade-off between accuracy and computational cost.
+///
+/// ## Example Usage
+/// ```rust
+/// use globalsearch::local_solver::builders::{NewtonCGBuilder, MoreThuenteBuilder};
+///
+/// // High-performance configuration for large-scale problems
+/// let config = NewtonCGBuilder::default()
+///     .max_iter(500)
+///     .curvature_threshold(1e-3)      // Handle negative curvature
+///     .tolerance(1e-6)                // CG stopping tolerance
+///     .line_search_params(
+///         MoreThuenteBuilder::default()
+///             .c1(1e-4)
+///             .c2(0.9)                // Suitable for Newton methods
+///             .build()
+///     )
+///     .build();
+/// ```
 impl NewtonCGBuilder {
     /// Create a new Newton-CG builder
     pub fn new(
@@ -728,21 +1037,63 @@ impl Default for NewtonCGBuilder {
     }
 }
 
-/// COBYLA builder struct
+/// Configuration builder for COBYLA (Constrained Optimization BY Linear Approximations).
 ///
-/// This struct allows for the configuration of the COBYLA local solver.
+/// COBYLA is a derivative-free optimization algorithm specifically designed for
+/// constrained optimization problems. It uses linear approximations of the
+/// objective function and constraints to guide the search.
+///
+/// ## Algorithm Characteristics
+/// - **Derivative-free**: No gradient or Hessian information required
+/// - **Constraint handling**: Native support for inequality constraints
+/// - **Robust**: Handles noisy and discontinuous functions
+/// - **Linear approximations**: Uses simplex-based linear interpolation
+///
+/// ## When to Use
+/// - Constrained optimization problems without derivatives
+/// - Black-box functions with constraints
+/// - Engineering optimization with simulation-based objectives
+/// - When constraint gradients are unavailable or unreliable
+/// - Problems with mixed discrete-continuous variables (after relaxation)
+///
+/// ## Convergence Control
+/// - **Function tolerances**: `ftol_rel`, `ftol_abs` for objective convergence
+/// - **Parameter tolerances**: `xtol_rel`, `xtol_abs` for variable convergence
+/// - **Step size**: `initial_step_size` controls exploration scale
+///
+/// ## Performance Notes
+/// - Slower than gradient-based methods but more robust
+/// - Performance depends heavily on initial step size
+/// - Best for small to medium-scale problems (< 50 variables)
 pub struct COBYLABuilder {
     max_iter: u64,
     initial_step_size: f64,
     ftol_rel: Option<f64>,
     ftol_abs: Option<f64>,
     xtol_rel: Option<f64>,
-    xtol_abs: Option<f64>,
+    xtol_abs: Option<Vec<f64>>,
 }
 
-/// COBYLA Builder
+/// COBYLA Configuration Builder
 ///
-/// This builder allows for the configuration of the COBYLA local solver.
+/// Provides a fluent interface for configuring the COBYLA constrained optimization
+/// algorithm. Tolerance settings are crucial for balancing convergence speed
+/// and solution accuracy.
+///
+/// ## Example Usage
+/// ```rust
+/// use globalsearch::local_solver::builders::COBYLABuilder;
+///
+/// // High-precision configuration for engineering optimization
+/// let config = COBYLABuilder::default()
+///     .max_iter(1000)
+///     .initial_step_size(0.1)     // Match problem scaling
+///     .ftol_rel(1e-8)             // Tight relative tolerance
+///     .ftol_abs(1e-10)            // Tight absolute tolerance
+///     .xtol_rel(1e-6)             // Parameter convergence
+///     .xtol_abs(vec![1e-6, 1e-8]) // Per-variable absolute tolerances
+///     .build();
+/// ```
 impl COBYLABuilder {
     /// Create a new COBYLA builder
     pub fn new(
@@ -767,7 +1118,7 @@ impl COBYLABuilder {
             ftol_rel: self.ftol_rel.unwrap_or(1e-6),
             ftol_abs: self.ftol_abs.unwrap_or(1e-8),
             xtol_rel: self.xtol_rel.unwrap_or(0.0),    // No default for x tolerances
-            xtol_abs: self.xtol_abs.unwrap_or(0.0),    // No default for x tolerances
+            xtol_abs: self.xtol_abs.unwrap_or_else(Vec::new),  // Empty vector means no tolerance
         }
     }
 
@@ -809,8 +1160,11 @@ impl COBYLABuilder {
 
     /// Set the absolute parameter tolerance for the COBYLA local solver
     /// 
-    /// The local solver stops when all `x[i]` changes by less than `xtol_abs[i]`
-    pub fn xtol_abs(mut self, xtol_abs: f64) -> Self {
+    /// The local solver stops when all `x\[i\]` changes by less than `xtol_abs\[i\]`.
+    /// Each element in the vector corresponds to the tolerance for that variable.
+    /// If the vector is shorter than the number of variables, the last value is used
+    /// for remaining variables. An empty vector disables this convergence criterion.
+    pub fn xtol_abs(mut self, xtol_abs: Vec<f64>) -> Self {
         self.xtol_abs = Some(xtol_abs);
         self
     }
@@ -823,6 +1177,7 @@ impl COBYLABuilder {
 /// - `max_iter`: 300
 /// - `initial_step_size`: 0.5
 /// - Function tolerances: `ftol_abs = 1e-8`, `ftol_rel = 1e-6`
+/// - Parameter tolerances: disabled (empty vectors)
 impl Default for COBYLABuilder {
     fn default() -> Self {
         COBYLABuilder {
@@ -907,9 +1262,32 @@ impl Default for LineSearchParams {
 }
 
 #[derive(Debug, Clone)]
-/// More-Thuente builder struct
+/// Configuration builder for Moré-Thuente line search algorithm.
 ///
-/// This struct allows for the configuration of the More-Thuente line search method, including the strong wolfe conditions parameter c1 and c2, the width tolerance, and the bounds.
+/// The Moré-Thuente line search is a robust algorithm that satisfies the strong
+/// Wolfe conditions. It's particularly reliable for optimization algorithms that
+/// require high-quality line search, such as L-BFGS and Newton methods.
+///
+/// ## Algorithm Characteristics
+/// - **Strong Wolfe conditions**: Ensures both sufficient decrease and curvature
+/// - **Robust bracketing**: Reliable identification of acceptable step lengths
+/// - **Interpolation-based**: Uses cubic interpolation for efficiency
+/// - **Safeguarded**: Includes fallback mechanisms for numerical stability
+///
+/// ## Wolfe Conditions
+/// 1. **Sufficient decrease** (`c1`): f(x + αp) ≤ f(x) + c₁α∇f(x)ᵀp
+/// 2. **Curvature condition** (`c2`): |∇f(x + αp)ᵀp| ≤ c₂|∇f(x)ᵀp|
+///
+/// ## Parameter Guidelines
+/// - **c1**: Typically 1e-4, controls sufficient decrease requirement
+/// - **c2**: Usually 0.9 for Newton/quasi-Newton, 0.1 for steepest descent
+/// - **width_tolerance**: Controls termination of bracketing phase
+/// - **bounds**: [min_step, max_step] to prevent extreme step sizes
+///
+/// ## When to Use
+/// - When robustness is critical
+/// - With L-BFGS, Newton, or quasi-Newton methods
+/// - Problems where line search quality affects convergence
 pub struct MoreThuenteBuilder {
     c1: f64,
     c2: f64,
@@ -917,9 +1295,25 @@ pub struct MoreThuenteBuilder {
     bounds: Array1<f64>,
 }
 
-/// More-Thuente Builder
+/// Moré-Thuente Line Search Configuration Builder
 ///
-/// This builder allows for the configuration of the More-Thuente line search method.
+/// Provides a fluent interface for configuring the Moré-Thuente line search algorithm.
+/// This implementation is particularly robust and reliable for optimization methods
+/// requiring high-quality line search.
+///
+/// ## Example Usage
+/// ```rust
+/// use globalsearch::local_solver::builders::MoreThuenteBuilder;
+/// use ndarray::array;
+///
+/// // Conservative configuration for challenging problems
+/// let line_search = MoreThuenteBuilder::default()
+///     .c1(1e-4)                    // Standard sufficient decrease
+///     .c2(0.9)                     // Suitable for quasi-Newton methods
+///     .width_tolerance(1e-12)      // High precision bracketing
+///     .bounds(array![1e-8, 1e3])   // Reasonable step size range
+///     .build();
+/// ```
 impl MoreThuenteBuilder {
     /// Create a new More-Thuente builder
     pub fn new(c1: f64, c2: f64, width_tolerance: f64, bounds: Array1<f64>) -> Self {
@@ -988,9 +1382,35 @@ impl Default for MoreThuenteBuilder {
 }
 
 #[derive(Debug, Clone)]
-/// Hager-Zhang builder struct
+/// Configuration builder for Hager-Zhang line search algorithm.
 ///
-/// This struct allows for the configuration of the Hager-Zhang line search method, including delta, sigma, epsilon, theta, gamma, eta and the bounds.
+/// The Hager-Zhang line search is an efficient algorithm that satisfies the strong
+/// Wolfe conditions with additional safeguards. It often outperforms other line
+/// search methods in terms of function evaluations required.
+///
+/// ## Algorithm Characteristics
+/// - **Efficient**: Typically requires fewer function evaluations
+/// - **Strong Wolfe conditions**: Ensures convergence guarantees
+/// - **Adaptive**: Self-adjusting parameters based on problem characteristics
+/// - **Robust**: Handles difficult cases with automatic safeguards
+///
+/// ## Key Parameters
+/// - **delta** (δ): Sufficient decrease parameter, typically 0.1
+/// - **sigma** (σ): Controls the curvature condition, usually 0.9
+/// - **epsilon** (ε): Relative tolerance for approximate Wolfe conditions
+/// - **theta** (θ): Controls the updating of the interval, typically 0.5
+/// - **gamma** (γ): Parameter for the approximate Wolfe conditions
+/// - **eta** (η): Lower bound for the relative width of the interval
+///
+/// ## Performance Notes
+/// - Often faster than Moré-Thuente in practice
+/// - Excellent for L-BFGS and conjugate gradient methods
+/// - Self-tuning reduces need for parameter adjustment
+///
+/// ## When to Use
+/// - When efficiency is important
+/// - With L-BFGS, CG, or Newton methods
+/// - When default Moré-Thuente is too conservative
 pub struct HagerZhangBuilder {
     delta: f64,
     sigma: f64,
@@ -1001,9 +1421,25 @@ pub struct HagerZhangBuilder {
     bounds: Array1<f64>,
 }
 
-/// Hager-Zhang Builder
+/// Hager-Zhang Line Search Configuration Builder
 ///
-/// This builder allows for the configuration of the Hager-Zhang line search method.
+/// Provides a fluent interface for configuring the Hager-Zhang line search algorithm.
+/// This implementation is often more efficient than Moré-Thuente while maintaining
+/// strong theoretical guarantees.
+///
+/// ## Example Usage
+/// ```rust
+/// use globalsearch::local_solver::builders::HagerZhangBuilder;
+/// use ndarray::array;
+///
+/// // Efficient configuration for L-BFGS
+/// let line_search = HagerZhangBuilder::default()
+///     .delta(0.01)                 // Stricter sufficient decrease
+///     .sigma(0.99)                 // Thorough curvature search
+///     .epsilon(1e-6)               // Standard tolerance
+///     .bounds(array![1e-10, 1e5])  // Wide step size range
+///     .build();
+/// ```
 impl HagerZhangBuilder {
     /// Create a new Hager-Zhang builder
     pub fn new(
@@ -1818,7 +2254,7 @@ mod tests_builders {
                 assert_eq!(ftol_rel, 1e-6);  // REL_TOL default
                 assert_eq!(ftol_abs, 1e-8);  // ABS_TOL default
                 assert_eq!(xtol_rel, 0.0);   // No default
-                assert_eq!(xtol_abs, 0.0);   // No default
+                assert_eq!(xtol_abs, Vec::<f64>::new());   // No default (empty vector)
             }
             _ => panic!("Expected COBYLA local solver"),
         }
@@ -1846,7 +2282,7 @@ mod tests_builders {
                 assert_eq!(ftol_rel, 1e-10);
                 assert_eq!(ftol_abs, 1e-8);
                 assert_eq!(xtol_rel, 0.0);
-                assert_eq!(xtol_abs, 0.0);
+                assert_eq!(xtol_abs, Vec::<f64>::new());
             }
             _ => panic!("Expected COBYLA local solver"),
         }
@@ -1870,7 +2306,38 @@ mod tests_builders {
                 assert_eq!(ftol_rel, 1e-6); // default
                 assert_eq!(ftol_abs, 1e-8); // default
                 assert_eq!(xtol_rel, 0.0); // default (no x tolerance)
-                assert_eq!(xtol_abs, 0.0); // default (no x tolerance)
+                assert_eq!(xtol_abs, Vec::<f64>::new()); // default (no x tolerance)
+            }
+            _ => panic!("Expected COBYLA local solver"),
+        }
+    }
+
+    #[test]
+    /// Test COBYLA builder with vector-based xtol_abs
+    fn test_cobyla_vector_xtol_abs() {
+        let xtol_vec = vec![1e-6, 1e-8, 1e-10];
+        let cobyla: LocalSolverConfig = COBYLABuilder::default()
+            .max_iter(1000)
+            .initial_step_size(0.1)
+            .ftol_rel(1e-8)
+            .xtol_abs(xtol_vec.clone())
+            .build();
+        
+        match cobyla {
+            LocalSolverConfig::COBYLA {
+                max_iter,
+                initial_step_size,
+                ftol_rel,
+                ftol_abs,
+                xtol_rel,
+                xtol_abs,
+            } => {
+                assert_eq!(max_iter, 1000);
+                assert_eq!(initial_step_size, 0.1);
+                assert_eq!(ftol_rel, 1e-8);
+                assert_eq!(ftol_abs, 1e-8); // default
+                assert_eq!(xtol_rel, 0.0); // default
+                assert_eq!(xtol_abs, xtol_vec); // per-variable tolerances
             }
             _ => panic!("Expected COBYLA local solver"),
         }

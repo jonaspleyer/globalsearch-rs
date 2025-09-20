@@ -1,8 +1,32 @@
-//! # Types module
+//! # Types Module
 //!
-//! This module contains the types and structs used in the OQNLP algorithm,
-//! including the parameters for the algorithm, filtering mechanisms,
-//! solution set, local solutions, local solver types, and local solver configurations.
+//! This module defines the core data structures and types used throughout the OQNLP
+//! (OptQuest for Nonlinear Programming) global optimization algorithm.
+//!
+//! ## Core Types
+//!
+//! - [`OQNLPParams`] - Configuration parameters for the optimization algorithm
+//! - [`LocalSolution`] - Represents a single solution point with its objective value
+//! - [`SolutionSet`] - Collection of local solutions with utility methods
+//! - [`FilterParams`] - Parameters for filtering mechanisms (distance and merit filters)
+//! - [`LocalSolverType`] - Enumeration of available local optimization solvers
+//! - [`LocalSolverConfig`] - Configuration options for local solvers
+//!
+//! ## Example
+//!
+//! ```rust
+//! use globalsearch::types::{OQNLPParams, LocalSolverType};
+//! use globalsearch::local_solver::builders::COBYLABuilder;
+//!
+//! // Create optimization parameters
+//! let params = OQNLPParams {
+//!     iterations: 500,
+//!     population_size: 1000,
+//!     local_solver_type: LocalSolverType::COBYLA,
+//!     local_solver_config: COBYLABuilder::default().build(),
+//!     ..OQNLPParams::default()
+//! };
+//! ```
 
 use crate::local_solver::builders::{COBYLABuilder, LocalSolverConfig};
 use crate::problem::Problem;
@@ -22,12 +46,19 @@ use std::path::PathBuf;
     feature = "checkpointing",
     derive(serde::Serialize, serde::Deserialize)
 )]
-/// Parameters for the OQNLP algorithm
+/// Configuration parameters for the OQNLP (OptQuest for Nonlinear Programming) algorithm.
 ///
-/// These parameters control the behavior of the optimization process,
-/// including the total number of iterations, the population size
-/// the wait cycle, threshold factor, distance factor, local solver type
-/// and settings and the seed.
+/// This struct contains all the tunable parameters that control the behavior of the
+/// global optimization process. The algorithm combines scatter search with local
+/// optimization methods to find global optima.
+///
+/// # Parameter Guidelines
+///
+/// - **iterations**: Should be set based on problem complexity and available computation time
+/// - **population_size**: Larger values improve exploration but increase computation time
+/// - **wait_cycle**: Controls balance between exploration and exploitation
+/// - **threshold_factor**: Higher values make merit filter more permissive
+/// - **distance_factor**: Higher values enforce more diversity between solutions
 pub struct OQNLPParams {
     /// Total number of iterations for the optimization process
     pub iterations: usize,
@@ -98,10 +129,37 @@ impl Default for OQNLPParams {
     feature = "checkpointing",
     derive(serde::Serialize, serde::Deserialize)
 )]
-/// Parameters for the filtering mechanisms
+/// Configuration parameters for filtering mechanisms in the OQNLP algorithm.
 ///
-/// These parameters control the behavior of the filtering mechanisms, including the distance factor, wait cycle, and threshold factor.
-/// The distance factor influences the minimum required distance between candidate solutions, the wait cycle determines the number of iterations to wait before updating the threshold criteria, and the threshold factor is used to update the threshold criteria.
+/// These parameters control how candidate solutions are filtered during the
+/// optimization process to maintain solution diversity and quality.
+///
+/// # Filtering Mechanisms
+///
+/// ## Distance Filter
+/// Uses `distance_factor` to enforce minimum separation between solutions,
+/// preventing clustering and maintaining population diversity.
+///
+/// ## Merit Filter  
+/// Uses `threshold_factor` and `wait_cycle` to dynamically adjust acceptance
+/// criteria based on solution quality.
+///
+/// # Parameter Details
+///
+/// - **distance_factor**: Controls minimum Euclidean distance between solutions
+///   - Range: [0.0, ∞)
+///   - Higher values → more diverse solutions
+///   - Lower values → solutions can be closer together
+///
+/// - **wait_cycle**: Number of iterations between filter parameter updates
+///   - Typical range: [5, 50]
+///   - Higher values → more stable filtering
+///   - Lower values → more adaptive filtering
+///
+/// - **threshold_factor**: Controls merit filter sensitivity
+///   - Range: (0.0, 1.0]
+///   - Higher values → more permissive acceptance
+///   - Lower values → stricter solution quality requirements
 pub struct FilterParams {
     /// Factor that influences the minimum required distance between candidate solutions
     ///
@@ -121,9 +179,38 @@ pub struct FilterParams {
     feature = "checkpointing",
     derive(serde::Serialize, serde::Deserialize)
 )]
-/// A local solution in the parameter space
+/// Represents a single solution point in the optimization parameter space.
 ///
-/// This struct represents a solution point in the parameter space along with the objective function value at that point.
+/// A `LocalSolution` encapsulates both the parameter values (point) and the
+/// corresponding objective function value. This is the fundamental unit of
+/// solution information in the optimization algorithm.
+///
+/// # Fields
+///
+/// - `point`: The solution coordinates in the parameter space as an N-dimensional array
+/// - `objective`: The objective function value at this point (lower is better for minimization)
+///
+/// # Methods
+///
+/// The struct provides convenience methods compatible with scipy.optimize conventions:
+/// - [`fun()`](LocalSolution::fun) - Returns the objective value (alias for `objective`)
+/// - [`x()`](LocalSolution::x) - Returns a clone of the parameter vector (alias for `point`)
+///
+/// # Example
+///
+/// ```rust
+/// use globalsearch::types::LocalSolution;
+/// use ndarray::array;
+///
+/// let solution = LocalSolution {
+///     point: array![1.0, 2.0, 3.0],
+///     objective: -5.2,
+/// };
+///
+/// // Access using convenience methods
+/// assert_eq!(solution.fun(), -5.2);
+/// assert_eq!(solution.x(), array![1.0, 2.0, 3.0]);
+/// ```
 pub struct LocalSolution {
     /// The solution point in the parameter space
     pub point: Array1<f64>,
@@ -157,17 +244,48 @@ impl LocalSolution {
     feature = "checkpointing",
     derive(serde::Serialize, serde::Deserialize)
 )]
-/// A set of local solutions
+/// A collection of local solutions with utility methods for analysis and display.
 ///
-/// This struct represents a set of local solutions in the parameter space
-/// including the solution points and their corresponding objective function values.
+/// `SolutionSet` is the primary data structure for storing and manipulating
+/// optimization results. It provides methods for accessing, analyzing, and
+/// displaying multiple solutions found during the optimization process.
 ///
-/// The solutions are stored in an `Array1` of `LocalSolution` structs.
+/// # Key Features
 ///
-/// The `SolutionSet` struct implements the `Index` trait to allow indexing into
-/// the set and the `Display` trait to allow pretty printing.
+/// - **Indexing**: Direct access to individual solutions via `solution_set[index]`
+/// - **Best solution**: Automatic identification of the best (lowest objective) solution
+/// - **Iteration**: Support for iterating over all solutions
+/// - **Display**: Pretty-printing with constraint violation information when applicable
 ///
-/// It also provides a method to get the number of solutions stored in the set using `len(&self)`.
+/// # Storage
+///
+/// Solutions are stored internally as an `Array1<LocalSolution>` for efficient
+/// vectorized operations and memory layout.
+///
+/// # Example
+///
+/// ```rust
+/// use globalsearch::types::{LocalSolution, SolutionSet};
+/// use ndarray::{array, Array1};
+///
+/// let solutions = Array1::from_vec(vec![
+///     LocalSolution { point: array![1.0, 2.0], objective: 5.0 },
+///     LocalSolution { point: array![2.0, 1.0], objective: 3.0 },
+///     LocalSolution { point: array![0.0, 0.0], objective: 1.0 },
+/// ]);
+///
+/// let solution_set = SolutionSet { solutions };
+///
+/// // Access the best solution
+/// let best = solution_set.best_solution().unwrap();
+/// assert_eq!(best.objective, 1.0);
+///
+/// // Check size and iterate
+/// assert_eq!(solution_set.len(), 3);
+/// for solution in solution_set.solutions() {
+///     println!("Point: {:?}, Objective: {}", solution.point, solution.objective);
+/// }
+/// ```
 pub struct SolutionSet {
     pub solutions: Array1<LocalSolution>,
 }

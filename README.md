@@ -29,7 +29,7 @@
 
 `globalsearch-rs`: Rust implementation of the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). It combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
 
-Similar to MATLAB's `GlobalSearch` \[2\], using argmin, rayon and ndarray.
+Similar to MATLAB's `GlobalSearch` \[2\], using cobyla, argmin, rayon and ndarray.
 
 ## Features
 
@@ -105,11 +105,11 @@ Or use `cargo add globalsearch` in your project directory.
            array![[..., ...], [..., ...]] // Lower and upper bounds for each variable
        }
 
-         fn constraints(&self) -> Vec<fn(&[f64], &mut ()) -> f64> {
-              vec![
-                ..., // Optional: Constraint functions here, only valid with COBYLA
-              ]
-         }
+       fn constraints(&self) -> Vec<fn(&[f64], &mut ()) -> f64> {
+            vec![
+              ..., // Optional: Constraint functions here, only valid with COBYLA
+            ]
+       }
    }
    ```
 
