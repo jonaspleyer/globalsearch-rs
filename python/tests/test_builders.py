@@ -146,7 +146,7 @@ def test_builders_cobyla_custom():
         ftol_rel=1e-6,
         ftol_abs=1e-8,
         xtol_rel=1e-5,
-        xtol_abs=1e-7,
+        xtol_abs=[1e-7, 1e-8],
     )
     result = gs.optimize(
         problem, params, local_solver="COBYLA", local_solver_config=cobyla_config
@@ -173,14 +173,14 @@ def test_builders_cobyla_tolerances():
         ftol_rel=1e-8,
         ftol_abs=1e-10,
         xtol_rel=1e-6,
-        xtol_abs=1e-8,
+        xtol_abs=[1e-8, 1e-9],
     )
     assert custom_cobyla.max_iter == 500
     assert custom_cobyla.step_size == 0.25
     assert custom_cobyla.ftol_rel == 1e-8
     assert custom_cobyla.ftol_abs == 1e-10
     assert custom_cobyla.xtol_rel == 1e-6
-    assert custom_cobyla.xtol_abs == 1e-8
+    assert custom_cobyla.xtol_abs == [1e-8, 1e-9]
 
 
 def test_builders_cobyla_partial_tolerances():

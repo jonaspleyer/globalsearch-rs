@@ -69,7 +69,7 @@ def test_optimize_lbfgs_full():
 
 
 def test_default_local_solver():
-    """Test optimization with default local solver (should be LBFGS)."""
+    """Test optimization with default local solver (should be COBYLA)."""
     result = gs.optimize(problem_grad, params)  # No local_solver specified
     assert result is not None, "Optimization returned None"
     assert len(result) > 0, "Optimization returned empty result"
@@ -109,8 +109,8 @@ def test_solution_format():
     assert len(result) > 0, "Should return at least one solution"
 
     for solution in result:
-        assert hasattr(solution, 'x'), "Solution should have 'x' method"
-        assert hasattr(solution, 'fun'), "Solution should have 'fun' method"
+        assert hasattr(solution, "x"), "Solution should have 'x' method"
+        assert hasattr(solution, "fun"), "Solution should have 'fun' method"
         assert isinstance(solution.x(), list), "x() should return a list"
         assert isinstance(solution.fun(), float), "fun() should return a float"
         assert len(solution.x()) == 2, "x() should have 2 elements for this problem"

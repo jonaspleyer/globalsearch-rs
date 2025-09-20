@@ -10,6 +10,37 @@ use std::f64::INFINITY;
 
 #[pyclass]
 #[derive(Debug, Clone)]
+/// Hager-Zhang line search method configuration.
+/// 
+/// The Hager-Zhang line search is a sophisticated line search algorithm that
+/// satisfies both Wolfe conditions and provides strong theoretical guarantees.
+/// It's particularly effective for L-BFGS and other quasi-Newton methods.
+/// 
+/// # Parameters
+/// 
+/// - `delta`: Armijo parameter for sufficient decrease (typically 0.1)
+/// - `sigma`: Wolfe parameter for curvature condition (typically 0.9)
+/// - `epsilon`: Tolerance for approximate Wolfe conditions (typically 1e-6)
+/// - `theta`: Parameter for bracketing phase (typically 0.5)
+/// - `gamma`: Parameter for update rules (typically 0.66)
+/// - `eta`: Parameter for switching conditions (typically 0.01)
+/// - `bounds`: Step length bounds [min, max] (default: [√ε, ∞])
+/// 
+/// # Examples
+/// 
+/// ```python
+/// # Default parameters (recommended for most problems)
+/// hz_config = gs.builders.hagerzhang()
+/// 
+/// # Conservative line search (more function evaluations, more reliable)
+/// conservative = gs.builders.hagerzhang(delta=0.01, sigma=0.99)
+/// 
+/// # Aggressive line search (fewer evaluations, less reliable)
+/// aggressive = gs.builders.hagerzhang(delta=0.3, sigma=0.7)
+/// 
+/// # Use with L-BFGS
+/// lbfgs_config = gs.builders.lbfgs(line_search_params=hz_config)
+/// ```
 pub struct PyHagerZhang {
     #[pyo3(get, set)]
     pub delta: f64,
@@ -203,6 +234,77 @@ impl PyLineSearchParams {
 
 #[pyclass]
 #[derive(Debug, Clone)]
+/// L-BFGS (Limited-memory Broyden-Fletcher-Goldfarb-Shanno) solver configuration.
+/// 
+/// L-BFGS is a quasi-Newton optimization algorithm that approximates the inverse
+/// Hessian using only gradient information and a limited history of previous steps.
+/// It's one of the most effective algorithms for smooth, unconstrained optimization.
+/// 
+/// **Key Features:**
+/// - Requires only gradient information (no Hessian)
+/// - Superlinear convergence near the optimum
+/// - Memory-efficient (stores only m previous steps)
+/// - Excellent for large-scale optimization
+/// 
+/// # Parameters
+/// 
+/// - `max_iter`: Maximum number of iterations (default: 300)
+/// - `tolerance_grad`: Gradient norm tolerance for convergence (default: 1e-8)
+/// - `tolerance_cost`: Relative function change tolerance (default: 2e-16)
+/// - `history_size`: Number of previous steps to store (default: 10)
+/// - `l1_coefficient`: L1 regularization coefficient (optional, for sparsity)
+/// - `line_search_params`: Line search method configuration
+/// 
+/// # Convergence Criteria
+/// 
+/// L-BFGS stops when:
+/// - ||∇f(x)|| < tolerance_grad (gradient norm is small)
+/// - |f_new - f_old| / max(|f_new|, |f_old|, 1) < tolerance_cost
+/// - Maximum iterations reached
+/// 
+/// # Examples
+/// 
+/// ```python
+/// # Default configuration (good for most problems)
+/// lbfgs_config = gs.builders.lbfgs()
+/// 
+/// # High precision optimization
+/// precise = gs.builders.lbfgs(
+///     tolerance_grad=1e-12,
+///     max_iter=1000
+/// )
+/// 
+/// # Large-scale problems (more history for better approximation)
+/// large_scale = gs.builders.lbfgs(
+///     history_size=20,
+///     line_search_params=gs.builders.hagerzhang()
+/// )
+/// 
+/// # Sparse optimization with L1 regularization
+/// sparse = gs.builders.lbfgs(
+///     l1_coefficient=0.01,  # Promotes sparsity
+///     tolerance_grad=1e-6
+/// )
+/// 
+/// # Conservative line search for difficult problems
+/// robust = gs.builders.lbfgs(
+///     line_search_params=gs.builders.morethuente(c1=1e-6, c2=0.99)
+/// )
+/// ```
+/// 
+/// # When to Use L-BFGS
+/// 
+/// ✅ **Excellent for:**
+/// - Smooth unconstrained optimization
+/// - Large-scale problems (hundreds to thousands of variables)
+/// - Machine learning (neural networks, logistic regression)
+/// - Parameter estimation and curve fitting
+/// - Any problem where gradients are available
+/// 
+/// ❌ **Not suitable for:**
+/// - Constrained optimization (use COBYLA or Trust Region)
+/// - Non-smooth functions (use COBYLA or Nelder-Mead)
+/// - Problems without gradient information
 pub struct PyLBFGS {
     #[pyo3(get, set)]
     pub max_iter: u64,
@@ -729,6 +831,73 @@ fn trustregion(
 
 #[pyclass]
 #[derive(Debug, Clone)]
+/// COBYLA (Constrained Optimization BY Linear Approximations) solver configuration.
+/// 
+/// COBYLA is a derivative-free optimization algorithm that can handle inequality
+/// constraints. It works by building linear approximations to the objective function
+/// and constraints, making it suitable for problems where gradients are unavailable
+/// or unreliable.
+/// 
+/// **Key Features:**
+/// - No gradient information required
+/// - Handles inequality constraints (constraint(x) ≥ 0)
+/// - Robust for noisy or discontinuous functions
+/// - Good for problems with expensive function evaluations
+/// 
+/// # Parameters
+/// 
+/// - `max_iter`: Maximum number of iterations (default: 300)
+/// - `step_size`: Initial trust region radius (default: 1.0)
+/// - `ftol_rel`: Relative tolerance for function convergence (optional)
+/// - `ftol_abs`: Absolute tolerance for function convergence (optional)
+/// - `xtol_rel`: Relative tolerance for parameter convergence (optional)
+/// - `xtol_abs`: Per-variable absolute tolerances for parameters (optional)
+/// 
+/// # Convergence Criteria
+/// 
+/// COBYLA stops when any of these conditions are met:
+/// - Maximum iterations reached
+/// - Function tolerance satisfied: |f_new - f_old| < ftol_abs + ftol_rel * |f_old|
+/// - Parameter tolerance satisfied: |x_new - x_old| < xtol_abs + xtol_rel * |x_old|
+/// 
+/// # Examples
+/// 
+/// ```python
+/// # Default configuration
+/// cobyla_config = gs.builders.cobyla()
+/// 
+/// # High precision optimization
+/// precise = gs.builders.cobyla(
+///     max_iter=1000,
+///     xtol_abs=[1e-10] * n_vars  # Very tight parameter tolerance
+/// )
+/// 
+/// # For expensive function evaluations
+/// efficient = gs.builders.cobyla(
+///     max_iter=100,
+///     ftol_rel=1e-4,  # Looser function tolerance
+///     step_size=0.1   # Smaller initial steps
+/// )
+/// 
+/// # Different tolerance per variable (for scaled problems)
+/// scaled = gs.builders.cobyla(
+///     xtol_abs=[1e-6, 1e-8, 1e-4]  # x1: 1e-6, x2: 1e-8, x3: 1e-4
+/// )
+/// ```
+/// 
+/// # When to Use COBYLA
+/// 
+/// ✅ **Good for:**
+/// - Constrained optimization problems
+/// - Derivative-free optimization
+/// - Noisy or discontinuous objectives
+/// - Problems where function evaluations are expensive
+/// - Mixed-integer optimization (with discrete variables treated as continuous)
+/// 
+/// ❌ **Not ideal for:**
+/// - Smooth unconstrained problems (use L-BFGS instead)
+/// - High-dimensional problems (>50 variables)
+/// - Problems requiring high precision (use gradient-based methods)
 pub struct PyCOBYLA {
     #[pyo3(get, set)]
     pub max_iter: u64,
@@ -741,7 +910,7 @@ pub struct PyCOBYLA {
     #[pyo3(get, set)]
     pub xtol_rel: Option<f64>,
     #[pyo3(get, set)]
-    pub xtol_abs: Option<f64>,
+    pub xtol_abs: Option<Vec<f64>>,
 }
 
 #[pymethods]
@@ -761,7 +930,7 @@ impl PyCOBYLA {
         ftol_rel: Option<f64>,
         ftol_abs: Option<f64>,
         xtol_rel: Option<f64>,
-        xtol_abs: Option<f64>,
+        xtol_abs: Option<Vec<f64>>,
     ) -> Self {
         PyCOBYLA {
             max_iter,
@@ -793,8 +962,8 @@ impl PyCOBYLA {
             builder = builder.xtol_rel(xtol_rel);
         }
         
-        if let Some(xtol_abs) = self.xtol_abs {
-            builder = builder.xtol_abs(xtol_abs);
+        if let Some(xtol_abs) = &self.xtol_abs {
+            builder = builder.xtol_abs(xtol_abs.clone());
         }
         
         builder
@@ -802,6 +971,45 @@ impl PyCOBYLA {
 }
 
 #[pyfunction]
+/// Create a COBYLA solver configuration.
+/// 
+/// COBYLA (Constrained Optimization BY Linear Approximations) is the only
+/// solver in this library that can handle inequality constraints. It's also
+/// an excellent choice for derivative-free optimization.
+/// 
+/// # Parameters
+/// 
+/// - `max_iter`: Maximum number of optimization iterations
+/// - `step_size`: Initial trust region radius (larger = more exploration)
+/// - `ftol_rel`: Relative tolerance for function value convergence
+/// - `ftol_abs`: Absolute tolerance for function value convergence  
+/// - `xtol_rel`: Relative tolerance for parameter convergence
+/// - `xtol_abs`: Per-variable absolute tolerances (length must match problem dimension)
+/// 
+/// # Examples
+/// 
+/// ```python
+/// # Default COBYLA (good starting point)
+/// config = gs.builders.cobyla()
+/// 
+/// # Conservative settings for reliable convergence
+/// config = gs.builders.cobyla(
+///     max_iter=1000,
+///     step_size=0.1,
+///     xtol_abs=[1e-8, 1e-8]  # Same tolerance for both variables
+/// )
+/// 
+/// # Different tolerance per variable (useful for scaled problems)
+/// config = gs.builders.cobyla(
+///     xtol_abs=[1e-6, 1e-8, 1e-4]  # x1: loose, x2: tight, x3: very loose
+/// )
+/// ```
+/// 
+/// # Notes
+/// 
+/// - If `xtol_abs` is provided, its length must match the problem dimension
+/// - For constrained problems, COBYLA is currently the only supported solver
+/// - Larger `step_size` values encourage more exploration but may slow convergence
 #[pyo3(signature = (
     max_iter = 300,
     step_size = 1.0,
@@ -811,7 +1019,7 @@ impl PyCOBYLA {
     xtol_abs = None,
 ))]
 #[pyo3(
-    text_signature = "(max_iter: int = 300, step_size: float = 1.0, ftol_rel: Optional[float] = None, ftol_abs: Optional[float] = None, xtol_rel: Optional[float] = None, xtol_abs: Optional[float] = None)"
+    text_signature = "(max_iter: int = 300, step_size: float = 1.0, ftol_rel: Optional[float] = None, ftol_abs: Optional[float] = None, xtol_rel: Optional[float] = None, xtol_abs: Optional[List[float]] = None)"
 )]
 fn cobyla(
     max_iter: u64,
@@ -819,7 +1027,7 @@ fn cobyla(
     ftol_rel: Option<f64>,
     ftol_abs: Option<f64>,
     xtol_rel: Option<f64>,
-    xtol_abs: Option<f64>,
+    xtol_abs: Option<Vec<f64>>,
 ) -> PyCOBYLA {
     PyCOBYLA {
         max_iter,
