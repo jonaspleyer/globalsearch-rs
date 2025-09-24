@@ -64,6 +64,18 @@ use std::io;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+/// Wrapper for bincode v2 errors that can occur during encoding or decoding
+#[derive(Debug, Error)]
+pub enum BincodeError {
+    /// Encoding error
+    #[error("Encode error: {0}")]
+    EncodeError(#[from] bincode::error::EncodeError),
+    
+    /// Decoding error
+    #[error("Decode error: {0}")]
+    DecodeError(#[from] bincode::error::DecodeError),
+}
+
 #[derive(Debug, Error)]
 /// Errors that can occur during checkpointing operations.
 ///
@@ -104,7 +116,7 @@ pub enum CheckpointError {
 
     /// Serialization/deserialization error
     #[error("Serialization error: {0}")]
-    SerializationError(#[from] bincode::Error),
+    SerializationError(#[from] BincodeError),
 
     /// Checkpoint file not found
     #[error("Checkpoint file not found: {0}")]
@@ -198,7 +210,8 @@ impl CheckpointManager {
         };
 
         let filepath = self.config.checkpoint_dir.join(filename);
-        let encoded = bincode::serialize(checkpoint)?;
+        let encoded = bincode::serde::encode_to_vec(checkpoint, bincode::config::legacy())
+            .map_err(BincodeError::EncodeError)?;
         fs::write(&filepath, encoded)?;
 
         Ok(filepath)
@@ -226,7 +239,8 @@ impl CheckpointManager {
         }
 
         let encoded = fs::read(path)?;
-        let checkpoint: OQNLPCheckpoint = bincode::deserialize(&encoded)?;
+        let (checkpoint, _): (OQNLPCheckpoint, usize) = bincode::serde::decode_from_slice(&encoded, bincode::config::legacy())
+            .map_err(BincodeError::DecodeError)?;
 
         Ok(checkpoint)
     }
@@ -338,7 +352,8 @@ pub fn read_checkpoint_file(path: &Path) -> Result<OQNLPCheckpoint, CheckpointEr
     }
 
     let encoded = fs::read(path)?;
-    let checkpoint: OQNLPCheckpoint = bincode::deserialize(&encoded)?;
+    let (checkpoint, _): (OQNLPCheckpoint, usize) = bincode::serde::decode_from_slice(&encoded, bincode::config::legacy())
+        .map_err(BincodeError::DecodeError)?;
 
     Ok(checkpoint)
 }
