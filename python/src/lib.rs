@@ -99,75 +99,91 @@ fn get_constraint_functions(num_constraints: usize) -> Vec<fn(&[f64], &mut ()) -
 #[pyclass]
 #[derive(Debug, Clone)]
 /// Parameters for the OQNLP global optimization algorithm.
-/// 
+///
 /// The OQNLP algorithm combines scatter search metaheuristics with local optimization
 /// to find global minima in nonlinear optimization problems. These parameters control
-/// the behavior of the algorithm:
-/// 
-/// - `iterations`: Maximum number of global iterations (default: 300)
-/// - `population_size`: Size of the scatter search population (default: 1000)
-/// - `wait_cycle`: Iterations to wait without improvement before termination (default: 15)
-/// - `threshold_factor`: Controls acceptance threshold for new solutions (0.0-1.0, default: 0.2)
-/// - `distance_factor`: Controls minimum distance between solutions (0.0-1.0, default: 0.75)
-/// 
-/// # Examples
-/// 
-/// ```python
-/// # Default parameters
-/// params = gs.PyOQNLPParams()
-/// 
-/// # Custom parameters for difficult problems
-/// params = gs.PyOQNLPParams(
-///     iterations=500,
-///     population_size=2000,
-///     wait_cycle=25,
-///     threshold_factor=0.1,  # More exploration
-///     distance_factor=0.5    # Allow closer solutions
-/// )
-/// ```
+/// the behavior of the algorithm.
+///
+/// :param iterations: Maximum number of global iterations
+/// :type iterations: int
+/// :param population_size: Size of the scatter search population
+/// :type population_size: int
+/// :param wait_cycle: Iterations to wait without improvement before termination
+/// :type wait_cycle: int
+/// :param threshold_factor: Controls acceptance threshold for new solutions
+/// :type threshold_factor: float
+/// :param distance_factor: Controls minimum distance between solutions
+/// :type distance_factor: float
+///
+/// Examples
+/// --------
+/// Default parameters:
+///
+/// >>> params = gs.PyOQNLPParams()
+///
+/// Custom parameters for difficult problems:
+///
+/// >>> params = gs.PyOQNLPParams(
+/// ...     iterations=500,
+/// ...     population_size=2000,
+/// ...     wait_cycle=25,
+/// ...     threshold_factor=0.1,  # More exploration
+/// ...     distance_factor=0.2    # Allow closer solutions
+/// ... )
 pub struct PyOQNLPParams {
     #[pyo3(get, set)]
+    /// Maximum number of stage two iterations
     pub iterations: usize,
     #[pyo3(get, set)]
+    /// Size of the scatter search population
     pub population_size: usize,
     #[pyo3(get, set)]
+    /// Iterations to wait without improvement before termination
     pub wait_cycle: usize,
     #[pyo3(get, set)]
+    /// Controls acceptance threshold for new solutions
     pub threshold_factor: f64,
     #[pyo3(get, set)]
+    /// Controls minimum distance between solutions
     pub distance_factor: f64,
 }
 
 #[pyclass]
 #[derive(Debug, Clone)]
 /// A local solution found by the optimization algorithm.
-/// 
+///
 /// Represents a single solution point in parameter space along with its
 /// objective function value. This class provides both direct attribute access
 /// and SciPy-compatible methods for accessing solution data.
-/// 
-/// # Attributes
-/// 
-/// - `point`: The solution coordinates as a list of float values
-/// - `objective`: The objective function value at this solution point
-/// 
-/// # Examples
-/// 
-/// ```python
-/// solution = PyLocalSolution([1.0, 2.0], 3.5)
-/// 
-/// # Access via attributes
-/// x_coords = solution.point
-/// f_value = solution.objective
-/// 
-/// # Access via SciPy-compatible methods
-/// x_coords = solution.x()
-/// f_value = solution.fun()
-/// ```
+///
+/// :ivar point: The solution coordinates as a list of float values
+/// :vartype point: list[float]
+/// :ivar objective: The objective function value at this solution point
+/// :vartype objective: float
+///
+/// Examples
+/// --------
+/// Create and access a solution:
+///
+/// >>> solution = PyLocalSolution([1.0, 2.0], 3.5)
+/// >>> # Access via attributes
+/// >>> x_coords = solution.point
+/// >>> f_value = solution.objective
+/// >>> # Access via SciPy-compatible methods
+/// >>> x_coords = solution.x()
+/// >>> f_value = solution.fun()
 pub struct PyLocalSolution {
     #[pyo3(get, set)]
+    /// The solution coordinates as a list of float values
+    /// 
+    /// :returns: The solution coordinates as a list of float values (same as `x()` method)
+    /// :rtype: list[float]
     pub point: Vec<f64>,
     #[pyo3(get, set)]
+    /// The objective function value at this solution point
+    ///
+    /// :returns: The objective function value at this solution point (same as `fun()` method)
+    /// :rtype: float
     pub objective: f64,
 }
 
@@ -178,20 +194,24 @@ impl PyLocalSolution {
         PyLocalSolution { point, objective }
     }
 
-    /// Returns the objective function value at the solution point
-    /// 
-    /// Same as `objective` field
-    /// 
-    /// This method is similar to the `fun` method in `SciPy.optimize` result
+    /// Returns the objective function value at the solution point.
+    ///
+    /// :returns: The objective function value at this solution point (same as `objective` attribute)
+    /// :rtype: float
+    ///
+    /// .. note::
+    ///    This method is similar to the `fun` method in SciPy.optimize results.
     fn fun(&self) -> f64 {
         self.objective
     }
 
-    /// Returns the solution point as a list of float values
+    /// Returns the solution point as a list of float values.
     ///
-    /// Same as `point` field
+    /// :returns: The solution coordinates as a list of float values (same as `point` attribute)
+    /// :rtype: list[float]
     ///
-    /// This method is similar to the `x` method in `SciPy.optimize` result
+    /// .. note::
+    ///    This method is similar to the `x` method in SciPy.optimize results.
     fn x(&self) -> Vec<f64> {
         self.point.clone()
     }
@@ -214,36 +234,35 @@ impl PyLocalSolution {
 #[pyclass]
 #[derive(Debug, Clone)]
 /// A collection of local solutions found by the optimization algorithm.
-/// 
+///
 /// The OQNLP algorithm typically finds multiple local solutions during its search.
 /// This class stores all solutions and provides methods to access them, find the
 /// best solution, and iterate over the results.
-/// 
+///
 /// Solutions are automatically sorted by objective function value (best first).
-/// 
-/// # Examples
-/// 
-/// ```python
-/// # Get optimization results
-/// result = gs.optimize(problem, params)
-/// 
-/// # Access best solution
-/// best = result.best_solution()
-/// if best:
-///     print(f"Best: x = {best.x()}, f(x) = {best.fun()}")
-/// 
-/// # Check number of solutions
-/// print(f"Found {len(result)} solutions")
-/// 
-/// # Iterate over all solutions
-/// for i, solution in enumerate(result):
-///     print(f"Solution {i}: f(x) = {solution.fun()}")
-/// 
-/// # Access specific solution by index
-/// second_best = result[1] if len(result) > 1 else None
-/// ```
+///
+/// Examples
+/// --------
+/// Get optimization results and access solutions:
+///
+/// >>> result = gs.optimize(problem, params)
+/// >>> # Access best solution
+/// >>> best = result.best_solution()
+/// >>> if best:
+/// ...     print(f"Best: x = {best.x()}, f(x) = {best.fun()}")
+/// >>> # Check number of solutions
+/// >>> print(f"Found {len(result)} solutions")
+/// >>> # Iterate over all solutions
+/// >>> for i, solution in enumerate(result):
+/// ...     print(f"Solution {i}: f(x) = {solution.fun()}")
+/// >>> # Access specific solution by index
+/// >>> second_best = result[1] if len(result) > 1 else None
 pub struct PySolutionSet {
     #[pyo3(get)]
+    /// The list of local solutions found by the optimization algorithm.
+    /// 
+    /// :returns: The list of local solutions found by the optimization algorithm
+    /// :rtype: list[PyLocalSolution]
     pub solutions: Vec<PyLocalSolution>,
 }
 
@@ -255,16 +274,25 @@ impl PySolutionSet {
     }
 
     /// Returns the number of solutions stored in the set.
+    ///
+    /// :returns: Number of solutions in the set
+    /// :rtype: int
     fn __len__(&self) -> usize {
         self.solutions.len()
     }
 
     /// Returns true if the solution set contains no solutions.
+    ///
+    /// :returns: True if the solution set is empty, False otherwise
+    /// :rtype: bool
     fn is_empty(&self) -> bool {
         self.solutions.is_empty()
     }
 
     /// Returns the best solution in the set based on the objective function value.
+    ///
+    /// :returns: The solution with the lowest objective function value, or None if the set is empty
+    /// :rtype: PyLocalSolution or None
     fn best_solution(&self) -> Option<PyLocalSolution> {
         self.solutions
             .iter()
@@ -273,6 +301,12 @@ impl PySolutionSet {
     }
 
     /// Returns the solution at the given index.
+    ///
+    /// :param index: Index of the solution to retrieve
+    /// :type index: int
+    /// :returns: The solution at the specified index
+    /// :rtype: PyLocalSolution
+    /// :raises IndexError: If the index is out of range
     fn __getitem__(&self, index: usize) -> PyResult<PyLocalSolution> {
         self.solutions
             .get(index)
@@ -281,6 +315,9 @@ impl PySolutionSet {
     }
 
     /// Returns an iterator over the solutions in the set.
+    ///
+    /// :returns: An iterator over all solutions in the set
+    /// :rtype: PySolutionSetIterator
     fn __iter__(slf: PyRef<'_, Self>) -> PyResult<Py<PySolutionSetIterator>> {
         let iter = PySolutionSetIterator {
             inner: slf.solutions.clone(),
@@ -375,46 +412,81 @@ impl PyOQNLPParams {
 #[pyclass]
 #[derive(Debug)]
 /// Defines an optimization problem to be solved.
-/// 
+///
 /// A PyProblem encapsulates all the mathematical components needed for optimization:
 /// the objective function to minimize, variable bounds, and optional gradient, Hessian,
 /// and constraint functions.
-/// 
-/// # Function Signatures
-/// 
-/// - `objective(x: np.ndarray) -> float`: Returns the value to minimize
-/// - `variable_bounds() -> np.ndarray`: Returns array of shape (n_vars, 2) with [lower, upper] bounds
-/// - `gradient(x: np.ndarray) -> np.ndarray`: Optional gradient function (for gradient-based solvers)
-/// - `hessian(x: np.ndarray) -> np.ndarray`: Optional Hessian matrix function (for Newton-type solvers)
-/// - `constraints`: Optional list of constraint functions where constraint(x) >= 0 means satisfied
-/// 
-/// # Examples
-/// 
-/// ```python
-/// # Basic unconstrained problem
-/// def objective(x): return x[0]**2 + x[1]**2
-/// def bounds(): return np.array([[-5, 5], [-5, 5]])
-/// problem = gs.PyProblem(objective, bounds)
-/// 
-/// # Problem with gradient for faster convergence
-/// def gradient(x): return np.array([2*x[0], 2*x[1]])
-/// problem = gs.PyProblem(objective, bounds, gradient=gradient)
-/// 
-/// # Constrained problem (requires COBYLA solver)
-/// def constraint(x): return x[0] + x[1] - 1  # x[0] + x[1] >= 1
-/// problem = gs.PyProblem(objective, bounds, constraints=[constraint])
-/// ```
+///
+/// :param objective: Function that takes x (array-like) and returns the value to minimize (float)
+/// :type objective: callable
+/// :param variable_bounds: Function that returns bounds array of shape (n_vars, 2) with [lower, upper] bounds
+/// :type variable_bounds: callable
+/// :param gradient: Function that takes x and returns gradient array (for gradient-based solvers)
+/// :type gradient: callable, optional
+/// :param hessian: Function that takes x and returns Hessian matrix (for Newton-type solvers)
+/// :type hessian: callable, optional
+/// :param constraints: List of constraint functions where constraint(x) >= 0 means satisfied
+/// :type constraints: list[callable], optional
+///
+/// Examples
+/// --------
+/// Basic unconstrained problem:
+///
+/// >>> def objective(x): return x[0]**2 + x[1]**2
+/// >>> def bounds(): return np.array([[-5, 5], [-5, 5]])
+/// >>> problem = gs.PyProblem(objective, bounds)
+///
+/// Problem with gradient for faster convergence:
+///
+/// >>> def gradient(x): return np.array([2*x[0], 2*x[1]])
+/// >>> problem = gs.PyProblem(objective, bounds, gradient=gradient)
+///
+/// Constrained problem (requires COBYLA solver):
+///
+/// >>> def constraint(x): return x[0] + x[1] - 1  # x[0] + x[1] >= 1
+/// >>> problem = gs.PyProblem(objective, bounds, constraints=[constraint])
 pub struct PyProblem {
     #[pyo3(get, set)]
+    /// Objective function to minimize
+    /// 
+    /// :param x: Input parameters as a list or array of floats
+    /// :return: Objective function value (float)
     objective: Py<pyo3::PyAny>,
+
     #[pyo3(get, set)]
+    /// Function returning variable bounds
+    /// 
+    /// :returns: 2D array-like of shape (n_vars, 2) with [lower, upper] bounds for each variable
+    /// :rtype: array-like
     variable_bounds: Py<pyo3::PyAny>,
+
     #[pyo3(get, set)]
+    /// Function returning the gradient
+    /// 
+    /// :param x: Input parameters as a list or array of floats
+    /// :return: Gradient as a list or array of floats
+    /// :raises ValueError: If the gradient length does not match the number of variables
     gradient: Option<Py<pyo3::PyAny>>,
     #[pyo3(get, set)]
+    /// Function returning the Hessian matrix
+    /// 
+    /// :param x: Input parameters as a list or array of floats
+    /// :return: Hessian matrix as a 2D list or array of floats
+    /// :raises ValueError: If the Hessian is not square or does not match the number of variables
     hessian: Option<Py<pyo3::PyAny>>,
+
     #[pyo3(get, set)]
+    /// List of constraint functions
+    /// 
+    /// :param x: Input parameters as a list or array of floats
+    /// :return: Constraint value (float), should be >= 0 to be satisfied
+    /// :raises ValueError: If any constraint function does not return a float
     constraints: Option<Py<pyo3::PyAny>>,
+
+    /// Unique ID for this problem instance (used for constraint management)
+    /// 
+    /// :return: Unique problem ID (integer)
+    /// :rtype: int
     problem_id: usize,
 }
 
@@ -601,59 +673,61 @@ impl Problem for PyProblem {
     }
 }
 
-/// Perform global optimization using the OQNLP algorithm.
-/// 
-/// This function implements the OQNLP (OptQuest/NLP) algorithm described in
-/// "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization"
-/// by Ugray et al. (2007). It combines scatter search metaheuristics with local
-/// optimization to find global minima of nonlinear problems.
-/// 
-/// The algorithm operates in two main stages:
-/// 1. **Scatter Search**: Explores the parameter space using evolutionary techniques
-///    to identify promising regions and generate diverse starting points.
-/// 2. **Local Optimization**: Applies local solvers from multiple starting points
-///    to refine solutions and converge to local/global minima.
-/// 
-/// # Parameters
-/// 
-/// - `problem`: The optimization problem (objective, bounds, constraints, etc.)
-/// - `params`: Algorithm parameters controlling search behavior
-/// - `local_solver`: Local optimization algorithm ("COBYLA", "LBFGS", "NewtonCG", 
-///   "TrustRegion", "NelderMead", "SteepestDescent")
-/// - `local_solver_config`: Custom solver configuration (None for defaults)
-/// - `seed`: Random seed for reproducible results
-/// - `target_objective`: Stop when this objective value is reached
-/// - `max_time`: Maximum time limit in seconds for Stage 2
-/// - `verbose`: Print progress information during optimization
-/// - `exclude_out_of_bounds`: Filter solutions that violate bounds
-/// 
-/// # Returns
-/// 
-/// A `PySolutionSet` containing all solutions found, sorted by objective value.
-/// Use `.best_solution()` to get the optimal result.
-/// 
-/// # Examples
-/// 
-/// ```python
-/// # Basic optimization
-/// result = gs.optimize(problem, params)
-/// best = result.best_solution()
-/// 
-/// # With custom solver configuration
-/// cobyla_config = gs.builders.cobyla(max_iter=1000)
-/// result = gs.optimize(problem, params, 
-///                     local_solver="COBYLA",
-///                     local_solver_config=cobyla_config)
-/// 
-/// # With early stopping and time limit
-/// result = gs.optimize(problem, params,
-///                     target_objective=1e-6,
-///                     max_time=60.0,
-///                     verbose=True)
-/// ```
+/// Perform global optimization on the given problem.
 ///
+/// This function implements the OQNLP (OptQuest/NLP) algorithm, which combines
+/// scatter search metaheuristics with local optimization to find global minima
+/// of nonlinear problems. It's particularly effective for multi-modal functions
+/// with multiple local minima.
+///
+/// The algorithm works in two stages:
+///
+/// 1. Scatter search to explore the parameter space and identify promising regions
+/// 2. Local optimization from multiple starting points to refine solutions
+///
+/// :param problem: The optimization problem to solve (objective, bounds, constraints, etc.)
+/// :type problem: PyProblem
+/// :param params: Parameters controlling the optimization algorithm behavior
+/// :type params: PyOQNLPParams
+/// :param local_solver: Local optimization algorithm ("COBYLA", "LBFGS", "NewtonCG", "TrustRegion", "NelderMead", "SteepestDescent")
+/// :type local_solver: str, optional
+/// :param local_solver_config: Custom configuration for the local solver (must match solver type)
+/// :type local_solver_config: object, optional
+/// :param seed: Random seed for reproducible results
+/// :type seed: int, optional
+/// :param target_objective: Stop optimization when this objective value is reached
+/// :type target_objective: float, optional
+/// :param max_time: Maximum time in seconds for Stage 2 optimization (unlimited if None)
+/// :type max_time: float, optional
+/// :param verbose: Print progress information during optimization
+/// :type verbose: bool, optional
+/// :param exclude_out_of_bounds: Filter out solutions that violate bounds
+/// :type exclude_out_of_bounds: bool, optional
+/// :returns: A set of local solutions found during optimization
+/// :rtype: PySolutionSet
+/// :raises ValueError: If solver configuration doesn't match the specified solver type, or if the problem is not properly defined
+///
+/// Examples
+/// --------
+/// Basic optimization:
+///
+/// >>> result = gs.optimize(problem, params)
+/// >>> best = result.best_solution()
+///
+/// With custom solver configuration:
+///
+/// >>> cobyla_config = gs.builders.cobyla(max_iter=1000)
+/// >>> result = gs.optimize(problem, params,
+/// ...                     local_solver="COBYLA",
+/// ...                     local_solver_config=cobyla_config)
+///
+/// With early stopping:
+///
+/// >>> result = gs.optimize(problem, params,
+/// ...                     target_objective=-1.0316,  # Stop when reached
+/// ...                     max_time=60.0,             # Max 60 seconds
+/// ...                     verbose=True)              # Show progress
 #[pyfunction]
-#[pyo3(signature = (problem, params, local_solver=None, local_solver_config=None, seed=None, target_objective=None, max_time=None, verbose=false, exclude_out_of_bounds=false))]
 fn optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
@@ -798,58 +872,58 @@ fn optimize(
 }
 
 #[pymodule]
-/// PyGlobalSearch: Python bindings for globalsearch-rs
-/// 
+/// PyGlobalSearch: Python bindings for globalsearch-rs.
+///
 /// PyGlobalSearch provides a Python interface to the `globalsearch-rs` Rust crate,
 /// which implements the OQNLP (OptQuest/NLP) algorithm for global optimization.
-/// 
+///
 /// The OQNLP algorithm combines scatter search metaheuristics with local optimization
 /// to effectively find global minima in nonlinear optimization problems. It's particularly
 /// effective for:
-/// 
-/// - Multi-modal functions with multiple local minima
-/// - Nonlinear optimization problems
-/// - Problems where derivative information may be unavailable or unreliable
-/// - Constrained optimization (using COBYLA solver)
-/// 
-/// # Quick Start
-/// 
-/// ```python
-/// import pyglobalsearch as gs
-/// import numpy as np
-/// 
-/// # Define your problem
-/// def objective(x): return x[0]**2 + x[1]**2
-/// def bounds(): return np.array([[-5, 5], [-5, 5]])
-/// 
-/// # Create problem and parameters
-/// problem = gs.PyProblem(objective, bounds)
-/// params = gs.PyOQNLPParams()
-/// 
-/// # Optimize
-/// result = gs.optimize(problem, params)
-/// best = result.best_solution()
-/// print(f"Best: x = {best.x()}, f(x) = {best.fun()}")
-/// ```
-/// 
-/// # Key Features
-/// 
-/// - **Multiple Solvers**: COBYLA, L-BFGS, Newton-CG, Trust Region, Nelder-Mead, Steepest Descent
-/// - **Constraint Support**: Inequality constraints via COBYLA solver
-/// - **Gradient Support**: Optional gradient and Hessian functions for faster convergence
-/// - **Builder Pattern**: Flexible solver configuration using builder functions
-/// - **Multiple Solutions**: Returns all local minima found, not just the best
-/// - **Early Stopping**: Target objectives and time limits for efficiency
-/// 
-/// # Main Classes
-/// 
-/// - `PyProblem`: Defines the optimization problem (objective, bounds, constraints)
-/// - `PyOQNLPParams`: Controls algorithm behavior (iterations, population size, etc.)
-/// - `PySolutionSet`: Contains all solutions found by the optimizer
-/// - `PyLocalSolution`: Represents a single solution point and objective value
-/// 
-/// # Algorithm Reference
-/// 
+///
+/// * Multi-modal functions with multiple local minima
+/// * Nonlinear optimization problems
+/// * Problems where derivative information may be unavailable or unreliable
+/// * Constrained optimization (using COBYLA solver)
+///
+/// Quick Start
+/// -----------
+/// ::
+///
+///     import pyglobalsearch as gs
+///     import numpy as np
+///
+///     # Define your problem
+///     def objective(x): return x[0]**2 + x[1]**2
+///     def bounds(): return np.array([[-5, 5], [-5, 5]])
+///
+///     # Create problem and parameters
+///     problem = gs.PyProblem(objective, bounds)
+///     params = gs.PyOQNLPParams()
+///
+///     # Optimize
+///     result = gs.optimize(problem, params)
+///     best = result.best_solution()
+///     print(f"Best: x = {best.x()}, f(x) = {best.fun()}")
+///
+/// Key Features
+/// ------------
+/// * **Multiple Solvers**: COBYLA, L-BFGS, Newton-CG, Trust Region, Nelder-Mead, Steepest Descent
+/// * **Constraint Support**: Inequality constraints via COBYLA solver
+/// * **Gradient Support**: Optional gradient and Hessian functions for faster convergence
+/// * **Builder Pattern**: Flexible solver configuration using builder functions
+/// * **Multiple Solutions**: Returns all global minima found
+/// * **Early Stopping**: Target objectives and time limits for efficiency
+///
+/// Main Classes
+/// ------------
+/// * `PyProblem`: Defines the optimization problem (objective, bounds, constraints)
+/// * `PyOQNLPParams`: Controls algorithm behavior (iterations, population size, etc.)
+/// * `PySolutionSet`: Contains all solutions found by the optimizer
+/// * `PyLocalSolution`: Represents a single solution point and objective value
+///
+/// Algorithm Reference
+/// -------------------
 /// Based on: Ugray, Z., Lasdon, L., Plummer, J., Glover, F., Kelly, J., & Martí, R. (2007).
 /// "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization."
 /// INFORMS Journal on Computing, 19(3), 328-340.
