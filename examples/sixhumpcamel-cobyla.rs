@@ -1,5 +1,5 @@
-/// Six-Hump Camel Back Function with COBYLA Local Solver
-/// The Six-Hump Camel Back function is defined as follows:
+/// Six-Hump Camel Function with COBYLA Local Solver
+/// The Six-Hump Camel function is defined as follows:
 ///
 /// $f(x) = (4 - 2.1 x_1^2 + x_1^4 / 3) x_1^2 + x_1 x_2 + (-4 + 4 x_2^2) x_2^2$
 ///
