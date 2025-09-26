@@ -728,6 +728,17 @@ impl Problem for PyProblem {
 /// ...                     max_time=60.0,             # Max 60 seconds
 /// ...                     verbose=True)              # Show progress
 #[pyfunction]
+#[pyo3(signature = (
+    problem,
+    params,
+    local_solver = None,
+    local_solver_config = None,
+    seed = None,
+    target_objective = None,
+    max_time = None,
+    verbose = None,
+    exclude_out_of_bounds = None,
+))]
 fn optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
