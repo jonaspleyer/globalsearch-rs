@@ -163,12 +163,12 @@ pub enum OQNLPError {
     ObjectiveFunctionEvaluationFailed,
 
     /// Error when creating a new ScatterSearch instance
-    #[error("OQNLP Error: Failed to create a new ScatterSearch instance.")]
-    ScatterSearchError,
+    #[error("OQNLP Error: Failed to create a new ScatterSearch instance: {0}")]
+    ScatterSearchError(#[from] crate::scatter_search::ScatterSearchError),
 
     /// Error when running the ScatterSearch instance
-    #[error("OQNLP Error: Failed to run the ScatterSearch instance.")]
-    ScatterSearchRunError,
+    #[error("OQNLP Error: Failed to run the ScatterSearch instance: {0}")]
+    ScatterSearchRunError(crate::scatter_search::ScatterSearchError),
 
     /// Error when the population size is invalid
     ///
@@ -452,10 +452,9 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             }
 
             let ss: ScatterSearch<P> =
-                ScatterSearch::new(self.problem.clone(), self.params.clone())
-                    .map_err(|_| OQNLPError::ScatterSearchError)?;
+                ScatterSearch::new(self.problem.clone(), self.params.clone())?;
             let (ref_set, scatter_candidate) =
-                ss.run().map_err(|_| OQNLPError::ScatterSearchRunError)?;
+                ss.run().map_err(|e| OQNLPError::ScatterSearchRunError(e))?;
             let local_sol: LocalSolution = self
                 .local_solver
                 .solve(scatter_candidate)
