@@ -454,7 +454,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             let ss: ScatterSearch<P> =
                 ScatterSearch::new(self.problem.clone(), self.params.clone())?;
             let (ref_set, scatter_candidate) =
-                ss.run().map_err(|e| OQNLPError::ScatterSearchRunError(e))?;
+                ss.run().map_err(OQNLPError::ScatterSearchRunError)?;
             let local_sol: LocalSolution = self
                 .local_solver
                 .solve(scatter_candidate)
@@ -503,7 +503,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             .total(self.params.iterations)
             .desc("Stage 2")
             .unit("it")
-            .postfix(&format!(
+            .postfix(format!(
                 "Objective function: {:.6}",
                 self.solution_set
                     .as_ref()
@@ -610,7 +610,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 #[cfg(feature = "progress_bar")]
                 if added {
                     stage2_bar
-                        .set_postfix(&format!("Objective function: {:.6}", local_trial.objective));
+                        .set_postfix(format!("Objective function: {:.6}", local_trial.objective));
                     stage2_bar
                         .refresh()
                         .expect("Failed to refresh progress bar");
@@ -1344,7 +1344,7 @@ mod tests_oqnlp {
 
         // Verify that a solution was found
         let sol_set = result.unwrap();
-        assert!(sol_set.len() > 0, "Should find at least one solution");
+        assert!(!sol_set.is_empty(), "Should find at least one solution");
     }
 
     #[test]

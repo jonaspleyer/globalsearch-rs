@@ -51,7 +51,6 @@
 /// - Tjoa, I B, and Biegler, L T, "Simultaneous Solution and Optimization Strategies 
 ///   for Parameter Estimation of Differential-Algebraic Equations Systems." 
 ///   Ind. Eng. Chem. Res. 30 (1991), 376-385.
-
 use globalsearch::problem::Problem;
 use globalsearch::{
     oqnlp::OQNLP,
@@ -73,6 +72,7 @@ struct ExperimentalData {
 impl ExperimentalData {
     /// Experimental data from the COPS benchmarking problem
     fn new() -> Self {
+        #[allow(clippy::approx_constant)]
         let times = vec![
             0.000, 0.025, 0.050, 0.075, 0.100, 0.125,
             0.150, 0.175, 0.200, 0.225, 0.250, 0.300,
@@ -80,6 +80,7 @@ impl ExperimentalData {
             0.750, 0.850, 0.950
         ];
 
+        #[allow(clippy::approx_constant)]
         let y1_observations = vec![
             1.0000, 0.8105, 0.6208, 0.5258, 0.4345, 0.3903,
             0.3342, 0.3034, 0.2735, 0.2405, 0.2283, 0.2071,
@@ -87,6 +88,7 @@ impl ExperimentalData {
             0.0870, 0.0770, 0.0690
         ];
 
+        #[allow(clippy::approx_constant)]
         let y2_observations = vec![
             0.0000, 0.2000, 0.2886, 0.3010, 0.3215, 0.3123,
             0.2716, 0.2551, 0.2258, 0.1959, 0.1789, 0.1457,
@@ -243,6 +245,12 @@ pub struct CatalyticCracking {
     experimental_data: ExperimentalData,
     /// ODE integration step size
     integration_step_size: f64,
+}
+
+impl Default for CatalyticCracking {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CatalyticCracking {
@@ -428,7 +436,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Compare with GAMS reference solution
         println!();
         println!("GAMS Reference Solution Comparison:");
-        println!("");
+        println!();
 
         let gams_theta = [11.847, 8.345, 1.001]; // GAMS reference: np1, np2, np3
 

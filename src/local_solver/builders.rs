@@ -1118,7 +1118,7 @@ impl COBYLABuilder {
             ftol_rel: self.ftol_rel.unwrap_or(1e-6),
             ftol_abs: self.ftol_abs.unwrap_or(1e-8),
             xtol_rel: self.xtol_rel.unwrap_or(0.0),    // No default for x tolerances
-            xtol_abs: self.xtol_abs.unwrap_or_else(Vec::new),  // Empty vector means no tolerance
+            xtol_abs: self.xtol_abs.unwrap_or_default(),  // Empty vector means no tolerance
         }
     }
 

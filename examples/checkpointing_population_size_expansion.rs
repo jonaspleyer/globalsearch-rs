@@ -3,7 +3,6 @@
 /// This example shows how the resume_with_modified_params function handles:
 /// 1. Expanding the reference set when population_size is increased
 /// 2. Warning when population_size is decreased but continuing with original set
-
 #[cfg(feature = "checkpointing")]
 use ndarray::{array, Array1, Array2};
 
