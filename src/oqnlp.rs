@@ -955,13 +955,11 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             ..self.params.clone()
         };
 
-        let mut scatter_search = ScatterSearch::new(self.problem.clone(), temp_params)
-            .map_err(|_| OQNLPError::ScatterSearchError)?;
+        let mut scatter_search = ScatterSearch::new(self.problem.clone(), temp_params)?;
 
         // ScatterSearch's diversify_reference_set method to expand our existing set
         scatter_search
-            .diversify_reference_set(ref_set)
-            .map_err(|_| OQNLPError::ScatterSearchError)?;
+            .diversify_reference_set(ref_set)?;
 
         Ok(())
     }
