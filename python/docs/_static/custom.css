@@ -1,0 +1,41 @@
+/* Custom CSS to reduce logo padding in pydata theme - more aggressive */
+
+/* Force reduce the right margin/padding of the logo area */
+.navbar-header-items__start {
+    margin-right: -50px !important;
+    padding-right: 0 !important;
+}
+
+/* Pull the navigation items much closer to the logo */
+.navbar-header-items__center {
+    margin-left: -50px !important;
+    padding-left: 0 !important;
+}
+
+/* Alternative: target the entire navbar header with tighter spacing */
+.navbar-header-items {
+    gap: 0.2rem !important;
+}
+
+/* Target the logo container directly with more specificity */
+.navbar .navbar-brand {
+    margin-right: -10px !important;
+    padding-right: 0 !important;
+}
+
+/* Reduce overall navbar item spacing with higher specificity */
+.navbar .navbar-nav {
+    gap: 0.1rem !important;
+    margin-left: -10px !important;
+}
+
+/* More specific selector for navigation items */
+.navbar .navbar-nav .nav-item {
+    margin-left: -5px !important;
+    padding-left: 0.1rem !important;
+}
+
+/* Fix white background on logo images */
+img[alt="PyGlobalSearch Logo"] {
+    background: transparent !important;
+}
