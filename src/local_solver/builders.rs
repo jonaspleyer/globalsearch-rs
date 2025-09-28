@@ -34,50 +34,6 @@
 //! ## Line Search Algorithms
 //! - [`HagerZhangBuilder`] - Hager-Zhang line search (recommended)
 //! - [`MoreThuenteBuilder`] - Moré-Thuente line search (robust)
-//!
-//! ## Configuration Examples
-//!
-//! ### High-Performance L-BFGS Setup
-//! ```rust
-//! use globalsearch::local_solver::builders::{LBFGSBuilder, HagerZhangBuilder};
-//!
-//! let lbfgs = LBFGSBuilder::default()
-//!     .max_iter(1000)           // More iterations for difficult problems
-//!     .tolerance_grad(1e-10)    // High precision
-//!     .history_size(20)         // Larger memory for better approximation
-//!     .line_search_params(      // Custom line search
-//!         HagerZhangBuilder::default()
-//!             .delta(0.01)      // Stricter sufficient decrease
-//!             .sigma(0.99)      // More thorough search
-//!             .build()
-//!     )
-//!     .build();
-//! ```
-//!
-//! ### Robust Nelder-Mead for Noisy Functions
-//! ```rust
-//! use globalsearch::local_solver::builders::NelderMeadBuilder;
-//!
-//! let nelder_mead = NelderMeadBuilder::default()
-//!     .simplex_delta(0.1)       // Appropriate initial step size
-//!     .sd_tolerance(1e-6)       // Convergence based on std deviation
-//!     .max_iter(2000)           // More iterations for convergence
-//!     .alpha(1.2)               // Slightly more aggressive reflection
-//!     .gamma(2.5)               // More expansion for exploration
-//!     .build();
-//! ```
-//!
-//! ### Trust Region for Second-Order Problems
-//! ```rust
-//! use globalsearch::local_solver::builders::{TrustRegionBuilder, TrustRegionRadiusMethod};
-//!
-//! let trust_region = TrustRegionBuilder::default()
-//!     .method(TrustRegionRadiusMethod::Steihaug)
-//!     .radius(0.5)              // Conservative initial radius
-//!     .max_radius(10.0)         // Allow large steps when beneficial
-//!     .eta(0.1)                 // Accept steps with modest improvement
-//!     .build();
-//! ```
 use ndarray::{array, Array1};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -430,11 +386,6 @@ impl LBFGSBuilder {
     ///
     /// Controls the maximum number of optimization steps before termination.
     /// Higher values allow more thorough optimization but increase computation time.
-    ///
-    /// # Recommended Values
-    /// - **Small problems** (< 100 variables): 100-500
-    /// - **Medium problems** (100-1000 variables): 500-1000
-    /// - **Large problems** (> 1000 variables): 1000-5000
     pub fn max_iter(mut self, max_iter: u64) -> Self {
         self.max_iter = max_iter;
         self
@@ -496,12 +447,6 @@ impl LBFGSBuilder {
     ///
     /// When set, promotes sparsity in the solution by adding L1 penalty.
     /// Useful for feature selection and compressed sensing problems.
-    ///
-    /// # Values
-    /// - **None**: No regularization (default)
-    /// - **Small**: 1e-6 to 1e-3 (subtle sparsity)
-    /// - **Medium**: 1e-3 to 1e-1 (moderate sparsity)
-    /// - **Large**: > 1e-1 (strong sparsity)
     pub fn l1_coefficient(mut self, l1_coefficient: Option<f64>) -> Self {
         self.l1_coefficient = l1_coefficient;
         self
@@ -578,7 +523,7 @@ pub struct NelderMeadBuilder {
 ///
 /// // Configuration for noisy objective functions
 /// let config = NelderMeadBuilder::default()
-///     .simplex_delta(0.1)     // Appropriate step size for problem scale
+///     .simplex_delta(0.1)     // Delta for simplex creation from point
 ///     .sd_tolerance(1e-6)     // Looser tolerance for noisy functions
 ///     .max_iter(2000)         // More iterations for difficult convergence
 ///     .alpha(1.2)             // Slightly more aggressive reflection
@@ -694,19 +639,6 @@ impl Default for NelderMeadBuilder {
 /// Steepest Descent is the most basic gradient-based optimization algorithm.
 /// It moves in the direction of the negative gradient at each iteration,
 /// with step size determined by line search.
-///
-/// ## Algorithm Characteristics
-/// - **Simple**: Easy to understand and implement
-/// - **Linear convergence**: Slow but steady progress
-/// - **Gradient-based**: Requires first-order derivatives
-/// - **Memory efficient**: Minimal memory requirements
-///
-/// ## When to Use
-/// - Educational purposes or algorithm prototyping
-/// - When simplicity is preferred over speed
-/// - Problems where more advanced methods fail
-/// - Initial iterations of more complex algorithms
-/// - Very large-scale problems with memory constraints
 ///
 /// ## Performance Notes
 /// - Slow convergence, especially near optimum
