@@ -8,7 +8,7 @@
         Python bindings for the globalsearch Rust crate
     </p>
     <p align="center">
-        <a href="https://docs.rs/globalsearch/latest/globalsearch/">Docs</a> | <a href="https://github.com/GermanHeim/globalsearch-rs/tree/main/python/examples">Examples</a>
+        <a href="https://germanheim.github.io/pyglobalsearch-website/api.html"> Python API Docs</a> | <a href="https://docs.rs/globalsearch/latest/globalsearch/">docs.rs</a> | <a href="https://github.com/GermanHeim/globalsearch-rs/tree/main/python/examples">Examples</a>
     </p>
 </p>
 
