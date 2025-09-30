@@ -2,7 +2,7 @@
 /// 
 /// This example solves a parameter estimation problem for the catalytic cracking of gas
 /// oil into gas and other byproducts. The problem involves estimating three reaction 
-/// coefficients (theta1, theta2, theta3) for a system of nonlinear ordinary 
+/// coefficients (θ₁, θ₂, θ₃) for a system of nonlinear ordinary 
 /// differential equations (ODEs).
 /// 
 /// The example comes from COPS 2.0: Large-Scale Optimization Problems (Problem #21)
@@ -12,17 +12,15 @@
 ///
 /// The catalytic cracking process is described by the following ODE system:
 /// 
-/// ```
-/// dy₁/dt = -(θ₁ + θ₃) * y₁²
-/// dy₂/dt = θ₁ * y₁² - θ₂ * y₂
-/// ```
+/// dy₁/dt = -(θ₁ + θ₃) × y₁²
+/// dy₂/dt = θ₁ × y₁² - θ₂ × y₂
 ///
 /// Where:
 /// - y₁(t): concentration of gas oil at time t
 /// - y₂(t): concentration of gas and byproducts at time t
 /// - θ₁, θ₂, θ₃: reaction rate coefficients (parameters to estimate)
 ///
-/// **Initial Conditions:** y₁(0) = 1.0, y₂(0) = 0.0
+/// Initial Conditions: y₁(0) = 1.0, y₂(0) = 0.0
 ///
 /// ## Parameter Estimation Problem
 ///
@@ -30,9 +28,7 @@
 /// we minimize the sum of squared residuals between the ODE solution and 
 /// experimental data:
 ///
-/// ```
 /// minimize: Σᵢ Σⱼ (yⱼ(tᵢ; θ) - zᵢⱼ)²
-/// ```
 ///
 /// Where:
 /// - yⱼ(tᵢ; θ): ODE solution for variable j at time tᵢ with parameters θ
@@ -307,7 +303,7 @@ impl Problem for CatalyticCracking {
         // Validate input dimension - must have exactly 3 parameters
         if x.len() != 3 {
             return Err(EvaluationError::InvalidInput(
-                format!("Expected 3 parameters (theta1, theta2, theta3), got {}", x.len())
+                format!("Expected 3 parameters (θ₁, θ₂, θ₃), got {}", x.len())
             ));
         }
         
@@ -318,9 +314,9 @@ impl Problem for CatalyticCracking {
         // All parameters must be positive, with upper bounds based on typical values
         // for catalytic cracking reaction rates
         array![
-            [0.001, 100.0],  // theta1: primary cracking rate
-            [0.001, 100.0],  // theta2: secondary reaction rate  
-            [0.001, 100.0],  // theta3: additional cracking rate
+            [0.001, 100.0],  // θ₁: primary cracking rate
+            [0.001, 100.0],  // θ₂: secondary reaction rate  
+            [0.001, 100.0],  // θ₃: additional cracking rate
         ]
     }
 }

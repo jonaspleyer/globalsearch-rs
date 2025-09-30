@@ -1,7 +1,7 @@
 /// 1-D Griewank function
 /// The 1-D Griewank function is defined as:
 ///
-/// $ f(x) = 1 + \frac{x^2}{4000} - \cos(x) $
+/// f(x) = 1 + x²/4000 - cos(x)
 ///
 /// The function is defined on the domain `[-600, 600]`.
 /// The function has a global minimum at `x = 0` with `f(x) = 0`.

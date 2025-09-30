@@ -1,10 +1,10 @@
 /// Six-Hump Camel Function
 /// The Six-Hump Camel function is defined as follows:
 ///
-/// $f(x) = (4 - 2.1 x_1^2 + x_1^4 / 3) x_1^2 + x_1 x_2 + (-4 + 4 x_2^2) x_2^2$
+/// f(x) = (4 - 2.1 x₁² + x₁⁴ / 3) x₁² + x₁ x₂ + (-4 + 4 x₂²) x₂²
 ///
-/// The function is defined on the domain $x_1 \in [-3, 3]$ and $x_2 \in [-2, 2]$.
-/// The function has two global minima at $f(0.0898, -0.7126) = -1.0316$ and $f(-0.0898, 0.7126) = -1.0316$.
+/// The function is defined on the domain x₁ ∈ [-3, 3] and x₂ ∈ [-2, 2].
+/// The function has two global minima at f(0.0898, -0.7126) = -1.0316 and f(-0.0898, 0.7126) = -1.0316.
 /// The function is continuous, differentiable and non-convex.
 ///
 /// References:

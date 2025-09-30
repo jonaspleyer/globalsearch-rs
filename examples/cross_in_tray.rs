@@ -1,11 +1,11 @@
 /// Cross-in-Tray function
 /// The Cross-in-Tray function is defined as:
 ///
-/// $ f(x, y) = -0.0001 * (|h(x, y)| + 1)^{0.1} $
-/// where $ h(x, y) = \sin(x) \sin(y) \exp(|100 - \sqrt{x^2 + y^2}| / \pi) $
+/// f(x, y) = -0.0001 × (|h(x, y)| + 1)^0.1
+/// where h(x, y) = sin(x) sin(y) exp(|100 - √(x² + y²)| / π)
 ///
-/// The function is defined on the domain $x \in [-10, 10]$ and $y \in [-10, 10]$.
-/// The function has four global minima at $f(1.34941, -1.34941) = -2.06261$, $f(1.34941, 1.34941) = -2.06261$, $f(-1.34941, 1.34941) = -2.06261$, and $f(-1.34941, -1.34941) = -2.06261$.
+/// The function is defined on the domain x ∈ [-10, 10] and y ∈ [-10, 10].
+/// The function has four global minima at f(1.34941, -1.34941) = -2.06261, f(1.34941, 1.34941) = -2.06261, f(-1.34941, 1.34941) = -2.06261, and f(-1.34941, -1.34941) = -2.06261.
 /// The function is continuous, differentiable and non-convex.
 ///
 /// References:

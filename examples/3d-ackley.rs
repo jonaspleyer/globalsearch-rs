@@ -1,9 +1,9 @@
 /// 3-D Ackley function
 /// The 3-D Ackley function is defined as:
 ///
-/// $ f(x) = -a \exp(-b \sqrt{\frac{\sum_{i=1}^{3} x_i^2}{3}}) - \exp(\frac{1}{3} \sum_{i=1}^{3} \cos(cx_i)) + a + exp(1) $
+/// f(x) = -a exp(-b √(∑ᵢ₌₁³ xᵢ²/3)) - exp((1/3) ∑ᵢ₌₁³ cos(cxᵢ)) + a + exp(1)
 ///
-/// With $a = 20$, $b = 0.2$ and $c = 2 pi$.
+/// With a = 20, b = 0.2 and c = 2π.
 /// The function is defined on the hypercube `[-32.768, 32.768]`.
 /// The function has a global minimum at `x = [0, 0, 0]` with `f(x) = 0`.
 /// The function is a multimodal continuous, differentiable and non-convex.
