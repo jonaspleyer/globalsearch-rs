@@ -657,6 +657,10 @@ pub struct OQNLPCheckpoint {
     /// Whether to exclude out-of-bounds solutions from being considered valid
     pub exclude_out_of_bounds: bool,
 
+    /// Batch size for parallel processing in Stage 2 (only available with rayon feature)
+    #[cfg(feature = "rayon")]
+    pub batch_iterations: Option<usize>,
+
     /// Timestamp of the checkpoint
     pub timestamp: String,
 }
@@ -949,6 +953,8 @@ mod tests_types {
             current_seed: 42,
             target_objective: Some(-1.5),
             exclude_out_of_bounds: true,
+            #[cfg(feature = "rayon")]
+            batch_iterations: Some(4),
             timestamp: "2025-07-27T12:00:00Z".to_string(),
         };
 
@@ -1063,6 +1069,8 @@ mod tests_types {
             current_seed: 0,
             target_objective: None,
             exclude_out_of_bounds: false,
+            #[cfg(feature = "rayon")]
+            batch_iterations: None,
             timestamp: "2025-07-27T10:00:00Z".to_string(),
         };
 

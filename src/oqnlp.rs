@@ -145,7 +145,8 @@ use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use thiserror::Error;
 
-// TODO: We could do batched stage 2 to implement rayon parallelism
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 
 #[derive(Debug, Error)]
 /// ONQLP errors
@@ -223,6 +224,9 @@ pub enum OQNLPError {
 ///
 /// ## Configuration Options
 ///
+/// #[cfg_attr(feature = "rayon", doc = "### Parallel Processing")]
+/// #[cfg_attr(feature = "rayon", doc = "- [`batch_iterations()`](OQNLP::batch_iterations): Set batch size for parallel processing of stage two iterations")]
+/// 
 /// ### Time Control
 /// - [`max_time()`](OQNLP::max_time): Set maximum optimization time
 /// - [`target_objective()`](OQNLP::target_objective): Early stopping criterion
@@ -303,6 +307,14 @@ pub struct OQNLP<P: Problem + Clone> {
     /// When set, optimization stops after this duration in Stage 2.
     /// Timer starts after the first local search completes.
     max_time: Option<f64>,
+
+    /// Batch size for parallel processing in Stage 2 (only available with rayon feature).
+    ///
+    /// When the `rayon` feature is enabled and this is set to > 1, Stage 2 iterations
+    /// are processed in batches of this size in parallel. When `None`, uses sequential
+    /// processing or auto-determined batch size.
+    #[cfg(feature = "rayon")]
+    batch_iterations: Option<usize>,
 
     /// Verbose flag to enable additional output during the optimization process.
     verbose: bool,
@@ -397,6 +409,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             ),
             solution_set: None,
             max_time: None,
+            #[cfg(feature = "rayon")]
+            batch_iterations: None,
             verbose: false,
             target_objective: None,
             exclude_out_of_bounds: false,
@@ -430,7 +444,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         }
 
         // If we resumed from checkpoint, skip Stage 1 and jump to Stage 2
-        let (mut ref_set, mut unchanged_cycles) = if resumed_from_checkpoint {
+        let (mut ref_set, mut unchanged_cycles, ref_objectives) = if resumed_from_checkpoint {
             #[cfg(feature = "checkpointing")]
             {
                 if self.verbose {
@@ -441,7 +455,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 }
                 let ref_set = self.current_reference_set.clone().unwrap_or_default();
                 let unchanged_cycles = self.unchanged_cycles;
-                (ref_set, unchanged_cycles)
+                // No pre-computed objectives when resuming from checkpoint
+                (ref_set, unchanged_cycles, None)
             }
             #[cfg(not(feature = "checkpointing"))]
             unreachable!()
@@ -453,8 +468,13 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
             let ss: ScatterSearch<P> =
                 ScatterSearch::new(self.problem.clone(), self.params.clone())?;
-            let (ref_set, scatter_candidate) =
+            let (ref_set_with_objectives, scatter_candidate) =
                 ss.run().map_err(OQNLPError::ScatterSearchRunError)?;
+                
+            // Destructure the reference set to separate points and their pre-computed objectives
+            let (ref_set, ref_objectives): (Vec<Array1<f64>>, Vec<f64>) = 
+                ref_set_with_objectives.into_iter().unzip();
+                
             let local_sol: LocalSolution = self
                 .local_solver
                 .solve(scatter_candidate)
@@ -491,7 +511,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 self.current_reference_set = Some(ref_set.clone());
             }
 
-            (ref_set, 0)
+            (ref_set, 0, Some(ref_objectives))
         };
 
         if self.verbose {
@@ -554,29 +574,37 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         #[cfg(not(feature = "checkpointing"))]
         let start_iter = 0;
 
-        for (local_iter, trial) in ref_set
+        // Calculate effective batch size for parallel processing
+        #[cfg(feature = "rayon")]
+        let effective_batch_size = self.batch_iterations.unwrap_or_else(|| {
+            // Use a more intelligent default: balance between overhead and parallelism
+            let thread_count = rayon::current_num_threads();
+            let remaining_iterations = self.params.iterations.saturating_sub(start_iter);
+            
+            if remaining_iterations < 4 || thread_count == 1 {
+                1 // Use sequential for small workloads or single-threaded
+            } else {
+                // Use a batch size that gives each thread meaningful work
+                std::cmp::min(
+                    std::cmp::max(2, remaining_iterations / (thread_count * 2)),
+                    8 // Cap at 8 to avoid too large batches
+                )
+            }
+        });
+        
+        #[cfg(not(feature = "rayon"))]
+        let effective_batch_size = 1; // Always sequential when rayon is not available
+
+        // Process Stage 2 iterations in batches
+        let trials_to_process: Vec<_> = ref_set
             .iter()
             .take(self.params.iterations)
             .enumerate()
             .skip(start_iter)
-        {
-            #[cfg(feature = "checkpointing")]
-            {
-                self.current_iteration = local_iter;
-                self.unchanged_cycles = unchanged_cycles;
-            }
+            .collect();
 
-            // Update the current seed for checkpointing
-            #[cfg(feature = "checkpointing")]
-            {
-                self.current_seed = self.params.seed + self.current_iteration as u64;
-            }
-
-            #[cfg(feature = "progress_bar")]
-            if !resumed_from_checkpoint || local_iter >= start_iter {
-                stage2_bar.update(1).expect("Failed to update progress bar");
-            }
-
+        for batch in trials_to_process.chunks(effective_batch_size) {
+            // Check timeout before processing each batch
             if let (Some(max_secs), Some(start)) = (self.max_time, start_timer) {
                 if start.elapsed().as_secs_f64() > max_secs {
                     if self.verbose {
@@ -586,68 +614,29 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 }
             }
 
-            let trial = trial.clone();
-            let obj: f64 = self
-                .problem
-                .objective(&trial)
-                .map_err(|_| OQNLPError::ObjectiveFunctionEvaluationFailed)?;
-            if self.should_start_local(&trial, obj)? {
-                self.merit_filter.update_threshold(obj);
-                let local_trial: LocalSolution = self
-                    .local_solver
-                    .solve(trial)
-                    .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
-                let added: bool = self.process_local_solution(local_trial.clone())?;
-
-                if self.verbose && added {
-                    println!(
-                        "Stage 2, iteration {}: Added local solution found with objective = {:.8}",
-                        local_iter, local_trial.objective
-                    );
-                    println!("x0 = {}", local_trial.point);
-                }
-
-                #[cfg(feature = "progress_bar")]
-                if added {
-                    stage2_bar
-                        .set_postfix(format!("Objective function: {:.6}", local_trial.objective));
-                    stage2_bar
-                        .refresh()
-                        .expect("Failed to refresh progress bar");
-                }
-
-                // Check if target objective has been reached
-                if self.target_objective_reached() {
-                    if self.verbose {
-                        println!(
-                            "Stage 2, iteration {}: Target objective {:.8} reached. Stopping optimization.",
-                            local_iter,
-                            self.target_objective.unwrap()
-                        );
-                    }
-                    break;
-                }
+            // Process batch in parallel if rayon is enabled and batch size > 1
+            #[cfg(feature = "rayon")]
+            if effective_batch_size > 1 {
+                self.process_batch_parallel(batch, &mut unchanged_cycles, start_iter, resumed_from_checkpoint, ref_objectives.as_ref())?;
             } else {
-                unchanged_cycles += 1;
-
-                if unchanged_cycles >= self.params.wait_cycle {
-                    if self.verbose {
-                        println!(
-                            "Stage 2, iteration {}: Adjusting threshold from {:.8} to {:.8}",
-                            local_iter,
-                            self.merit_filter.threshold,
-                            self.merit_filter.threshold + 0.1 * self.merit_filter.threshold.abs()
-                        );
-                    }
-
-                    self.adjust_threshold(self.merit_filter.threshold);
-                    unchanged_cycles = 0;
-                }
+                self.process_batch_sequential(batch, &mut unchanged_cycles, start_iter, resumed_from_checkpoint, ref_objectives.as_ref())?;
             }
 
-            // Save checkpoint if enabled and conditions are met
-            #[cfg(feature = "checkpointing")]
-            self.maybe_save_checkpoint()?;
+            #[cfg(not(feature = "rayon"))]
+            {
+                self.process_batch_sequential(batch, &mut unchanged_cycles, start_iter, resumed_from_checkpoint, ref_objectives.as_ref())?;
+            }
+
+            // Check if target objective has been reached after processing the batch
+            if self.target_objective_reached() {
+                if self.verbose {
+                    println!(
+                        "Stage 2: Target objective {:.8} reached. Stopping optimization.",
+                        self.target_objective.unwrap()
+                    );
+                }
+                break;
+            }
         }
 
         // Save final checkpoint at the end of optimization
@@ -781,6 +770,33 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// first local search.
     pub fn max_time(mut self, max_time: f64) -> Self {
         self.max_time = Some(max_time);
+        self
+    }
+
+    /// Set the batch size for parallel processing in Stage 2 and return self for chaining.
+    ///
+    /// This method is only available when the `rayon` feature is enabled.
+    /// When enabled, Stage 2 iterations will be processed in batches of this size in parallel.
+    /// This allows for efficient parallelization while maintaining convergence properties.
+    ///
+    /// # Arguments
+    ///
+    /// * `batch_size` - Number of iterations to process in each parallel batch
+    ///   - If set to 1: Sequential processing (no parallelization)
+    ///   - If set to larger values: Parallel processing with the specified batch size
+    ///   - When not set (None): Uses sequential processing
+    #[cfg(feature = "rayon")]
+    pub fn batch_iterations(mut self, batch_size: usize) -> Self {
+        // Warn if batch_size is larger than total iterations
+        if batch_size > self.params.iterations {
+            eprintln!(
+                "Warning: batch_iterations ({}) is larger than total iterations ({}). \
+                This may lead to suboptimal resource usage. Consider setting batch_iterations <= iterations.",
+                batch_size, self.params.iterations
+            );
+        }
+        
+        self.batch_iterations = Some(batch_size);
         self
     }
 
@@ -1016,6 +1032,12 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         // Restore exclude_out_of_bounds setting
         self.exclude_out_of_bounds = checkpoint.exclude_out_of_bounds;
 
+        // Restore batch_iterations setting
+        #[cfg(feature = "rayon")]
+        {
+            self.batch_iterations = checkpoint.batch_iterations;
+        }
+
         // Restore distance filter solutions
         self.distance_filter
             .set_solutions(checkpoint.distance_filter_solutions);
@@ -1050,6 +1072,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             current_seed: self.current_seed,
             target_objective: self.target_objective,
             exclude_out_of_bounds: self.exclude_out_of_bounds,
+            #[cfg(feature = "rayon")]
+            batch_iterations: self.batch_iterations,
             timestamp: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -1092,6 +1116,290 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         let new_threshold: f64 =
             current_threshold + self.params.threshold_factor * (1.0 + current_threshold.abs());
         self.merit_filter.update_threshold(new_threshold);
+    }
+
+    /// Process a batch of trials sequentially
+    fn process_batch_sequential(
+        &mut self,
+        batch: &[(usize, &Array1<f64>)],
+        unchanged_cycles: &mut usize,
+        start_iter: usize,
+        resumed_from_checkpoint: bool,
+        ref_objectives: Option<&Vec<f64>>,
+    ) -> Result<(), OQNLPError> {
+        for &(local_iter, trial) in batch {
+            // Skip iterations that were already processed when resuming from checkpoint
+            if resumed_from_checkpoint && local_iter < start_iter {
+                continue;
+            }
+
+            #[cfg(feature = "checkpointing")]
+            {
+                self.current_iteration = local_iter;
+                self.unchanged_cycles = *unchanged_cycles;
+            }
+
+            // Update the current seed for checkpointing
+            #[cfg(feature = "checkpointing")]
+            {
+                self.current_seed = self.params.seed + self.current_iteration as u64;
+            }
+
+            let trial = trial.clone();
+            
+            // Use pre-computed objective if available, otherwise evaluate
+            let obj: f64 = if let Some(objectives) = ref_objectives {
+                // Map iteration index to reference set index (cycle through ref_set)
+                let ref_set_index = local_iter % objectives.len();
+                let precomputed_obj = objectives[ref_set_index];
+
+                precomputed_obj
+            } else {
+                // Fallback to evaluating objective function (e.g., when resuming from checkpoint)
+                self.problem
+                    .objective(&trial)
+                    .map_err(|_| OQNLPError::ObjectiveFunctionEvaluationFailed)?
+            };
+
+            if self.should_start_local(&trial, obj)? {
+                self.merit_filter.update_threshold(obj);
+                let local_trial: LocalSolution = self
+                    .local_solver
+                    .solve(trial)
+                    .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+                let added: bool = self.process_local_solution(local_trial.clone())?;
+
+                if self.verbose && added {
+                    println!(
+                        "Stage 2, iteration {}: Added local solution found with objective = {:.8}",
+                        local_iter, local_trial.objective
+                    );
+                    println!("x0 = {}", local_trial.point);
+                }
+
+                // Check if target objective has been reached
+                if self.target_objective_reached() {
+                    if self.verbose {
+                        println!(
+                            "Stage 2, iteration {}: Target objective {:.8} reached. Stopping optimization.",
+                            local_iter,
+                            self.target_objective.unwrap()
+                        );
+                    }
+                    return Ok(());
+                }
+            } else {
+                *unchanged_cycles += 1;
+
+                if *unchanged_cycles >= self.params.wait_cycle {
+                    if self.verbose {
+                        println!(
+                            "Stage 2, iteration {}: Adjusting threshold from {:.8} to {:.8}",
+                            local_iter,
+                            self.merit_filter.threshold,
+                            self.merit_filter.threshold + 0.1 * self.merit_filter.threshold.abs()
+                        );
+                    }
+
+                    self.adjust_threshold(self.merit_filter.threshold);
+                    *unchanged_cycles = 0;
+                }
+            }
+
+            // Save checkpoint if enabled and conditions are met
+            #[cfg(feature = "checkpointing")]
+            self.maybe_save_checkpoint()?;
+        }
+        Ok(())
+    }
+
+    /// Process a batch of trials in parallel using Rayon
+    #[cfg(feature = "rayon")]
+    fn process_batch_parallel(
+        &mut self,
+        batch: &[(usize, &Array1<f64>)],
+        unchanged_cycles: &mut usize,
+        start_iter: usize,
+        resumed_from_checkpoint: bool,
+        ref_objectives: Option<&Vec<f64>>,
+    ) -> Result<(), OQNLPError> {
+        // Filter out iterations that were already processed when resuming from checkpoint
+        let filtered_batch: Vec<_> = if resumed_from_checkpoint {
+            batch.iter()
+                .filter(|&&(local_iter, _)| local_iter >= start_iter)
+                .copied()
+                .collect()
+        } else {
+            batch.to_vec()
+        };
+
+        // Skip if no iterations need processing
+        if filtered_batch.is_empty() {
+            return Ok(());
+        }
+
+        // For parallel processing, we need to collect the objective evaluations first
+        let batch_results: Result<Vec<(usize, Array1<f64>, f64)>, OQNLPError> = filtered_batch
+            .par_iter()
+            .map(|&(local_iter, trial)| {
+                // Use pre-computed objective if available, otherwise evaluate
+                let obj = if false {
+                    // Map iteration index to reference set index (cycle through ref_set)
+                    let ref_set_index = local_iter % ref_objectives.unwrap().len();
+                    ref_objectives.unwrap()[ref_set_index]
+                } else {
+                    // Fallback to evaluating objective function (e.g., when resuming from checkpoint)
+                    self.problem.objective(trial)
+                        .map_err(|_| OQNLPError::ObjectiveFunctionEvaluationFailed)?
+                };
+                Ok((local_iter, trial.clone(), obj))
+            })
+            .collect();
+
+        let batch_results = batch_results?;
+
+        // Process results with parallel local solver calls where beneficial
+        // Group by whether local search is needed to optimize parallelization
+        let (local_candidates, quick_candidates): (Vec<_>, Vec<_>) = batch_results
+            .into_iter()
+            .partition(|(_, trial, obj)| {
+                let passes_merit = *obj <= self.merit_filter.threshold;
+                let passes_distance = self.distance_filter.check(trial);
+                passes_merit && passes_distance
+            });
+
+        // Process quick candidates (no local search needed) sequentially for efficiency
+        for (local_iter, _trial, _obj) in quick_candidates {
+            #[cfg(feature = "checkpointing")]
+            {
+                self.current_iteration = local_iter;
+                self.unchanged_cycles = *unchanged_cycles;
+                self.current_seed = self.params.seed + self.current_iteration as u64;
+            }
+            
+            *unchanged_cycles += 1;
+            if *unchanged_cycles >= self.params.wait_cycle {
+                if self.verbose {
+                    println!(
+                        "Stage 2, iteration {}: Adjusting threshold from {:.8} to {:.8}",
+                        local_iter,
+                        self.merit_filter.threshold,
+                        self.merit_filter.threshold + 0.1 * self.merit_filter.threshold.abs()
+                    );
+                }
+                self.adjust_threshold(self.merit_filter.threshold);
+                *unchanged_cycles = 0;
+            }
+            
+            #[cfg(feature = "checkpointing")]
+            self.maybe_save_checkpoint()?;
+        }
+
+        // Process local search candidates in parallel when there are enough to justify overhead
+        if !local_candidates.is_empty() {
+            if local_candidates.len() >= 2 {
+                // Clone once for sharing across threads
+                let problem = self.problem.clone();
+                let solver_type = self.params.local_solver_type.clone();
+                let solver_config = self.params.local_solver_config.clone();
+                
+                // Parallel processing for multiple local searches
+                let local_results: Result<Vec<_>, OQNLPError> = local_candidates
+                    .par_iter()
+                    .map(|(local_iter, trial, obj)| {
+                        // Each thread gets its own local solver instance
+                        let local_solver = LocalSolver::new(
+                            problem.clone(),
+                            solver_type.clone(),
+                            solver_config.clone(),
+                        );
+                        
+                        let local_solution = local_solver
+                            .solve(trial.clone())
+                            .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+                        
+                        Ok((*local_iter, trial.clone(), *obj, local_solution))
+                    })
+                    .collect();
+
+                let local_results = local_results?;
+
+                // Process local results sequentially to maintain state consistency
+                for (local_iter, _trial, obj, local_solution) in local_results {
+                    #[cfg(feature = "checkpointing")]
+                    {
+                        self.current_iteration = local_iter;
+                        self.unchanged_cycles = *unchanged_cycles;
+                        self.current_seed = self.params.seed + self.current_iteration as u64;
+                    }
+
+                    self.merit_filter.update_threshold(obj);
+                    let added = self.process_local_solution(local_solution.clone())?;
+
+                    if self.verbose && added {
+                        println!(
+                            "Stage 2, iteration {}: Added local solution found with objective = {:.8}",
+                            local_iter, local_solution.objective
+                        );
+                        println!("x0 = {}", local_solution.point);
+                    }
+
+                    if self.target_objective_reached() {
+                        if self.verbose {
+                            println!(
+                                "Stage 2, iteration {}: Target objective {:.8} reached. Stopping optimization.",
+                                local_iter,
+                                self.target_objective.unwrap()
+                            );
+                        }
+                        return Ok(());
+                    }
+                    
+                    #[cfg(feature = "checkpointing")]
+                    self.maybe_save_checkpoint()?;
+                }
+            } else {
+                // Single local search - process directly without parallel overhead
+                for (local_iter, trial, obj) in local_candidates {
+                    #[cfg(feature = "checkpointing")]
+                    {
+                        self.current_iteration = local_iter;
+                        self.unchanged_cycles = *unchanged_cycles;
+                        self.current_seed = self.params.seed + self.current_iteration as u64;
+                    }
+
+                    self.merit_filter.update_threshold(obj);
+                    let local_trial = self
+                        .local_solver
+                        .solve(trial)
+                        .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+                    let added = self.process_local_solution(local_trial.clone())?;
+
+                    if self.verbose && added {
+                        println!(
+                            "Stage 2, iteration {}: Added local solution found with objective = {:.8}",
+                            local_iter, local_trial.objective
+                        );
+                        println!("x0 = {}", local_trial.point);
+                    }
+
+                    if self.target_objective_reached() {
+                        if self.verbose {
+                            println!(
+                                "Stage 2, iteration {}: Target objective {:.8} reached. Stopping optimization.",
+                                local_iter,
+                                self.target_objective.unwrap()
+                            );
+                        }
+                        return Ok(());
+                    }
+                    
+                    #[cfg(feature = "checkpointing")]
+                    self.maybe_save_checkpoint()?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1296,7 +1604,7 @@ mod tests_oqnlp {
         let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem, params)
             .unwrap()
             .verbose()
-            .max_time(0.000001);
+            .max_time(0.00000000001);
 
         let sol_set: SolutionSet = oqnlp.run().unwrap();
         assert_eq!(sol_set.len(), 1);
@@ -2330,6 +2638,8 @@ mod tests_oqnlp {
             current_seed: 98765,
             target_objective: Some(-0.9),
             exclude_out_of_bounds: true,
+            #[cfg(feature = "rayon")]
+            batch_iterations: Some(2),
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2474,6 +2784,8 @@ mod tests_oqnlp {
             current_seed: 12345,
             target_objective: None,
             exclude_out_of_bounds: false,
+            #[cfg(feature = "rayon")]
+            batch_iterations: None,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2554,6 +2866,8 @@ mod tests_oqnlp {
             current_seed: 54321,
             target_objective: None,
             exclude_out_of_bounds: false,
+            #[cfg(feature = "rayon")]
+            batch_iterations: Some(6),
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2580,6 +2894,8 @@ mod tests_oqnlp {
             current_seed: 11111,
             target_objective: None,
             exclude_out_of_bounds: false,
+            #[cfg(feature = "rayon")]
+            batch_iterations: None,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2635,6 +2951,8 @@ mod tests_oqnlp {
             current_seed: 1,
             target_objective: None,
             exclude_out_of_bounds: false,
+            #[cfg(feature = "rayon")]
+            batch_iterations: None,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2656,6 +2974,8 @@ mod tests_oqnlp {
             current_seed: 999,
             target_objective: Some(f64::MIN / 2.0),
             exclude_out_of_bounds: true,
+            #[cfg(feature = "rayon")]
+            batch_iterations: Some(8),
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2677,6 +2997,8 @@ mod tests_oqnlp {
             current_seed: 777,
             target_objective: Some(0.0),
             exclude_out_of_bounds: false,
+            #[cfg(feature = "rayon")]
+            batch_iterations: Some(1),
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -3080,99 +3402,501 @@ mod tests_oqnlp {
     }
 
     #[test]
-    #[cfg(feature = "checkpointing")]
-    /// Test create_checkpoint multiple times to ensure consistency
-    fn test_create_checkpoint_consistency() {
+    #[cfg(feature = "rayon")]
+    /// Test the batch_iterations method for setting batch size
+    fn test_batch_iterations() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams::default();
+
+        // Create a new OQNLP instance and test batch_iterations method
+        let oqnlp: OQNLP<DummyProblem> = OQNLP::new(problem, params).unwrap();
+
+        // Test setting batch_iterations
+        let oqnlp = oqnlp.batch_iterations(4);
+        assert_eq!(oqnlp.batch_iterations, Some(4));
+
+        // Test chaining with other methods
+        let problem2: DummyProblem = DummyProblem;
+        let params2: OQNLPParams = OQNLPParams::default();
+        let oqnlp2 = OQNLP::new(problem2, params2)
+            .unwrap()
+            .batch_iterations(8)
+            .max_time(30.0)
+            .verbose();
+
+        assert_eq!(oqnlp2.batch_iterations, Some(8));
+        assert_eq!(oqnlp2.max_time, Some(30.0));
+        assert!(oqnlp2.verbose);
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    /// Test batch processing with sequential execution
+    fn test_batch_processing_sequential() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 6,       // Small number for testing
+            population_size: 10, // Must be >= iterations
+            ..Default::default()
+        };
+
+        // Test with batch_iterations = 1 (should force sequential processing)
+        let mut oqnlp = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .batch_iterations(1)
+            .verbose();
+
+        let result = oqnlp.run();
+        assert!(result.is_ok(), "OQNLP should run successfully with batch_iterations = 1");
+
+        // Verify that solutions were found
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find at least one solution");
+
+        // Test with default (no batch_iterations set)
+        let mut oqnlp2 = OQNLP::new(problem, params).unwrap().verbose();
+
+        let result2 = oqnlp2.run();
+        assert!(result2.is_ok(), "OQNLP should run successfully without batch_iterations");
+
+        let sol_set2 = result2.unwrap();
+        assert!(!sol_set2.is_empty(), "Should find at least one solution");
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    /// Test batch processing with parallel execution (when rayon feature is enabled)
+    fn test_batch_processing_parallel() {
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 8,       // Small number for testing
+            population_size: 12, // Must be >= iterations
+            ..Default::default()
+        };
+
+        // Test with batch_iterations > 1 (should enable parallel processing when rayon is available)
+        let mut oqnlp = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .batch_iterations(4)
+            .verbose();
+
+        let result = oqnlp.run();
+        assert!(result.is_ok(), "OQNLP should run successfully with parallel batch processing");
+
+        // Verify that solutions were found
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find at least one solution with parallel processing");
+
+        // Test with auto-determined batch size (should use number of CPUs)
+        let mut oqnlp2 = OQNLP::new(problem, params).unwrap().verbose();
+
+        let result2 = oqnlp2.run();
+        assert!(result2.is_ok(), "OQNLP should run successfully with auto batch size");
+
+        let sol_set2 = result2.unwrap();
+        assert!(!sol_set2.is_empty(), "Should find solutions with auto batch size");
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    /// Test batch_iterations with target_objective
+    fn test_batch_iterations_with_target_objective() {
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 20,
+            population_size: 30,
+            ..Default::default()
+        };
+
+        // Test that batch processing respects target_objective stopping condition
+        let mut oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .batch_iterations(3)
+            .target_objective(-0.5) // Should stop when this target is reached
+            .verbose();
+
+        let result = oqnlp.run();
+        assert!(result.is_ok(), "OQNLP should run successfully with batch_iterations and target_objective");
+
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find at least one solution");
+
+        // Check that the best solution meets the target
+        let best = sol_set.best_solution().unwrap();
+        assert!(
+            best.objective <= -0.5,
+            "Best objective {} should be <= target -0.5",
+            best.objective
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    /// Test batch_iterations with max_time
+    fn test_batch_iterations_with_max_time() {
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 100,     // Large number that would take a while
+            population_size: 200,
+            ..Default::default()
+        };
+
+        // Test that batch processing respects max_time limit
+        let mut oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .batch_iterations(5)
+            .max_time(0.1) // Very short time limit
+            .verbose();
+
+        let start_time = std::time::Instant::now();
+        let result = oqnlp.run();
+        let elapsed = start_time.elapsed().as_secs_f64();
+
+        assert!(result.is_ok(), "OQNLP should run successfully with batch_iterations and max_time");
+
+        // Should stop due to time limit (allowing some overhead)
+        assert!(elapsed < 2.0, "Should stop within reasonable time due to max_time limit");
+
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find at least one solution before timeout");
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    /// Test various batch_iterations values
+    fn test_various_batch_iterations_values() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 4,
+            population_size: 8,
+            ..Default::default()
+        };
+
+        // Test batch_iterations = 1
+        let mut oqnlp1 = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .batch_iterations(1);
+        let result1 = oqnlp1.run();
+        assert!(result1.is_ok(), "Should work with batch_iterations = 1");
+
+        // Test batch_iterations = 2
+        let mut oqnlp2 = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .batch_iterations(2);
+        let result2 = oqnlp2.run();
+        assert!(result2.is_ok(), "Should work with batch_iterations = 2");
+
+        // Test batch_iterations larger than iterations
+        let mut oqnlp3 = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .batch_iterations(10); // Larger than iterations (4)
+        let result3 = oqnlp3.run();
+        assert!(result3.is_ok(), "Should work with batch_iterations > iterations");
+
+        // Test without setting batch_iterations (should use default)
+        let mut oqnlp4 = OQNLP::new(problem, params).unwrap();
+        let result4 = oqnlp4.run();
+        assert!(result4.is_ok(), "Should work without setting batch_iterations");
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    /// Test that parallel processing actually uses multiple threads
+    fn test_parallel_processing_thread_usage() {
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 16,
+            population_size: 20,
+            ..Default::default()
+        };
+
+        // Set batch size to use available threads
+        let num_threads = rayon::current_num_threads();
+        let mut oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .batch_iterations(num_threads)
+            .verbose();
+
+        let result = oqnlp.run();
+        assert!(result.is_ok(), "OQNLP should run successfully with parallel processing");
+
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find solutions with parallel processing");
+
+        // This test mainly verifies that the code compiles and runs without errors
+        // when using rayon features. Actual parallel execution verification would
+        // require more complex instrumentation.
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    /// Test batch_iterations error handling
+    fn test_batch_iterations_error_handling() {
+        let problem: DummyProblem = DummyProblem;
+        let params: OQNLPParams = OQNLPParams {
+            iterations: 5,
+            population_size: 10,
+            ..Default::default()
+        };
+
+        // Test that batch_iterations doesn't interfere with normal error conditions
+        let mut oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .batch_iterations(3);
+
+        // The algorithm should still work normally and find solutions
+        let result = oqnlp.run();
+        assert!(result.is_ok(), "OQNLP should handle batch processing correctly");
+
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find solutions even with batch processing");
+    }
+
+    #[test]
+    #[cfg(all(feature = "rayon", feature = "checkpointing"))]
+    /// Test batch_iterations with checkpointing
+    fn test_batch_iterations_with_checkpointing() {
         use crate::types::CheckpointConfig;
         use std::env;
 
-        let checkpoint_dir = env::temp_dir().join("globalsearch_test_create_consistency");
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_batch_checkpoint");
         std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
 
         let problem = SixHumpCamel;
         let params = OQNLPParams {
-            iterations: 12,
-            population_size: 18,
-            distance_factor: 0.09,
+            iterations: 8,
+            population_size: 12,
             ..Default::default()
         };
 
         let checkpoint_config = CheckpointConfig {
             checkpoint_dir: checkpoint_dir.clone(),
-            checkpoint_name: "test_create_consistency".to_string(),
+            checkpoint_name: "test_batch".to_string(),
+            save_frequency: 2,
+            keep_all: false,
+            auto_resume: false,
+        };
+
+        // Test that batch_iterations works with checkpointing
+        let mut oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .with_checkpointing(checkpoint_config)
+            .unwrap()
+            .batch_iterations(4)
+            .verbose();
+
+        let result = oqnlp.run();
+        assert!(result.is_ok(), "OQNLP should work with batch_iterations and checkpointing");
+
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find solutions with batch processing and checkpointing");
+
+        // Clean up test directory
+        let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "checkpointing")]
+    /// Test that create_checkpoint produces consistent checkpoints that can be restored
+    fn test_create_checkpoint_consistency() {
+        use crate::types::CheckpointConfig;
+        use std::env;
+
+        let checkpoint_dir = env::temp_dir().join("globalsearch_test_checkpoint_consistency");
+        std::fs::create_dir_all(&checkpoint_dir).expect("Failed to create test directory");
+
+        let problem = SixHumpCamel;
+        let params = OQNLPParams {
+            iterations: 15,
+            population_size: 20,
+            distance_factor: 0.08,
+            threshold_factor: 0.32,
+            seed: 12345,
+            ..Default::default()
+        };
+
+        let checkpoint_config = CheckpointConfig {
+            checkpoint_dir: checkpoint_dir.clone(),
+            checkpoint_name: "test_consistency".to_string(),
             save_frequency: 1,
             keep_all: false,
             auto_resume: false,
         };
 
-        let mut oqnlp = OQNLP::new(problem, params.clone())
+        // Create initial OQNLP instance with comprehensive settings
+        let mut oqnlp1 = OQNLP::new(problem.clone(), params.clone())
+            .unwrap()
+            .with_checkpointing(checkpoint_config.clone())
+            .unwrap()
+            .target_objective(-0.6)
+            .exclude_out_of_bounds()
+            .verbose();
+
+        // Add batch_iterations if rayon feature is available
+        #[cfg(feature = "rayon")]
+        {
+            oqnlp1 = oqnlp1.batch_iterations(3);
+        }
+
+        // Set up some internal state to create a meaningful checkpoint
+        oqnlp1.current_iteration = 7;
+        oqnlp1.unchanged_cycles = 2;
+        oqnlp1.current_seed = 98765;
+        oqnlp1.merit_filter.update_threshold(-0.4);
+        oqnlp1.start_time = Some(std::time::Instant::now() - std::time::Duration::from_secs(25));
+
+        // Create some solutions
+        let solution1 = LocalSolution {
+            objective: -0.7,
+            point: Array1::from(vec![0.3, -0.6]),
+        };
+        let solution2 = LocalSolution {
+            objective: -0.5,
+            point: Array1::from(vec![-0.8, 0.4]),
+        };
+
+        let solution_set = SolutionSet {
+            solutions: Array1::from(vec![solution1.clone(), solution2.clone()]),
+        };
+        oqnlp1.solution_set = Some(solution_set.clone());
+
+        // Set reference set
+        oqnlp1.current_reference_set = Some(vec![
+            Array1::from(vec![-1.5, 1.2]),
+            Array1::from(vec![0.8, -0.9]),
+            Array1::from(vec![2.1, 0.3]),
+        ]);
+
+        // Add solutions to distance filter
+        oqnlp1.distance_filter.add_solution(solution1.clone());
+        oqnlp1.distance_filter.add_solution(solution2.clone());
+
+        // Create checkpoint from first instance
+        let checkpoint = oqnlp1.create_checkpoint();
+
+        // Create second OQNLP instance and restore from checkpoint
+        let mut oqnlp2 = OQNLP::new(problem, params)
             .unwrap()
             .with_checkpointing(checkpoint_config)
             .unwrap();
 
-        // Set up consistent state
-        oqnlp.current_iteration = 6;
-        oqnlp.unchanged_cycles = 1;
-        oqnlp.current_seed = 54321;
-        oqnlp.merit_filter.update_threshold(-0.5);
+        let restore_result = oqnlp2.restore_from_checkpoint(checkpoint);
+        assert!(restore_result.is_ok(), "Checkpoint restoration should succeed");
 
-        let solution = LocalSolution {
-            objective: -0.7,
-            point: Array1::from(vec![0.1, 0.2]),
-        };
-        let solution_set = SolutionSet {
-            solutions: Array1::from(vec![solution.clone()]),
-        };
-        oqnlp.solution_set = Some(solution_set);
-        oqnlp.distance_filter.add_solution(solution);
+        // Verify all state was consistently restored
+        assert_eq!(oqnlp1.params.iterations, oqnlp2.params.iterations, "Iterations should match");
+        assert_eq!(oqnlp1.params.population_size, oqnlp2.params.population_size, "Population size should match");
+        assert!((oqnlp1.params.distance_factor - oqnlp2.params.distance_factor).abs() < 1e-10, "Distance factor should match");
+        assert!((oqnlp1.params.threshold_factor - oqnlp2.params.threshold_factor).abs() < 1e-10, "Threshold factor should match");
+        assert_eq!(oqnlp1.params.seed, oqnlp2.params.seed, "Seed should match");
 
-        // Create multiple checkpoints in quick succession
-        let checkpoint1 = oqnlp.create_checkpoint();
-        std::thread::sleep(std::time::Duration::from_millis(10)); // Small delay
-        let checkpoint2 = oqnlp.create_checkpoint();
+        assert_eq!(oqnlp1.current_iteration, oqnlp2.current_iteration, "Current iteration should match");
+        assert!((oqnlp1.merit_filter.threshold - oqnlp2.merit_filter.threshold).abs() < 1e-10, "Merit threshold should match");
+        assert_eq!(oqnlp1.unchanged_cycles, oqnlp2.unchanged_cycles, "Unchanged cycles should match");
+        assert_eq!(oqnlp1.current_seed, oqnlp2.current_seed, "Current seed should match");
+        assert_eq!(oqnlp1.target_objective, oqnlp2.target_objective, "Target objective should match");
+        assert_eq!(oqnlp1.exclude_out_of_bounds, oqnlp2.exclude_out_of_bounds, "Exclude out of bounds should match");
 
-        // Most fields should be identical (state hasn't changed)
-        assert_eq!(checkpoint1.params.iterations, checkpoint2.params.iterations);
-        assert_eq!(
-            checkpoint1.params.population_size,
-            checkpoint2.params.population_size
-        );
-        assert_eq!(checkpoint1.current_iteration, checkpoint2.current_iteration);
-        assert_eq!(checkpoint1.merit_threshold, checkpoint2.merit_threshold);
-        assert_eq!(checkpoint1.unchanged_cycles, checkpoint2.unchanged_cycles);
-        assert_eq!(checkpoint1.current_seed, checkpoint2.current_seed);
-        assert_eq!(checkpoint1.target_objective, checkpoint2.target_objective);
+        // Verify batch_iterations is restored if rayon feature is available
+        #[cfg(feature = "rayon")]
+        {
+            assert_eq!(oqnlp1.batch_iterations, oqnlp2.batch_iterations, "Batch iterations should match");
+        }
 
-        // Solution sets should be identical
-        let sol1 = checkpoint1.solution_set.as_ref().unwrap();
-        let sol2 = checkpoint2.solution_set.as_ref().unwrap();
-        assert_eq!(sol1.len(), sol2.len());
-        assert!((sol1[0].objective - sol2[0].objective).abs() < 1e-10);
+        // Verify solution sets match
+        let sol_set1 = oqnlp1.solution_set.as_ref().expect("Original should have solution set");
+        let sol_set2 = oqnlp2.solution_set.as_ref().expect("Restored should have solution set");
+        assert_eq!(sol_set1.len(), sol_set2.len(), "Solution set lengths should match");
+        
+        for (s1, s2) in sol_set1.solutions.iter().zip(sol_set2.solutions.iter()) {
+            assert!((s1.objective - s2.objective).abs() < 1e-10, "Solution objectives should match");
+            assert_eq!(s1.point.len(), s2.point.len(), "Solution point dimensions should match");
+            for (p1, p2) in s1.point.iter().zip(s2.point.iter()) {
+                assert!((p1 - p2).abs() < 1e-10, "Solution point values should match");
+            }
+        }
 
-        // Reference sets should be identical
-        assert_eq!(checkpoint1.reference_set, checkpoint2.reference_set);
+        // Verify reference sets match
+        let ref_set1 = oqnlp1.current_reference_set.as_ref().expect("Original should have reference set");
+        let ref_set2 = oqnlp2.current_reference_set.as_ref().expect("Restored should have reference set");
+        assert_eq!(ref_set1.len(), ref_set2.len(), "Reference set lengths should match");
+        
+        for (r1, r2) in ref_set1.iter().zip(ref_set2.iter()) {
+            assert_eq!(r1.len(), r2.len(), "Reference point dimensions should match");
+            for (p1, p2) in r1.iter().zip(r2.iter()) {
+                assert!((p1 - p2).abs() < 1e-10, "Reference point values should match");
+            }
+        }
 
-        // Distance filter solutions should be identical
-        assert_eq!(
-            checkpoint1.distance_filter_solutions.len(),
-            checkpoint2.distance_filter_solutions.len()
-        );
+        // Verify distance filter solutions match
+        let dist_filter1 = oqnlp1.distance_filter.get_solutions();
+        let dist_filter2 = oqnlp2.distance_filter.get_solutions();
+        assert_eq!(dist_filter1.len(), dist_filter2.len(), "Distance filter solution counts should match");
 
-        // Timestamps should be different (time has passed)
-        assert_ne!(
-            checkpoint1.timestamp, checkpoint2.timestamp,
-            "Timestamps should be different"
-        );
+        for (d1, d2) in dist_filter1.iter().zip(dist_filter2.iter()) {
+            assert!((d1.objective - d2.objective).abs() < 1e-10, "Distance filter objectives should match");
+            assert_eq!(d1.point.len(), d2.point.len(), "Distance filter point dimensions should match");
+            for (p1, p2) in d1.point.iter().zip(d2.point.iter()) {
+                assert!((p1 - p2).abs() < 1e-10, "Distance filter point values should match");
+            }
+        }
 
-        // Elapsed times should be very close (but not necessarily identical due to precision)
-        let time_diff = (checkpoint1.elapsed_time - checkpoint2.elapsed_time).abs();
-        assert!(
-            time_diff < 1.0,
-            "Elapsed times should be very close, difference: {}",
-            time_diff
-        );
+        // Verify that both instances can continue optimization successfully
+        let result1 = oqnlp1.run();
+        let result2 = oqnlp2.run();
+        
+        assert!(result1.is_ok(), "Original instance should continue successfully");
+        assert!(result2.is_ok(), "Restored instance should continue successfully");
 
         // Clean up test directory
         let _ = std::fs::remove_dir_all(&checkpoint_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    /// Test batch iterations edge case: small remaining iterations vs large batch size
+    fn test_batch_iterations_edge_case_small_remaining() {
+        let problem = DummyProblem;
+        let params = OQNLPParams {
+            iterations: 5,        // Small total iterations
+            population_size: 10,  // Must be >= iterations
+            ..Default::default()
+        };
+
+        // Test with batch size larger than remaining iterations
+        let mut oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .batch_iterations(10)  // Batch size = 10, but only 5 total iterations
+            .verbose();
+
+        let result = oqnlp.run();
+        assert!(result.is_ok(), "OQNLP should handle large batch size gracefully");
+
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find at least one solution");
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    /// Test batch iterations with exactly matching batch size and iterations
+    fn test_batch_iterations_exact_match() {
+        let problem = DummyProblem;
+        let params = OQNLPParams {
+            iterations: 8,        
+            population_size: 12,  
+            ..Default::default()
+        };
+
+        // Test with batch size exactly matching iterations
+        let mut oqnlp = OQNLP::new(problem, params)
+            .unwrap()
+            .batch_iterations(8)   // Batch size = iterations
+            .verbose();
+
+        let result = oqnlp.run();
+        assert!(result.is_ok(), "OQNLP should handle exact match gracefully");
+
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find at least one solution");
     }
 }

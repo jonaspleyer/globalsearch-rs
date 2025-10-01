@@ -44,3 +44,7 @@ harness = false
 [[bench]]
 name = "scatter_search"
 harness = false
+
+[[bench]]
+name = "batch_iterations"
+harness = false

@@ -105,6 +105,7 @@ pub struct ScatterSearch<P: Problem> {
     problem: P,
     params: OQNLPParams,
     reference_set: Vec<Array1<f64>>,
+    reference_set_objectives: Vec<f64>,
     bounds: VariableBounds,
     rng: Mutex<StdRng>,
     #[cfg(feature = "progress_bar")]
@@ -122,8 +123,9 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         let seed: u64 = params.seed;
         let ss: ScatterSearch<P> = Self {
             problem,
-            params,
-            reference_set: Vec::new(),
+            params: params.clone(),
+            reference_set: Vec::with_capacity(params.population_size),
+            reference_set_objectives: Vec::with_capacity(params.population_size),
             bounds,
             rng: Mutex::new(StdRng::seed_from_u64(seed)),
             #[cfg(feature = "progress_bar")]
@@ -135,8 +137,8 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
     /// Run the Scatter Search algorithm
     ///
-    /// Returns the reference set and the best solution found
-    pub fn run(mut self) -> Result<(Vec<Array1<f64>>, Array1<f64>), ScatterSearchError> {
+    /// Returns the reference set with objective values and the best solution found
+    pub fn run(mut self) -> Result<(Vec<(Array1<f64>, f64)>, Array1<f64>), ScatterSearchError> {
         #[cfg(feature = "progress_bar")]
         {
             self.progress_bar = Some(
@@ -157,7 +159,14 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             pb.set_description("Stage 1, found best solution");
             pb.update(1).expect("Failed to update progress bar");
         }
-        Ok((self.reference_set, best))
+        
+        let reference_set_with_objectives: Vec<(Array1<f64>, f64)> = self
+            .reference_set
+            .into_iter()
+            .zip(self.reference_set_objectives.into_iter())
+            .collect();
+            
+        Ok((reference_set_with_objectives, best))
     }
 
     pub fn initialize_reference_set(&mut self) -> Result<(), ScatterSearchError> {
@@ -174,7 +183,15 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         }
 
         self.diversify_reference_set(&mut ref_set)?;
+        
+        // Evaluate objectives for the initial reference set
+        let objectives: Vec<f64> = ref_set
+            .iter()
+            .map(|point| self.problem.objective(point))
+            .collect::<Result<Vec<f64>, _>>()?;
+            
         self.reference_set = ref_set;
+        self.reference_set_objectives = objectives;
 
         #[cfg(feature = "progress_bar")]
         if let Some(pb) = &mut self.progress_bar {
@@ -465,8 +482,10 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         all_points.select_nth_unstable_by(pop_size, |a, b| a.1.total_cmp(&b.1));
         all_points.truncate(pop_size);
 
-        // Update reference set
-        self.reference_set = all_points.into_iter().map(|(p, _)| p).collect();
+        // Update reference set and objectives
+        let (points, objectives): (Vec<Array1<f64>>, Vec<f64>) = all_points.into_iter().unzip();
+        self.reference_set = points;
+        self.reference_set_objectives = objectives;
 
         Ok(())
     }
@@ -591,7 +610,7 @@ mod tests_scatter_search {
 
         assert_eq!(ref_set.len(), 100);
 
-        for point in ref_set {
+        for (point, _obj) in ref_set {
             for i in 0..point.len() {
                 assert!(point[i] >= bounds.lower[i]);
                 assert!(point[i] <= bounds.upper[i]);
