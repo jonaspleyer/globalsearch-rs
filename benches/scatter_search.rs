@@ -35,7 +35,6 @@
 //! ```bash
 //! cargo bench scatter_search -- --output-format html
 //! ```
-
 use criterion::{criterion_group, criterion_main, Criterion};
 use globalsearch::problem::Problem;
 use globalsearch::scatter_search::ScatterSearch;

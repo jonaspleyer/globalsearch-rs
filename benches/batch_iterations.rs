@@ -11,8 +11,10 @@
 //! - 8 (high parallelism)
 //! - 16 (very high parallelism)
 //! 
-//! ## Benchmark Configuration
-//! 
+//! Run the benchmark with:
+//! ```bash
+//! cargo bench --features rayon --bench batch_iterations
+//! ```
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use globalsearch::{problem::Problem, oqnlp::OQNLP, types::{OQNLPParams, EvaluationError}};
 use ndarray::{array, Array1, Array2};
