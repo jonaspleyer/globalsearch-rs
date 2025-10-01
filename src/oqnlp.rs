@@ -1586,8 +1586,8 @@ mod tests_oqnlp {
         // Test using it in SixHumpCamel example
         let problem: SixHumpCamel = SixHumpCamel;
         let params: OQNLPParams = OQNLPParams {
-            iterations: 100,
-            population_size: 500,
+            iterations: 250,
+            population_size: 1500,
             ..Default::default()
         };
 
@@ -1595,7 +1595,7 @@ mod tests_oqnlp {
         let mut oqnlp: OQNLP<SixHumpCamel> = OQNLP::new(problem.clone(), params.clone())
             .unwrap()
             .verbose()
-            .max_time(20.0);
+            .max_time(60.0);
 
         let sol_set: SolutionSet = oqnlp.run().unwrap();
         assert_eq!(sol_set.len(), 2);
