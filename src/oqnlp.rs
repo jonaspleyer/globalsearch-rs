@@ -585,10 +585,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 1 // Use sequential for small workloads or single-threaded
             } else {
                 // Use a batch size that gives each thread meaningful work
-                std::cmp::min(
-                    std::cmp::max(2, remaining_iterations / (thread_count * 2)),
-                    8 // Cap at 8 to avoid too large batches
-                )
+                (remaining_iterations / (thread_count * 2)).clamp(2, 8)
             }
         });
         
@@ -1151,9 +1148,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             let obj: f64 = if let Some(objectives) = ref_objectives {
                 // Map iteration index to reference set index (cycle through ref_set)
                 let ref_set_index = local_iter % objectives.len();
-                let precomputed_obj = objectives[ref_set_index];
 
-                precomputed_obj
+                objectives[ref_set_index]
             } else {
                 // Fallback to evaluating objective function (e.g., when resuming from checkpoint)
                 self.problem

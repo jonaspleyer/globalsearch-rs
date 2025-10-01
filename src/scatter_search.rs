@@ -100,6 +100,9 @@ pub enum ScatterSearchError {
     EvaluationError(#[from] crate::types::EvaluationError),
 }
 
+/// Type alias for the complex return type of scatter search run method
+type ScatterSearchResult = (Vec<(Array1<f64>, f64)>, Array1<f64>);
+
 /// Scatter Search algorithm implementation struct
 pub struct ScatterSearch<P: Problem> {
     problem: P,
@@ -138,7 +141,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     /// Run the Scatter Search algorithm
     ///
     /// Returns the reference set with objective values and the best solution found
-    pub fn run(mut self) -> Result<(Vec<(Array1<f64>, f64)>, Array1<f64>), ScatterSearchError> {
+    pub fn run(mut self) -> Result<ScatterSearchResult, ScatterSearchError> {
         #[cfg(feature = "progress_bar")]
         {
             self.progress_bar = Some(
@@ -163,7 +166,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         let reference_set_with_objectives: Vec<(Array1<f64>, f64)> = self
             .reference_set
             .into_iter()
-            .zip(self.reference_set_objectives.into_iter())
+            .zip(self.reference_set_objectives)
             .collect();
             
         Ok((reference_set_with_objectives, best))
