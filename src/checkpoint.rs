@@ -440,6 +440,8 @@ mod tests_checkpointing {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -485,6 +487,8 @@ mod tests_checkpointing {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -523,6 +527,8 @@ mod tests_checkpointing {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -623,6 +629,8 @@ mod tests_checkpointing {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -702,6 +710,8 @@ mod tests_checkpointing {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -749,6 +759,8 @@ mod tests_checkpointing {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -795,6 +807,8 @@ mod tests_checkpointing {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
         };
 
@@ -882,6 +896,8 @@ mod tests_checkpointing {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: Some(7),
+            #[cfg(feature = "rayon")]
+            enable_parallel: true,
             timestamp: "2025-08-01T12:00:00Z".to_string(),
         };
 

@@ -319,6 +319,14 @@ pub struct OQNLP<P: Problem + Clone> {
     /// Verbose flag to enable additional output during the optimization process.
     verbose: bool,
 
+    /// Enable parallel processing when Rayon is available.
+    ///
+    /// When `true` (default), uses parallel processing for applicable operations when
+    /// the `rayon` feature is enabled. When `false`, forces sequential processing
+    /// even if Rayon is available. Useful for benchmarking and Python bindings.
+    #[cfg(feature = "rayon")]
+    enable_parallel: bool,
+
     /// Early stopping criterion based on objective value.
     ///
     /// Optimization stops when a solution with objective ≤ this value is found.
@@ -412,6 +420,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             #[cfg(feature = "rayon")]
             batch_iterations: None,
             verbose: false,
+            #[cfg(feature = "rayon")]
+            enable_parallel: true, // Default to true for parallel processing
             target_objective: None,
             exclude_out_of_bounds: false,
             #[cfg(feature = "checkpointing")]
@@ -466,8 +476,11 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 println!("Starting Stage 1");
             }
 
-            let ss: ScatterSearch<P> =
-                ScatterSearch::new(self.problem.clone(), self.params.clone())?;
+            #[cfg(feature = "rayon")]
+            let ss: ScatterSearch<P> = ScatterSearch::new(self.problem.clone(), self.params.clone())?
+                .parallel(self.enable_parallel);
+            #[cfg(not(feature = "rayon"))]
+            let ss: ScatterSearch<P> = ScatterSearch::new(self.problem.clone(), self.params.clone())?;
             let (ref_set_with_objectives, scatter_candidate) =
                 ss.run().map_err(OQNLPError::ScatterSearchRunError)?;
                 
@@ -576,18 +589,22 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
         // Calculate effective batch size for parallel processing
         #[cfg(feature = "rayon")]
-        let effective_batch_size = self.batch_iterations.unwrap_or_else(|| {
-            // Use a more intelligent default: balance between overhead and parallelism
-            let thread_count = rayon::current_num_threads();
-            let remaining_iterations = self.params.iterations.saturating_sub(start_iter);
-            
-            if remaining_iterations < 4 || thread_count == 1 {
-                1 // Use sequential for small workloads or single-threaded
-            } else {
-                // Use a batch size that gives each thread meaningful work
-                (remaining_iterations / (thread_count * 2)).clamp(2, 8)
-            }
-        });
+        let effective_batch_size = if !self.enable_parallel {
+            1 // Force sequential when parallel processing is disabled
+        } else {
+            self.batch_iterations.unwrap_or_else(|| {
+                // Use a more intelligent default: balance between overhead and parallelism
+                let thread_count = rayon::current_num_threads();
+                let remaining_iterations = self.params.iterations.saturating_sub(start_iter);
+                
+                if remaining_iterations < 4 || thread_count == 1 {
+                    1 // Use sequential for small workloads or single-threaded
+                } else {
+                    // Use a batch size that gives each thread meaningful work
+                    (remaining_iterations / (thread_count * 2)).clamp(2, 8)
+                }
+            })
+        };
         
         #[cfg(not(feature = "rayon"))]
         let effective_batch_size = 1; // Always sequential when rayon is not available
@@ -805,6 +822,43 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         self
     }
 
+    /// Control parallel processing when Rayon is available
+    ///
+    /// When the `rayon` feature is enabled, this controls whether parallel processing
+    /// is used for applicable operations. Set to `false` to force sequential processing
+    /// even when Rayon is available. Useful for benchmarking and Python bindings.
+    ///
+    /// # Arguments
+    ///
+    /// * `enable` - Whether to enable parallel processing (default: `true`)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use globalsearch::*;
+    /// # use globalsearch::types::*;
+    /// # use globalsearch::problem::*;
+    /// # use globalsearch::oqnlp::*;
+    /// # #[derive(Clone)]
+    /// # struct TestProblem;
+    /// # impl Problem for TestProblem {
+    /// #     fn objective(&self, x: &ndarray::Array1<f64>) -> Result<f64, EvaluationError> { Ok(0.0) }
+    /// #     fn variable_bounds(&self) -> ndarray::Array2<f64> { ndarray::array![[-1.0, 1.0]] }
+    /// # }
+    /// let problem = TestProblem;
+    /// let params = OQNLPParams::default();
+    /// 
+    /// // Disable parallel processing for benchmarking
+    /// let oqnlp = OQNLP::new(problem, params)
+    ///     .unwrap()
+    ///     .parallel(false);
+    /// ```
+    #[cfg(feature = "rayon")]
+    pub fn parallel(mut self, enable: bool) -> Self {
+        self.enable_parallel = enable;
+        self
+    }
+
     /// Set a target objective function value to stop optimization early
     ///
     /// If the best solution found has an objective function value less than or equal to this target,
@@ -968,6 +1022,10 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             ..self.params.clone()
         };
 
+        #[cfg(feature = "rayon")]
+        let mut scatter_search = ScatterSearch::new(self.problem.clone(), temp_params)?
+            .parallel(self.enable_parallel);
+        #[cfg(not(feature = "rayon"))]
         let mut scatter_search = ScatterSearch::new(self.problem.clone(), temp_params)?;
 
         // ScatterSearch's diversify_reference_set method to expand our existing set
@@ -1035,6 +1093,12 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             self.batch_iterations = checkpoint.batch_iterations;
         }
 
+        // Restore parallel execution setting
+        #[cfg(feature = "rayon")]
+        {
+            self.enable_parallel = checkpoint.enable_parallel;
+        }
+
         // Restore distance filter solutions
         self.distance_filter
             .set_solutions(checkpoint.distance_filter_solutions);
@@ -1071,6 +1135,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             exclude_out_of_bounds: self.exclude_out_of_bounds,
             #[cfg(feature = "rayon")]
             batch_iterations: self.batch_iterations,
+            #[cfg(feature = "rayon")]
+            enable_parallel: self.enable_parallel,
             timestamp: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -1293,7 +1359,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
         // Process local search candidates in parallel when there are enough to justify overhead
         if !local_candidates.is_empty() {
-            if local_candidates.len() >= 2 {
+            #[cfg(feature = "rayon")]
+            if local_candidates.len() >= 2 && self.enable_parallel {
                 // Clone once for sharing across threads
                 let problem = self.problem.clone();
                 let solver_type = self.params.local_solver_type.clone();
@@ -1356,6 +1423,48 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 }
             } else {
                 // Single local search - process directly without parallel overhead
+                for (local_iter, trial, obj) in local_candidates {
+                    #[cfg(feature = "checkpointing")]
+                    {
+                        self.current_iteration = local_iter;
+                        self.unchanged_cycles = *unchanged_cycles;
+                        self.current_seed = self.params.seed + self.current_iteration as u64;
+                    }
+
+                    self.merit_filter.update_threshold(obj);
+                    let local_trial = self
+                        .local_solver
+                        .solve(trial)
+                        .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+                    let added = self.process_local_solution(local_trial.clone())?;
+
+                    if self.verbose && added {
+                        println!(
+                            "Stage 2, iteration {}: Added local solution found with objective = {:.8}",
+                            local_iter, local_trial.objective
+                        );
+                        println!("x0 = {}", local_trial.point);
+                    }
+
+                    if self.target_objective_reached() {
+                        if self.verbose {
+                            println!(
+                                "Stage 2, iteration {}: Target objective {:.8} reached. Stopping optimization.",
+                                local_iter,
+                                self.target_objective.unwrap()
+                            );
+                        }
+                        return Ok(());
+                    }
+                    
+                    #[cfg(feature = "checkpointing")]
+                    self.maybe_save_checkpoint()?;
+                }
+            }
+            
+            #[cfg(not(feature = "rayon"))]
+            {
+                // Sequential processing when Rayon is not available
                 for (local_iter, trial, obj) in local_candidates {
                     #[cfg(feature = "checkpointing")]
                     {
@@ -2636,6 +2745,8 @@ mod tests_oqnlp {
             exclude_out_of_bounds: true,
             #[cfg(feature = "rayon")]
             batch_iterations: Some(2),
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2782,6 +2893,8 @@ mod tests_oqnlp {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: true,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2864,6 +2977,8 @@ mod tests_oqnlp {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: Some(6),
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2892,6 +3007,8 @@ mod tests_oqnlp {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: true,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2949,6 +3066,8 @@ mod tests_oqnlp {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2972,6 +3091,8 @@ mod tests_oqnlp {
             exclude_out_of_bounds: true,
             #[cfg(feature = "rayon")]
             batch_iterations: Some(8),
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -2995,6 +3116,8 @@ mod tests_oqnlp {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: Some(1),
+            #[cfg(feature = "rayon")]
+            enable_parallel: true,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -3894,5 +4017,38 @@ mod tests_oqnlp {
 
         let sol_set = result.unwrap();
         assert!(!sol_set.is_empty(), "Should find at least one solution");
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    fn test_parallel_control() {
+        let problem = DummyProblem;
+        let params = OQNLPParams {
+            iterations: 5,
+            population_size: 8,
+            ..Default::default()
+        };
+
+        // Test default behavior (parallel enabled)
+        let oqnlp1 = OQNLP::new(problem, params.clone()).unwrap();
+        assert!(oqnlp1.enable_parallel, "Parallel should be enabled by default");
+
+        // Test disabling parallel
+        let mut oqnlp2 = OQNLP::new(DummyProblem, params.clone())
+            .unwrap()
+            .parallel(false);
+        assert!(!oqnlp2.enable_parallel, "Parallel should be disabled");
+
+        // Test enabling parallel explicitly
+        let oqnlp3 = OQNLP::new(DummyProblem, params.clone())
+            .unwrap()
+            .parallel(true);
+        assert!(oqnlp3.enable_parallel, "Parallel should be enabled");
+
+        // Test that optimization still works with parallel disabled
+        let result = oqnlp2.run();
+        assert!(result.is_ok(), "OQNLP should work with parallel disabled");
+        let sol_set = result.unwrap();
+        assert!(!sol_set.is_empty(), "Should find solutions even with parallel disabled");
     }
 }

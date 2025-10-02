@@ -48,3 +48,7 @@ harness = false
 [[bench]]
 name = "batch_iterations"
 harness = false
+
+[[bench]]
+name = "parallel_performance"
+harness = false

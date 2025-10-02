@@ -113,6 +113,9 @@ pub struct ScatterSearch<P: Problem> {
     rng: Mutex<StdRng>,
     #[cfg(feature = "progress_bar")]
     progress_bar: Option<Bar>,
+    /// Whether parallel processing is enabled at runtime
+    #[cfg(feature = "rayon")]
+    enable_parallel: bool,
 }
 
 impl<P: Problem + Sync + Send> ScatterSearch<P> {
@@ -133,9 +136,27 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             rng: Mutex::new(StdRng::seed_from_u64(seed)),
             #[cfg(feature = "progress_bar")]
             progress_bar: None,
+            // Enable parallel processing by default
+            #[cfg(feature = "rayon")]
+            enable_parallel: true,
         };
 
         Ok(ss)
+    }
+
+    /// Control whether parallel processing is enabled at runtime
+    /// 
+    /// This method allows you to disable parallel processing even when the `rayon` feature is enabled,
+    /// which can be useful for:
+    /// - Python bindings
+    /// - Benchmarking (consistent performance measurement)
+    ///
+    /// # Arguments
+    /// * `enable` - If `true`, use parallel processing (default). If `false`, use sequential processing.
+    #[cfg(feature = "rayon")]
+    pub fn parallel(mut self, enable: bool) -> Self {
+        self.enable_parallel = enable;
+        self
     }
 
     /// Run the Scatter Search algorithm
@@ -212,10 +233,17 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         let mut candidates = self.generate_stratified_samples(self.params.population_size)?;
 
         #[cfg(feature = "rayon")]
-        let mut min_dists: Vec<f64> = candidates
-            .par_iter()
-            .map(|c| self.min_distance(c, ref_set))
-            .collect();
+        let mut min_dists: Vec<f64> = if self.enable_parallel {
+            candidates
+                .par_iter()
+                .map(|c| self.min_distance(c, ref_set))
+                .collect()
+        } else {
+            candidates
+                .iter()
+                .map(|c| self.min_distance(c, ref_set))
+                .collect()
+        };
 
         #[cfg(not(feature = "rayon"))]
         let mut min_dists: Vec<f64> = candidates
@@ -225,16 +253,26 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
         while ref_set.len() < self.params.population_size {
             #[cfg(feature = "rayon")]
-            let (max_idx, _) = (0..min_dists.len())
-                .into_par_iter()
-                .map(|i| (i, min_dists[i]))
-                .max_by(|a, b| a.1.total_cmp(&b.1))
-                .ok_or(ScatterSearchError::NoCandidates)?;
+            let (max_idx, _) = if self.enable_parallel {
+                (0..min_dists.len())
+                    .into_par_iter()
+                    .map(|i| (i, min_dists[i]))
+                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .ok_or(ScatterSearchError::NoCandidates)?
+            } else {
+                min_dists
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                    .map(|(i, &v)| (i, v))
+                    .ok_or(ScatterSearchError::NoCandidates)?
+            };
             #[cfg(not(feature = "rayon"))]
             let (max_idx, _) = min_dists
                 .iter()
                 .enumerate()
                 .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .map(|(i, &v)| (i, v))
                 .ok_or(ScatterSearchError::NoCandidates)?;
 
             let farthest = candidates.swap_remove(max_idx);
@@ -246,20 +284,41 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             }
 
             #[cfg(feature = "rayon")]
-            let updater_iter = candidates.par_iter().zip(min_dists.par_iter_mut());
-            #[cfg(not(feature = "rayon"))]
-            let updater_iter = candidates.iter().zip(min_dists.iter_mut());
-
-            updater_iter.for_each(|(c, current_min)| {
-                if let Some(last) = ref_set.last() {
-                    let dist: f64 = euclidean_distance_squared(c, last);
-                    if dist < *current_min {
-                        *current_min = dist;
-                    }
+            {
+                if self.enable_parallel {
+                    let updater_iter = candidates.par_iter().zip(min_dists.par_iter_mut());
+                    updater_iter.for_each(|(candidate, min_dist)| {
+                        if let Some(last) = ref_set.last() {
+                            let dist = euclidean_distance_squared(candidate, last);
+                            if dist < *min_dist {
+                                *min_dist = dist;
+                            }
+                        }
+                    });
                 } else {
-                    unreachable!("Reference set is empty");
+                    let updater_iter = candidates.iter().zip(min_dists.iter_mut());
+                    updater_iter.for_each(|(candidate, min_dist)| {
+                        if let Some(last) = ref_set.last() {
+                            let dist = euclidean_distance_squared(candidate, last);
+                            if dist < *min_dist {
+                                *min_dist = dist;
+                            }
+                        }
+                    });
                 }
-            });
+            }
+            #[cfg(not(feature = "rayon"))]
+            {
+                let updater_iter = candidates.iter().zip(min_dists.iter_mut());
+                updater_iter.for_each(|(candidate, min_dist)| {
+                    if let Some(last) = ref_set.last() {
+                        let dist = euclidean_distance_squared(candidate, last);
+                        if dist < *min_dist {
+                            *min_dist = dist;
+                        }
+                    }
+                });
+            }
         }
 
         Ok(())
@@ -279,15 +338,27 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         };
 
         #[cfg(feature = "rayon")]
-        let samples = seeds
-            .into_par_iter()
-            .map(|seed| {
-                let mut rng = StdRng::seed_from_u64(seed);
-                Ok(Array1::from_shape_fn(dim, |i| {
-                    rng.random_range(self.bounds.lower[i]..=self.bounds.upper[i])
-                }))
-            })
-            .collect::<Result<Vec<_>, ScatterSearchError>>()?;
+        let samples = if self.enable_parallel {
+            seeds
+                .into_par_iter()
+                .map(|seed| {
+                    let mut rng = StdRng::seed_from_u64(seed);
+                    Ok(Array1::from_shape_fn(dim, |i| {
+                        rng.random_range(self.bounds.lower[i]..=self.bounds.upper[i])
+                    }))
+                })
+                .collect::<Result<Vec<_>, ScatterSearchError>>()
+        } else {
+            seeds
+                .into_iter()
+                .map(|seed: u64| {
+                    let mut rng = StdRng::seed_from_u64(seed);
+                    Ok(Array1::from_shape_fn(dim, |i| {
+                        rng.random_range(self.bounds.lower[i]..=self.bounds.upper[i])
+                    }))
+                })
+                .collect::<Result<Vec<_>, ScatterSearchError>>()
+        }?;
 
         #[cfg(not(feature = "rayon"))]
         let samples = seeds
@@ -307,10 +378,17 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     pub fn min_distance(&self, point: &Array1<f64>, ref_set: &[Array1<f64>]) -> f64 {
         #[cfg(feature = "rayon")]
         {
-            ref_set
-                .par_iter()
-                .map(|p| euclidean_distance_squared(point, p))
-                .reduce(|| f64::INFINITY, f64::min)
+            if self.enable_parallel {
+                ref_set
+                    .par_iter()
+                    .map(|p| euclidean_distance_squared(point, p))
+                    .reduce(|| f64::INFINITY, f64::min)
+            } else {
+                ref_set
+                    .iter()
+                    .map(|p| euclidean_distance_squared(point, p))
+                    .fold(f64::INFINITY, f64::min)
+            }
         }
         #[cfg(not(feature = "rayon"))]
         {

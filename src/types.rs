@@ -661,6 +661,10 @@ pub struct OQNLPCheckpoint {
     #[cfg(feature = "rayon")]
     pub batch_iterations: Option<usize>,
 
+    /// Whether parallel processing is enabled when Rayon is available
+    #[cfg(feature = "rayon")]
+    pub enable_parallel: bool,
+
     /// Timestamp of the checkpoint
     pub timestamp: String,
 }
@@ -955,6 +959,8 @@ mod tests_types {
             exclude_out_of_bounds: true,
             #[cfg(feature = "rayon")]
             batch_iterations: Some(4),
+            #[cfg(feature = "rayon")]
+            enable_parallel: true,
             timestamp: "2025-07-27T12:00:00Z".to_string(),
         };
 
@@ -1071,6 +1077,8 @@ mod tests_types {
             exclude_out_of_bounds: false,
             #[cfg(feature = "rayon")]
             batch_iterations: None,
+            #[cfg(feature = "rayon")]
+            enable_parallel: false,
             timestamp: "2025-07-27T10:00:00Z".to_string(),
         };
 
