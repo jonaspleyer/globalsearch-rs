@@ -136,3 +136,94 @@ def test_verbose_false():
     # Results should be identical when using same seed
     assert len(result1) == len(result2)
     assert abs(result1[0].fun() - result2[0].fun()) < 1e-10
+
+
+def test_parallel_false():
+    """Test that parallel=False works (sequential processing, default behavior)."""
+    result = gs.optimize(
+        problem_grad, params, local_solver="LBFGS", seed=42, parallel=False
+    )
+    assert result is not None, "Optimization with parallel=False returned None"
+    assert len(result) > 0, "Should return at least one solution"
+
+    # Should find the global minimum
+    best_solution = result.best_solution()
+    assert best_solution is not None, "Should have a best solution"
+    assert abs(best_solution.fun()) < 1e-8, (
+        f"Should find global minimum (0.0), got {best_solution.fun()}"
+    )
+
+
+def test_parallel_true():
+    """Test that parallel=True works (parallel processing with rayon)."""
+    result = gs.optimize(
+        problem_grad, params, local_solver="LBFGS", seed=42, parallel=True
+    )
+    assert result is not None, "Optimization with parallel=True returned None"
+    assert len(result) > 0, "Should return at least one solution"
+
+    # Should find the global minimum
+    best_solution = result.best_solution()
+    assert best_solution is not None, "Should have a best solution"
+    assert abs(best_solution.fun()) < 1e-8, (
+        f"Should find global minimum (0.0), got {best_solution.fun()}"
+    )
+
+
+def test_parallel_default():
+    """Test that default behavior (no parallel parameter) is sequential."""
+    result1 = gs.optimize(problem_grad, params, local_solver="LBFGS", seed=42)
+    result2 = gs.optimize(
+        problem_grad, params, local_solver="LBFGS", seed=42, parallel=False
+    )
+
+    assert result1 is not None and result2 is not None
+    # Results should be identical when using same seed (default is sequential)
+    assert len(result1) == len(result2)
+    assert abs(result1[0].fun() - result2[0].fun()) < 1e-10
+
+
+def test_parallel_none():
+    """Test that parallel=None works (should default to False)."""
+    result1 = gs.optimize(
+        problem_grad, params, local_solver="LBFGS", seed=42, parallel=None
+    )
+    result2 = gs.optimize(
+        problem_grad, params, local_solver="LBFGS", seed=42, parallel=False
+    )
+
+    assert result1 is not None and result2 is not None
+    # Results should be identical when using same seed
+    assert len(result1) == len(result2)
+    assert abs(result1[0].fun() - result2[0].fun()) < 1e-10
+
+
+def test_parallel_reproducibility():
+    """Test that results are reproducible with same seed regardless of parallel setting."""
+    # Note: With the same seed, both sequential and parallel should give reproducible results
+    # but they might differ from each other due to different execution order
+    result_seq1 = gs.optimize(
+        problem_grad, params, local_solver="LBFGS", seed=123, parallel=False
+    )
+    result_seq2 = gs.optimize(
+        problem_grad, params, local_solver="LBFGS", seed=123, parallel=False
+    )
+
+    result_par1 = gs.optimize(
+        problem_grad, params, local_solver="LBFGS", seed=123, parallel=True
+    )
+    result_par2 = gs.optimize(
+        problem_grad, params, local_solver="LBFGS", seed=123, parallel=True
+    )
+
+    # Same configuration should give identical results
+    assert abs(result_seq1[0].fun() - result_seq2[0].fun()) < 1e-10, (
+        "Sequential runs with same seed should be identical"
+    )
+    assert abs(result_par1[0].fun() - result_par2[0].fun()) < 1e-10, (
+        "Parallel runs with same seed should be identical"
+    )
+
+    # Both should find the global minimum (though potentially through different paths)
+    assert abs(result_seq1[0].fun()) < 1e-8, "Sequential should find global minimum"
+    assert abs(result_par1[0].fun()) < 1e-8, "Parallel should find global minimum"

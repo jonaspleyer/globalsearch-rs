@@ -1056,6 +1056,7 @@ def optimize(
     max_time: Optional[float] = None,
     verbose: Optional[bool] = False,
     exclude_out_of_bounds: Optional[bool] = False,
+    parallel: Optional[bool] = False,
 ) -> PySolutionSet:
     """
     Perform global optimization on the given problem.
@@ -1095,7 +1096,7 @@ def optimize(
     :param params: Parameters controlling the optimization algorithm behavior
     :type params: PyOQNLPParams
     :param local_solver: Local optimization algorithm ("COBYLA", "LBFGS", "NewtonCG",
-                         "TrustRegion", "NelderMead", "SteepestDescent")
+                        "TrustRegion", "NelderMead", "SteepestDescent")
     :type local_solver: str
     :param local_solver_config: Custom configuration for the local solver (None for defaults)
     :type local_solver_config: Union[PyLBFGS, PyNelderMead, PySteepestDescent, PyNewtonCG, PyTrustRegion, PyCOBYLA]
@@ -1109,6 +1110,8 @@ def optimize(
     :type verbose: bool
     :param exclude_out_of_bounds: Filter out solutions that violate bounds (False by default)
     :type exclude_out_of_bounds: bool
+    :param parallel: Enable parallel processing using rayon (False by default)
+    :type parallel: bool
     :return: A set of local solutions found during optimization
     :rtype: PySolutionSet
     :raises ValueError: If solver configuration doesn't match the specified solver type,

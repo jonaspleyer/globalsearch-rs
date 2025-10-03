@@ -703,6 +703,8 @@ impl Problem for PyProblem {
 /// :type verbose: bool, optional
 /// :param exclude_out_of_bounds: Filter out solutions that violate bounds
 /// :type exclude_out_of_bounds: bool, optional
+/// :param parallel: Enable parallel processing using rayon (default: False)
+/// :type parallel: bool, optional
 /// :returns: A set of local solutions found during optimization
 /// :rtype: PySolutionSet
 /// :raises ValueError: If solver configuration doesn't match the specified solver type, or if the problem is not properly defined
@@ -727,6 +729,10 @@ impl Problem for PyProblem {
 /// ...                     target_objective=-1.0316,  # Stop when reached
 /// ...                     max_time=60.0,             # Max 60 seconds
 /// ...                     verbose=True)              # Show progress
+///
+/// Enable parallel processing:
+///
+/// >>> result = gs.optimize(problem, params, parallel=True)
 #[pyfunction]
 #[pyo3(signature = (
     problem,
@@ -738,6 +744,7 @@ impl Problem for PyProblem {
     max_time = None,
     verbose = None,
     exclude_out_of_bounds = None,
+    parallel = None,
 ))]
 fn optimize(
     problem: PyProblem,
@@ -749,6 +756,7 @@ fn optimize(
     max_time: Option<f64>,
     verbose: Option<bool>,
     exclude_out_of_bounds: Option<bool>,
+    parallel: Option<bool>,
 ) -> PyResult<PySolutionSet> {
     Python::attach(|py| {
         // Convert local_solver string to enum
@@ -848,6 +856,10 @@ fn optimize(
         let mut optimizer =
             OQNLP::new(problem, params).map_err(|e| PyValueError::new_err(e.to_string()))?;
 
+        // Set parallel mode
+        // Default to false unless explicitly enabled by user
+        optimizer = optimizer.parallel(parallel.unwrap_or(false));
+        
         // Apply optional configurations
         if let Some(target) = target_objective {
             optimizer = optimizer.target_objective(target);
@@ -865,7 +877,8 @@ fn optimize(
             optimizer = optimizer.exclude_out_of_bounds();
         }
 
-        let solution_set = optimizer.run();
+        // Release the GIL to allow Rust threads (rayon) to run without blocking
+        let solution_set = py.detach(|| optimizer.run());
 
         let binding = solution_set.map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -892,7 +905,7 @@ fn optimize(
 /// to effectively find global minima in nonlinear optimization problems. It's particularly
 /// effective for:
 ///
-/// * Multi-modal functions with multiple local minima
+/// * Multi-modal functions with multiple minima
 /// * Nonlinear optimization problems
 /// * Problems where derivative information may be unavailable or unreliable
 /// * Constrained optimization (using COBYLA solver)
@@ -921,7 +934,6 @@ fn optimize(
 /// ------------
 /// * **Multiple Solvers**: COBYLA, L-BFGS, Newton-CG, Trust Region, Nelder-Mead, Steepest Descent
 /// * **Constraint Support**: Inequality constraints via COBYLA solver
-/// * **Gradient Support**: Optional gradient and Hessian functions for faster convergence
 /// * **Builder Pattern**: Flexible solver configuration using builder functions
 /// * **Multiple Solutions**: Returns all global minima found
 /// * **Early Stopping**: Target objectives and time limits for efficiency
