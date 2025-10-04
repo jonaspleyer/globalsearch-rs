@@ -10,7 +10,6 @@ repository = "https://github.com/GermanHeim/globalsearch-rs"
 keywords = ["optimization", "math", "science"]
 categories = ["science", "mathematics"]
 exclude = ["/media", ".github", "/python"]
-build = "build.rs"
 rust-version = "1.78"                                                                                      # MSRV
 
 [dependencies]
@@ -36,6 +35,10 @@ checkpointing = ["dep:serde", "dep:bincode", "dep:chrono", "ndarray/serde"]
 criterion = { git = "https://github.com/bheisler/criterion.rs", features = [
     "html_reports",
 ] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [[bench]]
 name = "six_hump_camel"
