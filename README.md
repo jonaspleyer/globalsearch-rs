@@ -51,7 +51,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-globalsearch = "0.2.0"
+globalsearch = "0.3.0"
 ```
 
 Or use `cargo add globalsearch` in your project directory.
