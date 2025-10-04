@@ -1,6 +1,95 @@
 import numpy as np
 from numpy.typing import NDArray
-from typing import Callable, List, Optional, TypedDict, Union, Type, Iterator
+from typing import Callable, List, Optional, TypedDict, Union, Type, Iterator, Protocol
+
+# Protocol definitions for type checking
+
+class ObjectiveFunctionProtocol(Protocol):
+    """
+    Protocol for objective functions.
+
+    An objective function takes a parameter vector and returns a scalar value
+    to be minimized.
+
+    Example:
+        >>> def objective(x: NDArray[np.float64]) -> float:
+        ...     return x[0]**2 + x[1]**2
+    """
+    def __call__(self, x: NDArray[np.float64]) -> float: ...
+
+class GradientFunctionProtocol(Protocol):
+    """
+    Protocol for gradient functions.
+
+    A gradient function takes a parameter vector and returns the gradient
+    (vector of partial derivatives) at that point.
+
+    Example:
+        >>> def gradient(x: NDArray[np.float64]) -> NDArray[np.float64]:
+        ...     return np.array([2*x[0], 2*x[1]])
+    """
+    def __call__(self, x: NDArray[np.float64]) -> NDArray[np.float64]: ...
+
+class HessianFunctionProtocol(Protocol):
+    """
+    Protocol for Hessian functions.
+
+    A Hessian function takes a parameter vector and returns the Hessian matrix
+    (matrix of second-order partial derivatives) at that point.
+
+    Example:
+        >>> def hessian(x: NDArray[np.float64]) -> NDArray[np.float64]:
+        ...     return np.array([[2.0, 0.0], [0.0, 2.0]])
+    """
+    def __call__(self, x: NDArray[np.float64]) -> NDArray[np.float64]: ...
+
+class ConstraintFunctionProtocol(Protocol):
+    """
+    Protocol for constraint functions.
+
+    A constraint function takes a parameter vector and returns a scalar value.
+    The constraint is satisfied when the returned value is >= 0.
+
+    Example:
+        >>> def constraint(x: NDArray[np.float64]) -> float:
+        ...     return x[0] + x[1] - 1.0  # x[0] + x[1] >= 1
+    """
+    def __call__(self, x: NDArray[np.float64]) -> float: ...
+
+class BoundsFunctionProtocol(Protocol):
+    """
+    Protocol for variable bounds functions.
+
+    A bounds function returns a 2D array of shape (n_variables, 2) where each row
+    contains [lower_bound, upper_bound] for the corresponding variable.
+
+    Example:
+        >>> def bounds() -> NDArray[np.float64]:
+        ...     return np.array([[-5.0, 5.0], [-5.0, 5.0]])
+    """
+    def __call__(self) -> NDArray[np.float64]: ...
+
+class ProblemProtocol(Protocol):
+    """
+    Protocol defining the interface for optimization problems.
+
+    This protocol specifies the complete interface that optimization problems
+    should implement, including objective function, bounds, and optional
+    gradient, Hessian, and constraints.
+
+    Use this protocol for type hints when you need to accept any problem-like object.
+
+    Example:
+        >>> def run_optimization(problem: ProblemProtocol, params: PyOQNLPParams):
+        ...     result = optimize(problem, params)
+        ...     return result
+    """
+
+    objective: ObjectiveFunctionProtocol
+    variable_bounds: BoundsFunctionProtocol
+    gradient: Optional[GradientFunctionProtocol]
+    hessian: Optional[HessianFunctionProtocol]
+    constraints: Optional[List[ConstraintFunctionProtocol]]
 
 class Solution(TypedDict):
     """
@@ -222,30 +311,81 @@ class PyProblem:
     Contains the objective function, variable bounds, and optionally
     gradient, hessian, and constraint functions, depending on the local solver used.
 
+    This class implements the :class:`ProblemProtocol` interface.
+
+    **Function Signatures**
+
     All functions should accept numpy arrays and return appropriate types:
-    - objective: (x: np.ndarray) -> float
-    - gradient: (x: np.ndarray) -> np.ndarray
-    - hessian: (x: np.ndarray) -> np.ndarray (2D)
-    - constraints: List[(x: np.ndarray) -> float] where constraint(x) >= 0 means satisfied
-    - variable_bounds: () -> np.ndarray of shape (n_vars, 2) with [lower, upper] bounds
+
+    - **objective**: ``(x: NDArray[np.float64]) -> float``
+        Maps parameter vector to scalar objective value to minimize
+
+    - **gradient**: ``(x: NDArray[np.float64]) -> NDArray[np.float64]``
+        Returns gradient vector (partial derivatives) at point x
+
+    - **hessian**: ``(x: NDArray[np.float64]) -> NDArray[np.float64]``
+        Returns Hessian matrix (second derivatives) at point x as 2D array
+
+    - **constraints**: ``List[(x: NDArray[np.float64]) -> float]``
+        List of constraint functions where ``constraint(x) >= 0`` means satisfied
+
+    - **variable_bounds**: ``() -> NDArray[np.float64]``
+        Returns array of shape ``(n_vars, 2)`` with ``[lower, upper]`` bounds per variable
+
+    **Solver Requirements**
+
+    Different local solvers have different requirements:
+
+    - **COBYLA**: Only objective and bounds required (derivative-free)
+    - **NelderMead**: Only objective and bounds required (derivative-free)
+    - **LBFGS**: Requires objective, bounds, and gradient
+    - **SteepestDescent**: Requires objective, bounds, and gradient
+    - **NewtonCG**: Requires objective, bounds, gradient, and Hessian
+    - **TrustRegion**: Requires objective, bounds, gradient, and Hessian
 
     **Examples**
 
     Basic unconstrained problem::
 
-        >>> def objective(x): return x[0]**2 + x[1]**2
-        >>> def bounds(): return np.array([[-5, 5], [-5, 5]])
+        >>> def objective(x):
+        ...     return x[0]**2 + x[1]**2
+        >>> def bounds():
+        ...     return np.array([[-5, 5], [-5, 5]])
         >>> problem = PyProblem(objective, bounds)
 
-    Problem with gradient::
+    Problem with gradient for gradient-based solvers::
 
-        >>> def gradient(x): return np.array([2*x[0], 2*x[1]])
+        >>> def gradient(x):
+        ...     return np.array([2*x[0], 2*x[1]])
         >>> problem = PyProblem(objective, bounds, gradient=gradient)
 
-    Constrained problem::
+    Problem with Hessian for second-order solvers::
 
-        >>> def constraint(x): return x[0] + x[1] - 1  # x[0] + x[1] >= 1
+        >>> def hessian(x):
+        ...     return np.array([[2.0, 0.0], [0.0, 2.0]])
+        >>> problem = PyProblem(objective, bounds, gradient=gradient, hessian=hessian)
+
+    Constrained problem (use with COBYLA)::
+
+        >>> def constraint(x):
+        ...     return x[0] + x[1] - 1  # Constraint: x[0] + x[1] >= 1
         >>> problem = PyProblem(objective, bounds, constraints=[constraint])
+
+    Multiple constraints::
+
+        >>> def constraint1(x):
+        ...     return x[0] + x[1] - 1
+        >>> def constraint2(x):
+        ...     return x[0] - x[1]
+        >>> problem = PyProblem(objective, bounds, constraints=[constraint1, constraint2])
+
+    **See Also**
+
+    - :class:`ProblemProtocol`: Protocol interface for type checking
+    - :class:`ObjectiveFunctionProtocol`: Type hint for objective functions
+    - :class:`GradientFunctionProtocol`: Type hint for gradient functions
+    - :class:`HessianFunctionProtocol`: Type hint for Hessian functions
+    - :class:`ConstraintFunctionProtocol`: Type hint for constraint functions
     """
 
     objective: Callable[[NDArray[np.float64]], float]
@@ -267,7 +407,7 @@ class PyProblem:
         The objective function and the variable bounds are required.
 
         The gradient and hessian functions are optional, but should be provided
-        if the local solver requires them.
+        if the local solver requires them (see class docstring for solver requirements).
 
         The constraints are optional and should be provided as a list of constraint
         functions if the local solver supports constraints (e.g., COBYLA).
@@ -282,6 +422,8 @@ class PyProblem:
         :type hessian: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]]
         :param constraints: Optional list of constraint functions. Each constraint is satisfied when constraint(x) >= 0
         :type constraints: Optional[List[Callable[[NDArray[np.float64]], float]]]
+
+        :raises ValueError: If functions have incorrect signatures or bounds have wrong shape
         """
         ...
 
