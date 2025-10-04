@@ -8,7 +8,7 @@
         Python bindings for the globalsearch Rust crate
     </p>
     <p align="center">
-        <a href="https://germanheim.github.io/pyglobalsearch-website/api.html"> Python API Docs</a> | <a href="https://docs.rs/globalsearch/latest/globalsearch/">docs.rs</a> | <a href="https://github.com/GermanHeim/globalsearch-rs/tree/main/python/examples">Examples</a>
+        <a href="https://germanheim.github.io/globalsearch-rs-website/">Website</a> | <a href="https://germanheim.github.io/pyglobalsearch-website/api.html"> Python API Docs</a> | <a href="https://github.com/GermanHeim/globalsearch-rs/tree/main/python/examples">Examples</a>
     </p>
 </p>
 
@@ -27,7 +27,7 @@
     </a>
 </div>
 
-`pyglobalsearch`: Python interface for the Rust crate `globalsearch`. The Rust crate implements the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). It combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
+`pyglobalsearch`: Python interface for the Rust crate `globalsearch`. The Rust crate implements a modified version of the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). It combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
 
 Similar to MATLAB's `GlobalSearch` \[2\]. The bindings are built using [pyo3](https://github.com/PyO3/pyo3) and [Maturin](https://github.com/PyO3/maturin).
 
@@ -120,7 +120,6 @@ The Python bindings are still in development and may not be fully functional. Th
 
 Additionally, the Python bindings have limitations:
 
-- No support for parallelism of stage one
 - No support for checkpointing
 - Maximum number of constraints is 1000
 

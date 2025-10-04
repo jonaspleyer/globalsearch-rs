@@ -8,7 +8,7 @@
         Global optimization with scatter search and local NLP solvers written in Rust
     </p>
     <p align="center">
-        <a href="https://docs.rs/globalsearch/latest/globalsearch/">Docs</a> | <a href="https://github.com/GermanHeim/globalsearch-rs/tree/main/examples">Examples</a>
+        <a href="https://germanheim.github.io/globalsearch-rs-website/">Website</a> | <a href="https://docs.rs/globalsearch/latest/globalsearch/">Docs</a> | <a href="https://github.com/GermanHeim/globalsearch-rs/tree/main/examples">Examples</a>
     </p>
 </p>
 
@@ -27,7 +27,7 @@
     </a>
 </div>
 
-`globalsearch-rs`: Rust implementation of the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). It combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
+`globalsearch-rs`: Rust implementation of a modified version of the _OQNLP_ (_OptQuest/NLP_) algorithm with the core ideas from "Scatter Search and Local NLP Solvers: A Multistart Framework for Global Optimization" by Ugray et al. (2007). It combines scatter search metaheuristics with local minimization for global optimization of nonlinear problems.
 
 Similar to MATLAB's `GlobalSearch` \[2\], using cobyla, argmin, rayon and ndarray.
 
@@ -39,7 +39,7 @@ Similar to MATLAB's `GlobalSearch` \[2\], using cobyla, argmin, rayon and ndarra
 
 - 📦 Local optimization using the cobyla \[3\] and argmin crate \[4\]
 
-- 🚀 Parallel execution of initial stage using Rayon
+- 🚀 Parallel execution using Rayon
 
 - 🔄 Checkpointing support for long-running optimizations
 
