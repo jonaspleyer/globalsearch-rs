@@ -1305,10 +1305,10 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             .par_iter()
             .map(|&(local_iter, trial)| {
                 // Use pre-computed objective if available, otherwise evaluate
-                let obj = if false {
+                let obj = if let Some(objectives) = ref_objectives {
                     // Map iteration index to reference set index (cycle through ref_set)
-                    let ref_set_index = local_iter % ref_objectives.unwrap().len();
-                    ref_objectives.unwrap()[ref_set_index]
+                    let ref_set_index = local_iter % objectives.len();
+                    objectives[ref_set_index]
                 } else {
                     // Fallback to evaluating objective function (e.g., when resuming from checkpoint)
                     self.problem.objective(trial)
