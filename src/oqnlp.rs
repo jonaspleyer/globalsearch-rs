@@ -152,8 +152,8 @@ use rayon::prelude::*;
 /// ONQLP errors
 pub enum OQNLPError {
     /// Error when the local solver fails to find a solution
-    #[error("OQNLP Error: Local solver failed to find a solution. {0}")]
-    LocalSolverError(String),
+    #[error("OQNLP Error: Local solver failed: {0}")]
+    LocalSolverError(#[from] crate::local_solver::runner::LocalSolverError),
 
     /// Error when OQNLP fails to find a feasible solution
     #[error("OQNLP Error: No feasible solution found.")]
@@ -185,8 +185,8 @@ pub enum OQNLPError {
     InvalidIterations(usize, usize),
 
     /// Error when creating the distance filter
-    #[error("OQNLP Error: Failed to create distance filter. {0}")]
-    DistanceFilterError(String),
+    #[error("OQNLP Error: Failed to create distance filter: {0}")]
+    DistanceFilterError(#[from] crate::filters::FiltersErrors),
 
     /// Error related to checkpointing operations
     #[cfg(feature = "checkpointing")]
@@ -408,8 +408,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             problem: problem.clone(),
             params: params.clone(),
             merit_filter: MeritFilter::new(),
-            distance_filter: DistanceFilter::new(filter_params)
-                .map_err(|e| OQNLPError::DistanceFilterError(e.to_string()))?,
+            distance_filter: DistanceFilter::new(filter_params)?,
             local_solver: LocalSolver::new(
                 problem,
                 params.local_solver_type.clone(),
@@ -490,8 +489,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 
             let local_sol: LocalSolution = self
                 .local_solver
-                .solve(scatter_candidate)
-                .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+                .solve(scatter_candidate)?;
 
             self.merit_filter.update_threshold(local_sol.objective);
 
@@ -1227,8 +1225,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 self.merit_filter.update_threshold(obj);
                 let local_trial: LocalSolution = self
                     .local_solver
-                    .solve(trial)
-                    .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+                    .solve(trial)?;
                 let added: bool = self.process_local_solution(local_trial.clone())?;
 
                 if self.verbose && added {
@@ -1378,8 +1375,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                         );
                         
                         let local_solution = local_solver
-                            .solve(trial.clone())
-                            .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+                            .solve(trial.clone())?;
                         
                         Ok((*local_iter, trial.clone(), *obj, local_solution))
                     })
