@@ -224,20 +224,27 @@ pub enum OQNLPError {
 ///
 /// ## Configuration Options
 ///
-/// #[cfg_attr(feature = "rayon", doc = "### Parallel Processing")]
-/// #[cfg_attr(feature = "rayon", doc = "- [`batch_iterations()`](OQNLP::batch_iterations): Set batch size for parallel processing of stage two iterations")]
-/// 
+#[cfg_attr(feature = "rayon", doc = "")]
+#[cfg_attr(feature = "rayon", doc = "### Parallel Processing")]
+#[cfg_attr(feature = "rayon", doc = "")]
+#[cfg_attr(feature = "rayon", doc = "- [`batch_iterations()`](OQNLP::batch_iterations): Set batch size for parallel processing of stage two iterations")]
+#[cfg_attr(feature = "rayon", doc = "")]
 /// ### Time Control
+///
 /// - [`max_time()`](OQNLP::max_time): Set maximum optimization time
 /// - [`target_objective()`](OQNLP::target_objective): Early stopping criterion
 ///
 /// ### Solution Quality
+///
 /// - [`exclude_out_of_bounds()`](OQNLP::exclude_out_of_bounds): Enforce variable bounds
 /// - [`verbose()`](OQNLP::verbose): Enable detailed progress output
 ///
+#[cfg_attr(feature = "checkpointing", doc = "")]
 #[cfg_attr(feature = "checkpointing", doc = "### State Persistence")]
+#[cfg_attr(feature = "checkpointing", doc = "")]
 #[cfg_attr(feature = "checkpointing", doc = "- [`with_checkpointing()`](Self::with_checkpointing): Enable automatic state saving")]
 #[cfg_attr(feature = "checkpointing", doc = "- [`resume_with_modified_params()`](Self::resume_with_modified_params): Continue with new parameters")]
+#[cfg_attr(feature = "checkpointing", doc = "")]
 ///
 /// ## Example Usage
 ///
@@ -1430,8 +1437,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     self.merit_filter.update_threshold(obj);
                     let local_trial = self
                         .local_solver
-                        .solve(trial)
-                        .map_err(|e| OQNLPError::LocalSolverError(e.to_string()))?;
+                        .solve(trial)?;
                     let added = self.process_local_solution(local_trial.clone())?;
 
                     if self.verbose && added {
