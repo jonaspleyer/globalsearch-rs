@@ -36,7 +36,7 @@ Changelog = "https://github.com/GermanHeim/globalsearch-rs/releases"
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "pyglobalsearch"
-exclude = ["tests/*", "docs/*"]
+exclude = [{ path = "/README.md", format = "sdist" }, "tests/*", "docs/*"]
 
 [tool.mypy]
 plugins = ["numpy.typing.mypy_plugin"]
