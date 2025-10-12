@@ -16,6 +16,9 @@
     <a href="https://crates.io/crates/globalsearch">
         <img src="https://img.shields.io/crates/v/globalsearch?logo=rust&color=E05D44" alt="crates version" />
     </a> 
+    <a href="https://pypi.org/project/pyglobalsearch/">
+        <img src="https://img.shields.io/pypi/v/pyglobalsearch?logo=pypi&logoColor=%23ffd343&color=%230060df">
+    </a>
     <a href="https://github.com/GermanHeim/globalsearch-rs/actions/workflows/globalsearch-rs-CI.yml">
         <img src="https://img.shields.io/github/actions/workflow/status/GermanHeim/globalsearch-rs/globalsearch-rs-CI.yml?branch=main&label=globalsearch%20CI&logo=github" alt="CI" />
     </a> 
