@@ -22,16 +22,21 @@ authors = [
     { name = "Germán Martín Heim", email = "german.martin.heim@gmail.com" },
 ]
 dependencies = ["numpy>=1.24.4"]
+readme = "README.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.3.5", "ruff>=0.9.9"]
 
 [project.urls]
+Homepage = "https://germanheim.github.io/globalsearch-rs-website/"
+Documentation = "https://germanheim.github.io/pyglobalsearch-website/api.html"
 Repository = "https://github.com/GermanHeim/globalsearch-rs"
+Changelog = "https://github.com/GermanHeim/globalsearch-rs/releases"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "pyglobalsearch"
+exclude = [{ path = "/README.md", format = "sdist" }, "tests/*", "docs/*"]
 
 [tool.mypy]
 plugins = ["numpy.typing.mypy_plugin"]
