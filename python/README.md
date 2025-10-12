@@ -13,6 +13,9 @@
 </p>
 
 <div align="center">
+    <a href="https://pypi.org/project/pyglobalsearch/">
+        <img src="https://img.shields.io/pypi/v/pyglobalsearch?logo=pypi&logoColor=%23ffd343&color=%230060df">
+    </a>
     <a href="https://docs.astral.sh/uv/">
         <img src="https://img.shields.io/badge/uv-black?logo=uv" alt="uv" />
     </a> 
