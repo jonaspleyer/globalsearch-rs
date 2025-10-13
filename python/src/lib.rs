@@ -23,8 +23,8 @@ static PROBLEM_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 // Thread-local storage for current problem ID and constraint index during evaluation
 thread_local! {
-    static CURRENT_PROBLEM_ID: Cell<usize> = Cell::new(0);
-    static CURRENT_CONSTRAINT_INDEX: Cell<usize> = Cell::new(0);
+    static CURRENT_PROBLEM_ID: Cell<usize> = const { Cell::new(0) };
+    static CURRENT_CONSTRAINT_INDEX: Cell<usize> = const { Cell::new(0) };
 }
 
 fn get_constraint_registry() -> &'static ConstraintRegistry {
@@ -71,6 +71,7 @@ fn evaluate_constraints_for_id(problem_id: usize, x: &[f64]) -> Vec<f64> {
 const MAX_CONSTRAINTS: usize = 1000;
 
 seq!(N in 0..1000 {
+    #[allow(clippy::get_first)]
     fn constraint_fn_~N(x: &[f64], _user_data: &mut ()) -> f64 {
         let problem_id = get_current_problem_id();
         let constraints = evaluate_constraints_for_id(problem_id, x);
@@ -322,7 +323,7 @@ impl PySolutionSet {
 
     fn __str__(&self) -> String {
         let mut result = String::from("Solution Set\n");
-        result.push_str(&format!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"));
+        result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
         result.push_str(&format!("Total solutions: {}\n", self.solutions.len()));
 
         if !self.solutions.is_empty() {
@@ -717,6 +718,7 @@ impl Problem for PyProblem {
 ///
 /// >>> result = gs.optimize(problem, params, parallel=True)
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (
     problem,
     params,
@@ -744,7 +746,7 @@ fn optimize(
     Python::attach(|py| {
         // Convert local_solver string to enum
         let solver_type = LocalSolverType::from_string(local_solver.unwrap_or("cobyla"))
-            .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         let seed = seed.unwrap_or(0);
 

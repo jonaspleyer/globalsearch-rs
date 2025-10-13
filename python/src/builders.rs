@@ -5,8 +5,6 @@ use globalsearch::local_solver::builders::{
 };
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use std::f64::EPSILON;
-use std::f64::INFINITY;
 
 #[pyclass]
 #[derive(Debug, Clone)]
@@ -82,7 +80,7 @@ impl PyHagerZhang {
         theta = 0.5,
         gamma = 0.66,
         eta = 0.01,
-        bounds = vec![EPSILON.sqrt(), INFINITY],
+        bounds = vec![f64::EPSILON.sqrt(), f64::INFINITY],
     ))]
     fn new(
         delta: f64,
@@ -151,7 +149,7 @@ impl PyMoreThuente {
         c1 = 1e-4,
         c2 = 0.9,
         width_tolerance = 1e-10,
-        bounds = vec![EPSILON.sqrt(), INFINITY],
+        bounds = vec![f64::EPSILON.sqrt(), f64::INFINITY],
     ))]
     fn new(c1: f64, c2: f64, width_tolerance: f64, bounds: Vec<f64>) -> Self {
         PyMoreThuente { c1, c2, width_tolerance, bounds }
@@ -327,8 +325,8 @@ impl PyLBFGS {
     #[new]
     #[pyo3(signature = (
         max_iter = 300,
-        tolerance_grad = EPSILON.sqrt(),
-        tolerance_cost = EPSILON,
+        tolerance_grad = f64::EPSILON.sqrt(),
+        tolerance_cost = f64::EPSILON,
         history_size = 10,
         l1_coefficient = None,
         line_search_params = PyLineSearchParams {
@@ -336,7 +334,7 @@ impl PyLBFGS {
                 c1: 1e-4,
                 c2: 0.9,
                 width_tolerance: 1e-10,
-                bounds: vec![EPSILON.sqrt(), INFINITY],
+                bounds: vec![f64::EPSILON.sqrt(), f64::INFINITY],
             }),
         },
     ))]
@@ -481,7 +479,7 @@ impl PyNelderMead {
     #[new]
     #[pyo3(signature = (
         simplex_delta = 0.1,
-        sd_tolerance = EPSILON,
+        sd_tolerance = f64::EPSILON,
         max_iter = 300,
         alpha = 1.0,
         gamma = 2.0,
@@ -557,7 +555,7 @@ impl PySteepestDescent {
                 c1: 1e-4,
                 c2: 0.9,
                 width_tolerance: 1e-10,
-                bounds: vec![EPSILON.sqrt(), INFINITY],
+                bounds: vec![f64::EPSILON.sqrt(), f64::INFINITY],
             }),
         },
     ))]
@@ -647,13 +645,13 @@ impl PyNewtonCG {
     #[pyo3(signature = (
         max_iter = 300,
         curvature_threshold = 0.0,
-        tolerance = EPSILON,
+        tolerance = f64::EPSILON,
         line_search_params = PyLineSearchParams {
             method: PyLineSearchMethod::MoreThuente(PyMoreThuente {
                 c1: 1e-4,
                 c2: 0.9,
                 width_tolerance: 1e-10,
-                bounds: vec![EPSILON.sqrt(), INFINITY],
+                bounds: vec![f64::EPSILON.sqrt(), f64::INFINITY],
             }),
         },
     ))]
@@ -894,7 +892,6 @@ fn trustregion(
 /// >>> scaled = gs.builders.cobyla(
 /// ...     xtol_abs=[1e-6, 1e-8, 1e-4]  # x1: 1e-6, x2: 1e-8, x3: 1e-4
 /// ... )
-
 pub struct PyCOBYLA {
     #[pyo3(get, set)]
     /// Maximum number of iterations
