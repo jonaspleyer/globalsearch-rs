@@ -184,11 +184,8 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
             pb.update(1).expect("Failed to update progress bar");
         }
 
-        let reference_set_with_objectives: Vec<(Array1<F>, F)> = self
-            .reference_set
-            .into_iter()
-            .zip(self.reference_set_objectives)
-            .collect();
+        let reference_set_with_objectives: Vec<(Array1<F>, F)> =
+            self.reference_set.into_iter().zip(self.reference_set_objectives).collect();
 
         Ok((reference_set_with_objectives, best))
     }
@@ -234,22 +231,14 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
 
         #[cfg(feature = "rayon")]
         let mut min_dists: Vec<F> = if self.enable_parallel {
-            candidates
-                .par_iter()
-                .map(|c| self.min_distance(c, ref_set))
-                .collect()
+            candidates.par_iter().map(|c| self.min_distance(c, ref_set)).collect()
         } else {
-            candidates
-                .iter()
-                .map(|c| self.min_distance(c, ref_set))
-                .collect()
+            candidates.iter().map(|c| self.min_distance(c, ref_set)).collect()
         };
 
         #[cfg(not(feature = "rayon"))]
-        let mut min_dists: Vec<F> = candidates
-            .iter()
-            .map(|c| self.min_distance(c, ref_set))
-            .collect();
+        let mut min_dists: Vec<F> =
+            candidates.iter().map(|c| self.min_distance(c, ref_set)).collect();
 
         while ref_set.len() < self.params.population_size {
             #[cfg(feature = "rayon")]
@@ -392,10 +381,7 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
         }
         #[cfg(not(feature = "rayon"))]
         {
-            ref_set
-                .iter()
-                .map(|p| euclidean_distance_squared(point, p))
-                .fold(F::INFINITY, F::min)
+            ref_set.iter().map(|p| euclidean_distance_squared(point, p)).fold(F::INFINITY, F::min)
         }
     }
 
@@ -405,9 +391,8 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
         let k = k.max(2).min(self.reference_set.len());
 
         // Create combinations only between the best k points
-        let indices: Vec<(usize, usize)> = (0..k)
-            .flat_map(|i| ((i + 1)..k).map(move |j| (i, j)))
-            .collect();
+        let indices: Vec<(usize, usize)> =
+            (0..k).flat_map(|i| ((i + 1)..k).map(move |j| (i, j))).collect();
 
         // Pre-allocate the result vector
         let n_combinations = indices.len();
@@ -418,9 +403,7 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
         // Precompute seeds for each combine_points call
         let seeds: Vec<u64> = {
             let mut rng = self.rng.lock().unwrap();
-            (0..indices.len())
-                .map(|_| rng.random::<u64>())
-                .collect::<Vec<_>>()
+            (0..indices.len()).map(|_| rng.random::<u64>()).collect::<Vec<_>>()
         };
 
         #[cfg(feature = "rayon")]
@@ -521,10 +504,7 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
         ref_evaluated.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
         // Get worst objective value in reference set
-        let worst_obj = ref_evaluated
-            .last()
-            .map(|(_, obj)| *obj)
-            .unwrap_or(F::INFINITY);
+        let worst_obj = ref_evaluated.last().map(|(_, obj)| *obj).unwrap_or(F::INFINITY);
 
         #[cfg(feature = "rayon")]
         let trial_evaluated: Vec<(Array1<F>, F)> = trials
@@ -596,9 +576,7 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
                     Some(current) => Some(current),
                 };
             }
-            best_point
-                .map(|(p, _)| p.clone())
-                .ok_or(ScatterSearchError::NoCandidates)
+            best_point.map(|(p, _)| p.clone()).ok_or(ScatterSearchError::NoCandidates)
         }
     }
 
@@ -639,11 +617,9 @@ mod tests_scatter_search {
 
     impl Problem for SixHumpCamel {
         fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
-            Ok(
-                (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
-                    + x[0] * x[1]
-                    + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
-            )
+            Ok((4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+                + x[0] * x[1]
+                + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2))
         }
 
         fn variable_bounds(&self) -> Array2<F> {

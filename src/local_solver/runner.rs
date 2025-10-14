@@ -130,11 +130,7 @@ impl<P: Problem> LocalSolver<P> {
         local_solver_type: LocalSolverType,
         local_solver_config: LocalSolverConfig,
     ) -> Self {
-        Self {
-            problem,
-            local_solver_type,
-            local_solver_config,
-        }
+        Self { problem, local_solver_type, local_solver_config }
     }
 
     /// Solve the optimization problem using the local solver
@@ -174,9 +170,7 @@ impl<P: Problem> LocalSolver<P> {
             type Output = F;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
-                self.problem
-                    .objective(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
@@ -185,15 +179,11 @@ impl<P: Problem> LocalSolver<P> {
             type Gradient = Array1<F>;
 
             fn gradient(&self, param: &Self::Param) -> std::result::Result<Self::Gradient, Error> {
-                self.problem
-                    .gradient(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.gradient(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
-        let cost = ProblemCost {
-            problem: &self.problem,
-        };
+        let cost = ProblemCost { problem: &self.problem };
 
         if let LocalSolverConfig::LBFGS {
             max_iter,
@@ -206,12 +196,7 @@ impl<P: Problem> LocalSolver<P> {
         {
             // Match line search method
             match &line_search_params.method {
-                LineSearchMethod::MoreThuente {
-                    c1,
-                    c2,
-                    width_tolerance,
-                    bounds,
-                } => {
+                LineSearchMethod::MoreThuente { c1, c2, width_tolerance, bounds } => {
                     let linesearch = MoreThuenteLineSearch::new()
                         .with_c(*c1, *c2)
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?
@@ -227,11 +212,9 @@ impl<P: Problem> LocalSolver<P> {
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
                     if let Some(l1_coeff) = l1_coefficient {
-                        solver = solver
-                            .with_l1_regularization(*l1_coeff)
-                            .map_err(|e: Error| {
-                                LocalSolverError::InvalidLBFGSConfig(e.to_string())
-                            })?;
+                        solver = solver.with_l1_regularization(*l1_coeff).map_err(|e: Error| {
+                            LocalSolverError::InvalidLBFGSConfig(e.to_string())
+                        })?;
                     }
 
                     let res = Executor::new(cost, solver)
@@ -279,11 +262,9 @@ impl<P: Problem> LocalSolver<P> {
                         .map_err(|e: Error| LocalSolverError::InvalidLBFGSConfig(e.to_string()))?;
 
                     if let Some(l1_coeff) = l1_coefficient {
-                        solver = solver
-                            .with_l1_regularization(*l1_coeff)
-                            .map_err(|e: Error| {
-                                LocalSolverError::InvalidLBFGSConfig(e.to_string())
-                            })?;
+                        solver = solver.with_l1_regularization(*l1_coeff).map_err(|e: Error| {
+                            LocalSolverError::InvalidLBFGSConfig(e.to_string())
+                        })?;
                     }
 
                     let res = Executor::new(cost, solver)
@@ -303,9 +284,7 @@ impl<P: Problem> LocalSolver<P> {
                 }
             }
         } else {
-            Err(LocalSolverError::InvalidLBFGSConfig(
-                "Error parsing solver config".to_string(),
-            ))
+            Err(LocalSolverError::InvalidLBFGSConfig("Error parsing solver config".to_string()))
         }
     }
 
@@ -324,15 +303,11 @@ impl<P: Problem> LocalSolver<P> {
             type Output = F;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
-                self.problem
-                    .objective(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
-        let cost = ProblemCost {
-            problem: &self.problem,
-        };
+        let cost = ProblemCost { problem: &self.problem };
 
         if let LocalSolverConfig::NelderMead {
             simplex_delta,
@@ -370,12 +345,7 @@ impl<P: Problem> LocalSolver<P> {
                 .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
             Ok(LocalSolution {
-                point: res
-                    .state()
-                    .best_param
-                    .as_ref()
-                    .ok_or(LocalSolverError::NoSolution)?
-                    .clone(),
+                point: res.state().best_param.as_ref().ok_or(LocalSolverError::NoSolution)?.clone(),
                 objective: res.state().best_cost,
             })
         } else {
@@ -400,9 +370,7 @@ impl<P: Problem> LocalSolver<P> {
             type Output = F;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
-                self.problem
-                    .objective(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
@@ -411,29 +379,16 @@ impl<P: Problem> LocalSolver<P> {
             type Gradient = Array1<F>;
 
             fn gradient(&self, param: &Self::Param) -> std::result::Result<Self::Gradient, Error> {
-                self.problem
-                    .gradient(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.gradient(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
-        let cost = ProblemCost {
-            problem: &self.problem,
-        };
+        let cost = ProblemCost { problem: &self.problem };
 
-        if let LocalSolverConfig::SteepestDescent {
-            max_iter,
-            line_search_params,
-        } = solver_config
-        {
+        if let LocalSolverConfig::SteepestDescent { max_iter, line_search_params } = solver_config {
             // Match line search method
             match &line_search_params.method {
-                LineSearchMethod::MoreThuente {
-                    c1,
-                    c2,
-                    width_tolerance,
-                    bounds,
-                } => {
+                LineSearchMethod::MoreThuente { c1, c2, width_tolerance, bounds } => {
                     let linesearch = MoreThuenteLineSearch::new()
                         .with_c(*c1, *c2)
                         .map_err(|e: Error| {
@@ -540,9 +495,7 @@ impl<P: Problem> LocalSolver<P> {
             type Output = F;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
-                self.problem
-                    .objective(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
@@ -551,9 +504,7 @@ impl<P: Problem> LocalSolver<P> {
             type Gradient = Array1<F>;
 
             fn gradient(&self, param: &Self::Param) -> std::result::Result<Self::Gradient, Error> {
-                self.problem
-                    .gradient(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.gradient(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
@@ -562,15 +513,11 @@ impl<P: Problem> LocalSolver<P> {
             type Hessian = Array2<F>;
 
             fn hessian(&self, param: &Self::Param) -> std::result::Result<Self::Hessian, Error> {
-                self.problem
-                    .hessian(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.hessian(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
-        let cost = ProblemCost {
-            problem: &self.problem,
-        };
+        let cost = ProblemCost { problem: &self.problem };
 
         if let LocalSolverConfig::TrustRegion {
             trust_region_radius_method,
@@ -663,9 +610,7 @@ impl<P: Problem> LocalSolver<P> {
             type Output = F;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
-                self.problem
-                    .objective(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
@@ -674,9 +619,7 @@ impl<P: Problem> LocalSolver<P> {
             type Gradient = Array1<F>;
 
             fn gradient(&self, param: &Self::Param) -> std::result::Result<Self::Gradient, Error> {
-                self.problem
-                    .gradient(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.gradient(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
@@ -685,15 +628,11 @@ impl<P: Problem> LocalSolver<P> {
             type Hessian = Array2<F>;
 
             fn hessian(&self, param: &Self::Param) -> std::result::Result<Self::Hessian, Error> {
-                self.problem
-                    .hessian(param)
-                    .map_err(|e| Error::msg(e.to_string()))
+                self.problem.hessian(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
-        let cost = ProblemCost {
-            problem: &self.problem,
-        };
+        let cost = ProblemCost { problem: &self.problem };
 
         if let LocalSolverConfig::NewtonCG {
             max_iter,
@@ -703,12 +642,7 @@ impl<P: Problem> LocalSolver<P> {
         } = solver_config
         {
             match &line_search_params.method {
-                LineSearchMethod::MoreThuente {
-                    c1,
-                    c2,
-                    width_tolerance,
-                    bounds,
-                } => {
+                LineSearchMethod::MoreThuente { c1, c2, width_tolerance, bounds } => {
                     let linesearch = MoreThuenteLineSearch::new()
                         .with_c(*c1, *c2)
                         .map_err(|e: Error| {
@@ -797,9 +731,7 @@ impl<P: Problem> LocalSolver<P> {
                 }
             }
         } else {
-            Err(LocalSolverError::InvalidNewtonCG(
-                "Error parsing solver configuration".to_string(),
-            ))
+            Err(LocalSolverError::InvalidNewtonCG("Error parsing solver configuration".to_string()))
         }
     }
 
@@ -841,9 +773,8 @@ impl<P: Problem> LocalSolver<P> {
                 ));
             }
 
-            let bounds: Vec<(F, F)> = (0..x0.len())
-                .map(|i| (problem_bounds[[i, 0]], problem_bounds[[i, 1]]))
-                .collect();
+            let bounds: Vec<(F, F)> =
+                (0..x0.len()).map(|i| (problem_bounds[[i, 0]], problem_bounds[[i, 1]])).collect();
 
             match cobyla::minimize(
                 objective,
@@ -857,25 +788,17 @@ impl<P: Problem> LocalSolver<P> {
                     ftol_rel: *ftol_rel,
                     ftol_abs: *ftol_abs,
                     xtol_rel: *xtol_rel,
-                    xtol_abs: if xtol_abs.is_empty() {
-                        vec![]
-                    } else {
-                        xtol_abs.clone()
-                    },
+                    xtol_abs: if xtol_abs.is_empty() { vec![] } else { xtol_abs.clone() },
                 }),
             ) {
                 Ok((_status, solution_x, objective_value)) => {
                     let solution_point = Array1::from_vec(solution_x);
 
-                    Ok(LocalSolution {
-                        point: solution_point,
-                        objective: objective_value,
-                    })
+                    Ok(LocalSolution { point: solution_point, objective: objective_value })
                 }
-                Err(e) => Err(LocalSolverError::RunFailed(format!(
-                    "COBYLA solver failed: {:?}",
-                    e
-                ))),
+                Err(e) => {
+                    Err(LocalSolverError::RunFailed(format!("COBYLA solver failed: {:?}", e)))
+                }
             }
         } else {
             Err(LocalSolverError::InvalidCOBYLAConfig(
@@ -899,11 +822,9 @@ mod tests_local_solvers {
 
     impl Problem for NoGradientSixHumpCamel {
         fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
-            Ok(
-                (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
-                    + x[0] * x[1]
-                    + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
-            )
+            Ok((4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+                + x[0] * x[1]
+                + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2))
         }
 
         fn variable_bounds(&self) -> Array2<F> {
@@ -936,11 +857,9 @@ mod tests_local_solvers {
 
     impl Problem for NoHessianSixHumpCamel {
         fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
-            Ok(
-                (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
-                    + x[0] * x[1]
-                    + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2),
-            )
+            Ok((4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+                + x[0] * x[1]
+                + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2))
         }
 
         // Calculated analytically, reference didn't provide gradient
@@ -1012,11 +931,8 @@ mod tests_local_solvers {
     fn test_lbfgs_no_gradient() {
         let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
 
-        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
-            problem,
-            LocalSolverType::LBFGS,
-            LBFGSBuilder::default().build(),
-        );
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> =
+            LocalSolver::new(problem, LocalSolverType::LBFGS, LBFGSBuilder::default().build());
 
         let initial_point: Array1<F> = array![0.0, 0.0];
         let error: LocalSolverError = local_solver.solve(initial_point).unwrap_err();
@@ -1247,9 +1163,7 @@ mod tests_local_solvers {
                 tolerance_cost: 1e-6,
                 history_size: 5,
                 l1_coefficient: None,
-                line_search_params: HagerZhangBuilder::default()
-                    .bounds(array![1.0, 0.0])
-                    .build(),
+                line_search_params: HagerZhangBuilder::default().bounds(array![1.0, 0.0]).build(),
             },
         );
 
@@ -1307,9 +1221,7 @@ mod tests_local_solvers {
                 tolerance_cost: 1e-6,
                 history_size: 5,
                 l1_coefficient: None,
-                line_search_params: MoreThuenteBuilder::default()
-                    .bounds(array![1.0, 0.0])
-                    .build(),
+                line_search_params: MoreThuenteBuilder::default().bounds(array![1.0, 0.0]).build(),
             },
         );
 
