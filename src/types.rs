@@ -42,10 +42,7 @@ use std::path::PathBuf;
 // Or add it now and print a warning that it is not working as expected in some cases
 
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// Configuration parameters for the OQNLP (OptQuest for Nonlinear Programming) algorithm.
 ///
 /// This struct contains all the tunable parameters that control the behavior of the
@@ -130,10 +127,7 @@ impl<F: ndarray::NdFloat> Default for OQNLPParams<F> {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// Configuration parameters for filtering mechanisms in the OQNLP algorithm.
 ///
 /// These parameters control how candidate solutions are filtered during the
@@ -180,10 +174,7 @@ pub struct FilterParams<F> {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// Represents a single solution point in the optimization parameter space.
 ///
 /// A `LocalSolution` encapsulates both the parameter values (point) and the
@@ -245,10 +236,7 @@ impl<F: ndarray::NdFloat> LocalSolution<F> {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// A collection of local solutions with utility methods for analysis and display.
 ///
 /// `SolutionSet` is the primary data structure for storing and manipulating
@@ -308,9 +296,7 @@ impl<F: ndarray::NdFloat> SolutionSet<F> {
 
     /// Returns the best solution in the set based on the objective function value.
     pub fn best_solution(&self) -> Option<&LocalSolution<F>> {
-        self.solutions
-            .iter()
-            .min_by(|a, b| a.objective.partial_cmp(&b.objective).unwrap())
+        self.solutions.iter().min_by(|a, b| a.objective.partial_cmp(&b.objective).unwrap())
     }
 
     /// Returns an iterator over the solutions in the set.
@@ -363,11 +349,7 @@ impl<F: ndarray::NdFloat> SolutionSet<F> {
                     let constraint_value = constraint_fn(&x_slice, &mut ());
 
                     // Format constraint status
-                    let status = if constraint_value >= F::zero() {
-                        "✓"
-                    } else {
-                        "✗"
-                    };
+                    let status = if constraint_value >= F::zero() { "✓" } else { "✗" };
                     let violation = if constraint_value < F::zero() {
                         format!(" (violated by {:.6})", -constraint_value)
                     } else {
@@ -464,10 +446,7 @@ impl<F: ndarray::NdFloat> fmt::Display for SolutionSet<F> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// Local solver implementation types for the OQNLP algorithm
 ///
 /// This enum defines the types of local solvers that can be used in the OQNLP algorithm, including L-BFGS, Nelder-Mead, and Gradient Descent (argmin's implementations).
@@ -577,10 +556,7 @@ pub enum EvaluationError {
 
 #[cfg(feature = "checkpointing")]
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// Configuration for checkpointing behavior
 ///
 /// This struct defines the configuration for checkpointing behavior in the OQNLP algorithm.
@@ -619,10 +595,7 @@ impl Default for CheckpointConfig {
 
 #[cfg(feature = "checkpointing")]
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 #[serde(bound = "F: ndarray::NdFloat + serde::Serialize + for<'a> serde::Deserialize<'a>")]
 /// Complete OQNLP state that can be saved and restored
 ///
@@ -729,11 +702,7 @@ impl<F: ndarray::NdFloat> fmt::Display for OQNLPCheckpoint<F> {
         writeln!(f, "Unchanged cycles: {}", self.unchanged_cycles)?;
         writeln!(f, "Merit threshold: {:.8e}", self.merit_threshold)?;
         writeln!(f, "Reference set size: {}", self.reference_set.len())?;
-        writeln!(
-            f,
-            "Distance filter solutions: {}",
-            self.distance_filter_solutions.len()
-        )?;
+        writeln!(f, "Distance filter solutions: {}", self.distance_filter_solutions.len())?;
         writeln!(f, "Current seed: {}", self.current_seed)?;
 
         if let Some(ref solution_set) = self.solution_set {
@@ -811,14 +780,8 @@ mod tests_types {
         let one = F::one();
         let two = one + one;
         let solutions = Array1::from_vec(vec![
-            LocalSolution {
-                point: array![one, two],
-                objective: -one,
-            },
-            LocalSolution {
-                point: array![one + two, two + two],
-                objective: -two,
-            },
+            LocalSolution { point: array![one, two], objective: -one },
+            LocalSolution { point: array![one + two, two + two], objective: -two },
         ]);
         let solution_set: SolutionSet<F> = SolutionSet { solutions };
         assert_eq!(solution_set.len(), 2);
@@ -840,10 +803,8 @@ mod tests_types {
         let solution_set: SolutionSet<F> = SolutionSet { solutions };
         assert!(solution_set.is_empty());
 
-        let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![LocalSolution {
-            point: array![F::one()],
-            objective: -F::one(),
-        }]);
+        let solutions: Array1<LocalSolution<F>> =
+            Array1::from_vec(vec![LocalSolution { point: array![F::one()], objective: -F::one() }]);
         let solution_set: SolutionSet<F> = SolutionSet { solutions };
         assert!(!solution_set.is_empty());
     }
@@ -866,14 +827,8 @@ mod tests_types {
         let four = two * two;
 
         let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![
-            LocalSolution {
-                point: array![one, two],
-                objective: -one,
-            },
-            LocalSolution {
-                point: array![three, four],
-                objective: -two,
-            },
+            LocalSolution { point: array![one, two], objective: -one },
+            LocalSolution { point: array![three, four], objective: -two },
         ]);
         let solution_set: SolutionSet<F> = SolutionSet { solutions };
 
@@ -893,10 +848,8 @@ mod tests_types {
 
     /// Test the Display trait for the SolutionSet struct
     fn test_solution_set_display<F: ndarray::NdFloat>() {
-        let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![LocalSolution {
-            point: array![F::one()],
-            objective: -F::one(),
-        }]);
+        let solutions: Array1<LocalSolution<F>> =
+            Array1::from_vec(vec![LocalSolution { point: array![F::one()], objective: -F::one() }]);
         let solution_set: SolutionSet<F> = SolutionSet { solutions };
 
         println!("{}", solution_set);
@@ -949,39 +902,21 @@ mod tests_types {
     #[test]
     /// Test the from_string method for the LocalSolverType enum
     fn test_local_solver_type_from_string() {
-        assert_eq!(
-            LocalSolverType::from_string("LBFGS"),
-            Ok(LocalSolverType::LBFGS)
-        );
-        assert_eq!(
-            LocalSolverType::from_string("Nelder-Mead"),
-            Ok(LocalSolverType::NelderMead)
-        );
+        assert_eq!(LocalSolverType::from_string("LBFGS"), Ok(LocalSolverType::LBFGS));
+        assert_eq!(LocalSolverType::from_string("Nelder-Mead"), Ok(LocalSolverType::NelderMead));
         assert_eq!(
             LocalSolverType::from_string("SteepestDescent"),
             Ok(LocalSolverType::SteepestDescent)
         );
-        assert_eq!(
-            LocalSolverType::from_string("TrustRegion"),
-            Ok(LocalSolverType::TrustRegion)
-        );
-        assert_eq!(
-            LocalSolverType::from_string("NewtonCG"),
-            Ok(LocalSolverType::NewtonCG)
-        );
-        assert_eq!(
-            LocalSolverType::from_string("Invalid"),
-            Err("Invalid solver type.")
-        );
+        assert_eq!(LocalSolverType::from_string("TrustRegion"), Ok(LocalSolverType::TrustRegion));
+        assert_eq!(LocalSolverType::from_string("NewtonCG"), Ok(LocalSolverType::NewtonCG));
+        assert_eq!(LocalSolverType::from_string("Invalid"), Err("Invalid solver type."));
     }
 
     #[test]
     /// Test f() and x() methods from LocalSolution
     fn test_local_solution_f_x() {
-        let local_solution = LocalSolution {
-            point: array![1.0],
-            objective: -1.0,
-        };
+        let local_solution = LocalSolution { point: array![1.0], objective: -1.0 };
 
         assert_eq!(local_solution.fun(), -1.0);
         assert_eq!(local_solution.x(), array![1.0]);
@@ -1003,18 +938,9 @@ mod tests_types {
         let two = one + one;
         let three = two + one;
         let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![
-            LocalSolution {
-                point: array![one],
-                objective: -one,
-            },
-            LocalSolution {
-                point: array![two],
-                objective: -one,
-            },
-            LocalSolution {
-                point: array![three],
-                objective: -one,
-            },
+            LocalSolution { point: array![one], objective: -one },
+            LocalSolution { point: array![two], objective: -one },
+            LocalSolution { point: array![three], objective: -one },
         ]);
         let solution_set: SolutionSet<F> = SolutionSet { solutions };
 
@@ -1028,14 +954,8 @@ mod tests_types {
     fn test_oqnlp_checkpoint_display() {
         let solution_set = SolutionSet {
             solutions: Array1::from_vec(vec![
-                LocalSolution {
-                    point: array![1.0, 2.0],
-                    objective: -1.5,
-                },
-                LocalSolution {
-                    point: array![3.0, 4.0],
-                    objective: -2.0,
-                },
+                LocalSolution { point: array![1.0, 2.0], objective: -1.5 },
+                LocalSolution { point: array![3.0, 4.0], objective: -2.0 },
             ]),
         };
 
@@ -1112,10 +1032,8 @@ mod tests_types {
             }
         }
 
-        let solutions = Array1::from_vec(vec![LocalSolution {
-            point: array![0.3, 0.3],
-            objective: 0.18,
-        }]);
+        let solutions =
+            Array1::from_vec(vec![LocalSolution { point: array![0.3, 0.3], objective: 0.18 }]);
         let solution_set = SolutionSet { solutions };
         let problem = TestProblemWithConstraints;
 

@@ -37,10 +37,7 @@
 use ndarray::{array, Array1};
 
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// Trust region subproblem solution methods.
 ///
 /// This enum specifies the algorithm used to solve the trust region subproblem,
@@ -69,10 +66,7 @@ pub enum TrustRegionRadiusMethod {
     Steihaug,
 }
 
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// Local solver configuration for the OQNLP algorithm
 ///
 /// This enum defines the configuration options for the local solver used in the optimizer, depending on the method used.
@@ -556,15 +550,7 @@ impl<F> NelderMeadBuilder<F> {
         rho: F,
         sigma: F,
     ) -> Self {
-        NelderMeadBuilder {
-            simplex_delta,
-            sd_tolerance,
-            max_iter,
-            alpha,
-            gamma,
-            rho,
-            sigma,
-        }
+        NelderMeadBuilder { simplex_delta, sd_tolerance, max_iter, alpha, gamma, rho, sigma }
     }
 
     /// Build the Nelder-Mead local solver configuration
@@ -690,10 +676,7 @@ pub struct SteepestDescentBuilder<F> {
 impl<F> SteepestDescentBuilder<F> {
     /// Create a new Steepest Descent builder
     pub fn new(max_iter: u64, line_search_params: LineSearchParams<F>) -> Self {
-        SteepestDescentBuilder {
-            max_iter,
-            line_search_params,
-        }
+        SteepestDescentBuilder { max_iter, line_search_params }
     }
 
     /// Build the Steepest Descent local solver configuration
@@ -725,10 +708,7 @@ impl<F> SteepestDescentBuilder<F> {
 /// - `line_search_params`: Default LineSearchParams
 impl<F: ndarray::NdFloat> Default for SteepestDescentBuilder<F> {
     fn default() -> Self {
-        SteepestDescentBuilder {
-            max_iter: 300,
-            line_search_params: LineSearchParams::default(),
-        }
+        SteepestDescentBuilder { max_iter: 300, line_search_params: LineSearchParams::default() }
     }
 }
 
@@ -791,13 +771,7 @@ impl<F> TrustRegionBuilder<F> {
         max_radius: F,
         eta: F,
     ) -> Self {
-        TrustRegionBuilder {
-            trust_region_radius_method,
-            max_iter,
-            radius,
-            max_radius,
-            eta,
-        }
+        TrustRegionBuilder { trust_region_radius_method, max_iter, radius, max_radius, eta }
     }
 
     /// Build the Trust Region local solver configuration
@@ -929,12 +903,7 @@ impl<F> NewtonCGBuilder<F> {
         tolerance: F,
         line_search_params: LineSearchParams<F>,
     ) -> Self {
-        NewtonCGBuilder {
-            max_iter,
-            curvature_threshold,
-            tolerance,
-            line_search_params,
-        }
+        NewtonCGBuilder { max_iter, curvature_threshold, tolerance, line_search_params }
     }
 
     /// Build the Newton-CG method local solver configuration
@@ -1149,36 +1118,17 @@ impl<F: ndarray::NdFloat> Default for COBYLABuilder<F> {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// Line search methods for the local solver
 ///
 /// This enum defines the types of line search methods that can be used in some of the local solver, including MoreThuente, HagerZhang, and Backtracking.
 pub enum LineSearchMethod<F> {
-    MoreThuente {
-        c1: F,
-        c2: F,
-        width_tolerance: F,
-        bounds: Array1<F>,
-    },
-    HagerZhang {
-        delta: F,
-        sigma: F,
-        epsilon: F,
-        theta: F,
-        gamma: F,
-        eta: F,
-        bounds: Array1<F>,
-    },
+    MoreThuente { c1: F, c2: F, width_tolerance: F, bounds: Array1<F> },
+    HagerZhang { delta: F, sigma: F, epsilon: F, theta: F, gamma: F, eta: F, bounds: Array1<F> },
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "checkpointing",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
 /// Line search parameters for the local solver
 ///
 /// This struct defines the parameters for the line search algorithm used in the local solver. It is only needed for the optimizers that use line search methods.
@@ -1277,12 +1227,7 @@ pub struct MoreThuenteBuilder<F> {
 impl<F> MoreThuenteBuilder<F> {
     /// Create a new More-Thuente builder
     pub fn new(c1: F, c2: F, width_tolerance: F, bounds: Array1<F>) -> Self {
-        MoreThuenteBuilder {
-            c1,
-            c2,
-            width_tolerance,
-            bounds,
-        }
+        MoreThuenteBuilder { c1, c2, width_tolerance, bounds }
     }
 
     /// Build the More-Thuente line search parameters
@@ -1414,15 +1359,7 @@ impl<F> HagerZhangBuilder<F> {
         eta: F,
         bounds: Array1<F>,
     ) -> Self {
-        HagerZhangBuilder {
-            delta,
-            sigma,
-            epsilon,
-            theta,
-            gamma,
-            eta,
-            bounds,
-        }
+        HagerZhangBuilder { delta, sigma, epsilon, theta, gamma, eta, bounds }
     }
 
     /// Build the Hager-Zhang line search parameters
