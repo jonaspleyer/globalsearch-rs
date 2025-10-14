@@ -233,7 +233,7 @@ impl<F: ndarray::NdFloat> DistanceFilter<F> {
 
 /// Euclidean distance squared
 fn euclidean_distance_squared<F: ndarray::NdFloat>(a: &Array1<F>, b: &Array1<F>) -> F {
-    a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum::<F>()
+    (a - b).mapv(|x| x.powi(2)).sum()
 }
 
 #[cfg(test)]
