@@ -58,7 +58,7 @@
 //!         objective: candidate_value,
 //!     });
 //! }
-//! # Ok::<(), globalsearch::filters::FiltersErrors>(())
+//! # Ok::<(), globalsearch::filters::FiltersErrors<f64>>(())
 //! ```
 
 use crate::types::{FilterParams, LocalSolution};
@@ -67,7 +67,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 /// Filters errors
-pub enum FiltersErrors {
+pub enum FiltersErrors<F> {
     /// Distance factor must be positive or equal to zero
     #[error("Distance factor must be positive or equal to zero, got {0}.")]
     NegativeDistanceFactor(F),
@@ -101,20 +101,20 @@ pub enum FiltersErrors {
 /// ```
 #[derive(Debug)]
 #[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
-pub struct MeritFilter {
+pub struct MeritFilter<F> {
     pub threshold: F,
 }
 
-impl Default for MeritFilter {
+impl<F: ndarray::NdFloat> Default for MeritFilter<F> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MeritFilter {
+impl<F: ndarray::NdFloat> MeritFilter<F> {
     /// Create a new MeritFilter
     pub fn new() -> Self {
-        Self { threshold: F::INFINITY }
+        Self { threshold: F::infinity() }
     }
 
     pub fn update_threshold(&mut self, threshold: F) {
@@ -176,16 +176,16 @@ impl MeritFilter {
 /// // Check if new points maintain sufficient distance
 /// assert!(!filter.check(&array![0.1, 0.1])); // Too close - rejected
 /// assert!(filter.check(&array![1.0, 1.0]));  // Far enough - accepted
-/// # Ok::<(), globalsearch::filters::FiltersErrors>(())
+/// # Ok::<(), globalsearch::filters::FiltersErrors<f64>>(())
 /// ```
 #[derive(Debug)]
 #[cfg_attr(feature = "checkpointing", derive(serde::Serialize, serde::Deserialize))]
-pub struct DistanceFilter {
-    solutions: Vec<LocalSolution>, // TODO: Change to ndarray?
-    params: FilterParams,
+pub struct DistanceFilter<F> {
+    solutions: Vec<LocalSolution<F>>, // TODO: Change to ndarray?
+    params: FilterParams<F>,
 }
 
-impl DistanceFilter {
+impl<F: ndarray::NdFloat> DistanceFilter<F> {
     /// # Create a new DistanceFilter with the given parameters
     ///
     /// Create a new DistanceFilter with the given parameters and an empty solution set
@@ -194,8 +194,8 @@ impl DistanceFilter {
     /// ## Errors
     ///
     /// Returns an error if the distance factor is negative
-    pub fn new(params: FilterParams) -> Result<Self, FiltersErrors> {
-        if params.distance_factor < 0.0 {
+    pub fn new(params: FilterParams<F>) -> Result<Self, FiltersErrors<F>> {
+        if params.distance_factor < F::zero() {
             return Err(FiltersErrors::NegativeDistanceFactor(params.distance_factor));
         }
 
@@ -206,7 +206,7 @@ impl DistanceFilter {
     }
 
     /// Add a solution to DistanceFilter
-    pub fn add_solution(&mut self, solution: LocalSolution) {
+    pub fn add_solution(&mut self, solution: LocalSolution<F>) {
         self.solutions.push(solution);
     }
 
@@ -220,13 +220,13 @@ impl DistanceFilter {
 
     /// Get the current solutions stored in the filter
     #[cfg(feature = "checkpointing")]
-    pub fn get_solutions(&self) -> &Vec<LocalSolution> {
+    pub fn get_solutions(&self) -> &Vec<LocalSolution<F>> {
         &self.solutions
     }
 
     /// Restore solutions from a checkpoint
     #[cfg(feature = "checkpointing")]
-    pub fn set_solutions(&mut self, solutions: Vec<LocalSolution>) {
+    pub fn set_solutions(&mut self, solutions: Vec<LocalSolution<F>>) {
         self.solutions = solutions;
     }
 }
@@ -242,17 +242,29 @@ mod test_filters {
     use ndarray::array;
 
     #[test]
+    fn test_filter_params_invalid_distance_factor_f32() {
+        test_filter_params_invalid_distance_factor::<f32>()
+    }
+
+    #[test]
+    fn test_filter_params_invalid_distance_factor_f64() {
+        test_filter_params_invalid_distance_factor::<f64>()
+    }
+
     /// Test the invalid distance factor for the Distance Filter
-    fn test_filter_params_invalid_distance_factor() {
-        let params: FilterParams = FilterParams {
-            distance_factor: -0.5, // Distance Factor should be greater or equal to 0.0
+    fn test_filter_params_invalid_distance_factor<F: ndarray::NdFloat>() {
+        let one = F::one();
+        let two = F::one() + F::one();
+        let five = two + two + F::one();
+        let params: FilterParams<F> = FilterParams {
+            distance_factor: -one / two, // Distance Factor should be greater or equal to 0.0
             wait_cycle: 10,
-            threshold_factor: 0.1,
+            threshold_factor: one / (five + five),
         };
 
-        let df: Result<DistanceFilter, FiltersErrors> = DistanceFilter::new(params);
+        let df: Result<DistanceFilter<F>, FiltersErrors<F>> = DistanceFilter::new(params);
 
-        assert!(matches!(df, Err(FiltersErrors::NegativeDistanceFactor(-0.5))));
+        assert!(matches!(df, Err(FiltersErrors::NegativeDistanceFactor(v)) if v == - one / two));
     }
 
     #[test]
