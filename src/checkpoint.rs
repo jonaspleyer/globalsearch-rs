@@ -476,7 +476,7 @@ mod tests_checkpointing {
         let checkpoint = OQNLPCheckpoint {
             params: OQNLPParams::default(),
             current_iteration: 0,
-            merit_threshold: f64::INFINITY,
+            merit_threshold: F::INFINITY,
             solution_set: None,
             reference_set: vec![],
             unchanged_cycles: 0,
@@ -516,7 +516,7 @@ mod tests_checkpointing {
         let checkpoint = OQNLPCheckpoint {
             params: OQNLPParams::default(),
             current_iteration: 0,
-            merit_threshold: f64::INFINITY,
+            merit_threshold: F::INFINITY,
             solution_set: None,
             reference_set: vec![],
             unchanged_cycles: 0,
@@ -618,7 +618,7 @@ mod tests_checkpointing {
         let checkpoint = OQNLPCheckpoint {
             params: OQNLPParams::default(),
             current_iteration: 0,
-            merit_threshold: f64::INFINITY,
+            merit_threshold: F::INFINITY,
             solution_set: None,
             reference_set: vec![],
             unchanged_cycles: 0,
@@ -699,7 +699,7 @@ mod tests_checkpointing {
         let checkpoint = OQNLPCheckpoint {
             params: OQNLPParams::default(),
             current_iteration: 0,
-            merit_threshold: f64::INFINITY,
+            merit_threshold: F::INFINITY,
             solution_set: None,
             reference_set: vec![],
             unchanged_cycles: 0,
@@ -748,7 +748,7 @@ mod tests_checkpointing {
         let checkpoint = OQNLPCheckpoint {
             params: OQNLPParams::default(),
             current_iteration: 0,
-            merit_threshold: f64::INFINITY,
+            merit_threshold: F::INFINITY,
             solution_set: None,
             reference_set: vec![],
             unchanged_cycles: 0,
@@ -796,7 +796,7 @@ mod tests_checkpointing {
         let checkpoint = OQNLPCheckpoint {
             params: OQNLPParams::default(),
             current_iteration: 0,
-            merit_threshold: f64::INFINITY,
+            merit_threshold: F::INFINITY,
             solution_set: None,
             reference_set: vec![],
             unchanged_cycles: 0,

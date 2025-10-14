@@ -24,7 +24,7 @@
 //!     population_size: 1000,
 //!     local_solver_type: LocalSolverType::COBYLA,
 //!     local_solver_config: COBYLABuilder::default().build(),
-//!     ..OQNLPParams::default()
+//!     ..OQNLPParams::<f64>::default()
 //! };
 //! ```
 
@@ -59,7 +59,7 @@ use std::path::PathBuf;
 /// - **wait_cycle**: Controls balance between exploration and exploitation
 /// - **threshold_factor**: Higher values make merit filter more permissive
 /// - **distance_factor**: Higher values enforce more diversity between solutions
-pub struct OQNLPParams {
+pub struct OQNLPParams<F> {
     /// Total number of iterations for the optimization process
     pub iterations: usize,
 
@@ -81,22 +81,22 @@ pub struct OQNLPParams {
     /// Threshold factor multiplier
     ///
     /// The new threshold is calculated as `threshold = threshold + threshold_factor * (1 + abs(threshold))`
-    pub threshold_factor: f64,
+    pub threshold_factor: F,
 
     /// Factor that influences the minimum required distance between candidate solutions
-    pub distance_factor: f64,
+    pub distance_factor: F,
 
     /// Type of local solver to use from argmin
     pub local_solver_type: LocalSolverType,
 
     /// Configuration for the local solver
-    pub local_solver_config: LocalSolverConfig,
+    pub local_solver_config: LocalSolverConfig<F>,
 
     /// Random seed for the algorithm
     pub seed: u64,
 }
 
-impl Default for OQNLPParams {
+impl<F: ndarray::NdFloat> Default for OQNLPParams<F> {
     /// Default parameters for the OQNLP algorithm
     ///
     /// It is highly recommended to change these parameters based on the problem at hand.
@@ -111,12 +111,17 @@ impl Default for OQNLPParams {
     /// - `local_solver_config`: `COBYLABuilder::default().build()`
     /// - `seed`: 0
     fn default() -> Self {
+        let one = F::one();
+        let two = one + one;
+        let three = two + one;
+        let four = two * two;
+        let five = two * two + one;
         Self {
             iterations: 300,
             population_size: 1000,
             wait_cycle: 15,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / five,
+            distance_factor: three / four,
             local_solver_type: LocalSolverType::COBYLA,
             local_solver_config: COBYLABuilder::default().build(),
             seed: 0,
@@ -160,18 +165,18 @@ impl Default for OQNLPParams {
 ///   - Range: (0.0, 1.0]
 ///   - Higher values → more permissive acceptance
 ///   - Lower values → stricter solution quality requirements
-pub struct FilterParams {
+pub struct FilterParams<F> {
     /// Factor that influences the minimum required distance between candidate solutions
     ///
     /// The distance factor is used to determine the minimum required distance between candidate solutions.
     /// If the distance between two solutions is less than the distance factor, one of the solutions is removed.
     ///
     /// The distance factor is used in the `DistanceFilter` mechanism and it is a positive value or zero.
-    pub distance_factor: f64,
+    pub distance_factor: F,
     /// Number of iterations to wait before updating the threshold criteria
     pub wait_cycle: usize,
     /// Threshold factor
-    pub threshold_factor: f64,
+    pub threshold_factor: F,
 }
 
 #[derive(Debug, Clone)]
@@ -211,30 +216,30 @@ pub struct FilterParams {
 /// assert_eq!(solution.fun(), -5.2);
 /// assert_eq!(solution.x(), array![1.0, 2.0, 3.0]);
 /// ```
-pub struct LocalSolution {
+pub struct LocalSolution<F> {
     /// The solution point in the parameter space
-    pub point: Array1<f64>,
+    pub point: Array1<F>,
     /// The objective function value at the solution point
-    pub objective: f64,
+    pub objective: F,
 }
 
-impl LocalSolution {
-    /// Returns the objective function value (f64) at the solution point
+impl<F: ndarray::NdFloat> LocalSolution<F> {
+    /// Returns the objective function value (F) at the solution point
     ///
     /// Same as `objective` field
     ///
     /// This method is similar to the `fun` method in `SciPy.optimize` result
-    pub fn fun(&self) -> f64 {
+    pub fn fun(&self) -> F {
         self.objective
     }
 
-    /// Returns the solution point (`Array1<f64>`) in the parameter space
+    /// Returns the solution point (`Array1<F>`) in the parameter space
     ///
     /// Same as `point` field
     /// Returns a clone of the point to avoid moving it
     ///
     /// This method is similar to the `x` method in `SciPy.optimize` result
-    pub fn x(&self) -> Array1<f64> {
+    pub fn x(&self) -> Array1<F> {
         self.point.clone()
     }
 }
@@ -286,11 +291,11 @@ impl LocalSolution {
 ///     println!("Point: {:?}, Objective: {}", solution.point, solution.objective);
 /// }
 /// ```
-pub struct SolutionSet {
-    pub solutions: Array1<LocalSolution>,
+pub struct SolutionSet<F> {
+    pub solutions: Array1<LocalSolution<F>>,
 }
 
-impl SolutionSet {
+impl<F: ndarray::NdFloat> SolutionSet<F> {
     /// Returns the number of solutions stored in the set.
     pub fn len(&self) -> usize {
         self.solutions.len()
@@ -302,41 +307,41 @@ impl SolutionSet {
     }
 
     /// Returns the best solution in the set based on the objective function value.
-    pub fn best_solution(&self) -> Option<&LocalSolution> {
+    pub fn best_solution(&self) -> Option<&LocalSolution<F>> {
         self.solutions
             .iter()
             .min_by(|a, b| a.objective.partial_cmp(&b.objective).unwrap())
     }
 
     /// Returns an iterator over the solutions in the set.
-    pub fn solutions(&self) -> impl Iterator<Item = &LocalSolution> {
+    pub fn solutions(&self) -> impl Iterator<Item = &LocalSolution<F>> {
         self.solutions.iter()
     }
 
     /// Display solution set with constraint violations for problems that have constraints.
-    /// 
+    ///
     /// This method formats the solution set similarly to the Display trait but includes
     /// constraint violation information when the problem has constraints defined.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `problem` - The problem that was solved, used to evaluate constraints
     /// * `constraint_descriptions` - Optional descriptions for each constraint (e.g., "x + y <= 1.5")
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A formatted string showing solutions with constraint violations
-    pub fn display_with_constraints<P: Problem>(
-        &self, 
-        problem: &P, 
-        constraint_descriptions: Option<&[&str]>
+    pub fn display_with_constraints<P: Problem<F>>(
+        &self,
+        problem: &P,
+        constraint_descriptions: Option<&[&str]>,
     ) -> String {
         let mut result = String::new();
         let constraints = problem.constraints();
-        
+
         result.push_str("━━━━━━━━━━━ Solution Set ━━━━━━━━━━━\n");
         result.push_str(&format!("Total solutions: {}\n", self.solutions.len()));
-        
+
         if !self.solutions.is_empty() {
             if let Some(best) = self.best_solution() {
                 result.push_str(&format!("Best objective value: {:.8e}\n", best.objective));
@@ -349,22 +354,26 @@ impl SolutionSet {
             result.push_str(&format!("  Objective: {:.8e}\n", solution.objective));
             result.push_str("  Parameters:\n");
             result.push_str(&format!("    {:.8e}\n", solution.point));
-            
+
             // Add constraint violations if constraints exist
             if !constraints.is_empty() {
                 result.push_str("  Constraint violations:\n");
                 for (j, constraint_fn) in constraints.iter().enumerate() {
-                    let x_slice: Vec<f64> = solution.point.to_vec();
+                    let x_slice: Vec<F> = solution.point.to_vec();
                     let constraint_value = constraint_fn(&x_slice, &mut ());
-                    
+
                     // Format constraint status
-                    let status = if constraint_value >= 0.0 { "✓" } else { "✗" };
-                    let violation = if constraint_value < 0.0 { 
+                    let status = if constraint_value >= F::zero() {
+                        "✓"
+                    } else {
+                        "✗"
+                    };
+                    let violation = if constraint_value < F::zero() {
                         format!(" (violated by {:.6})", -constraint_value)
                     } else {
                         " (satisfied)".to_string()
                     };
-                    
+
                     // Add constraint description if provided
                     let description = if let Some(descriptions) = constraint_descriptions {
                         if j < descriptions.len() {
@@ -375,9 +384,15 @@ impl SolutionSet {
                     } else {
                         String::new()
                     };
-                    
-                    result.push_str(&format!("    Constraint {}{}: {} {:.6e}{}\n", 
-                                           j + 1, description, status, constraint_value, violation));
+
+                    result.push_str(&format!(
+                        "    Constraint {}{}: {} {:.6e}{}\n",
+                        j + 1,
+                        description,
+                        status,
+                        constraint_value,
+                        violation
+                    ));
                 }
             }
 
@@ -385,23 +400,23 @@ impl SolutionSet {
                 result.push_str("――――――――――――――――――――――――――――――――――――\n");
             }
         }
-        
+
         result
     }
 
     /// Display solution set with constraint violations if the problem has constraints.
-    /// 
+    ///
     /// This is a convenience method that automatically detects if the problem has constraints
     /// and displays them if present, otherwise displays normally.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `problem` - The problem that was solved, used to evaluate constraints
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A formatted string showing solutions with or without constraint violations
-    pub fn display_with_problem<P: Problem>(&self, problem: &P) -> String {
+    pub fn display_with_problem<P: Problem<F>>(&self, problem: &P) -> String {
         let constraints = problem.constraints();
         if constraints.is_empty() {
             // No constraints, use regular display
@@ -413,8 +428,8 @@ impl SolutionSet {
     }
 }
 
-impl Index<usize> for SolutionSet {
-    type Output = LocalSolution;
+impl<F> Index<usize> for SolutionSet<F> {
+    type Output = LocalSolution<F>;
 
     /// Returns the solution at the given index.
     fn index(&self, index: usize) -> &Self::Output {
@@ -422,7 +437,7 @@ impl Index<usize> for SolutionSet {
     }
 }
 
-impl fmt::Display for SolutionSet {
+impl<F: ndarray::NdFloat> fmt::Display for SolutionSet<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let len: usize = self.solutions.len();
         writeln!(f, "━━━━━━━━━━━ Solution Set ━━━━━━━━━━━")?;
@@ -608,6 +623,7 @@ impl Default for CheckpointConfig {
     feature = "checkpointing",
     derive(serde::Serialize, serde::Deserialize)
 )]
+#[serde(bound = "F: ndarray::NdFloat + serde::Serialize + for<'a> serde::Deserialize<'a>")]
 /// Complete OQNLP state that can be saved and restored
 ///
 /// This struct represents the complete state of the OQNLP algorithm at a given point in time,
@@ -616,18 +632,18 @@ impl Default for CheckpointConfig {
 /// elapsed time, distance filter solutions for maintaining diversity, current seed value,
 /// timestamp of the checkpoint, and other relevant information.
 /// It is used to save the state of the algorithm to a file and restore it later.
-pub struct OQNLPCheckpoint {
+pub struct OQNLPCheckpoint<F> {
     /// Algorithm parameters
-    pub params: OQNLPParams,
+    pub params: OQNLPParams<F>,
 
     /// Current iteration number
     pub current_iteration: usize,
 
     /// Current threshold value for merit filter
-    pub merit_threshold: f64,
+    pub merit_threshold: F,
 
     /// Current solution set (if any)
-    pub solution_set: Option<SolutionSet>,
+    pub solution_set: Option<SolutionSet<F>>,
 
     /// Current reference set from scatter search
     #[cfg_attr(
@@ -637,22 +653,22 @@ pub struct OQNLPCheckpoint {
             deserialize_with = "deserialize_vec_array1"
         )
     )]
-    pub reference_set: Vec<Array1<f64>>,
+    pub reference_set: Vec<Array1<F>>,
 
     /// Number of unchanged cycles
     pub unchanged_cycles: usize,
 
     /// Elapsed time in seconds
-    pub elapsed_time: f64,
+    pub elapsed_time: F,
 
     /// Distance filter solutions for maintaining diversity
-    pub distance_filter_solutions: Vec<LocalSolution>,
+    pub distance_filter_solutions: Vec<LocalSolution<F>>,
 
     /// Current seed value for continuing RNG sequence
     pub current_seed: u64,
 
     /// Target objective function value to stop optimization
-    pub target_objective: Option<f64>,
+    pub target_objective: Option<F>,
 
     /// Whether to exclude out-of-bounds solutions from being considered valid
     pub exclude_out_of_bounds: bool,
@@ -670,28 +686,30 @@ pub struct OQNLPCheckpoint {
 }
 
 #[cfg(feature = "checkpointing")]
-/// Serializes a vector of `Array1<f64>` to a format suitable for serialization
-fn serialize_vec_array1<S>(vec: &Vec<Array1<f64>>, serializer: S) -> Result<S::Ok, S::Error>
+/// Serializes a vector of `Array1<F>` to a format suitable for serialization
+fn serialize_vec_array1<S, F>(vec: &Vec<Array1<F>>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
+    F: Clone + serde::Serialize,
 {
     use serde::ser::SerializeSeq;
     let mut seq = serializer.serialize_seq(Some(vec.len()))?;
     for array in vec {
-        let vec_data: Vec<f64> = array.to_vec();
+        let vec_data: Vec<F> = array.to_vec();
         seq.serialize_element(&vec_data)?;
     }
     seq.end()
 }
 
 #[cfg(feature = "checkpointing")]
-/// Deserializes a vector of `Array1<f64>` from a format suitable for serialization
-fn deserialize_vec_array1<'de, D>(deserializer: D) -> Result<Vec<Array1<f64>>, D::Error>
+/// Deserializes a vector of `Array1<F>` from a format suitable for serialization
+fn deserialize_vec_array1<'de, D, F>(deserializer: D) -> Result<Vec<Array1<F>>, D::Error>
 where
     D: serde::Deserializer<'de>,
+    F: Clone + for<'a> serde::Deserialize<'a>,
 {
     use serde::Deserialize;
-    let vec_of_vecs: Vec<Vec<f64>> = Vec::deserialize(deserializer)?;
+    let vec_of_vecs: Vec<Vec<F>> = Vec::deserialize(deserializer)?;
     Ok(vec_of_vecs.into_iter().map(Array1::from).collect())
 }
 
@@ -702,7 +720,7 @@ where
 /// including the timestamp, current iteration, elapsed time, unchanged cycles,
 /// merit threshold, reference set size, distance filter solutions,
 /// current seed value, and parameters.
-impl fmt::Display for OQNLPCheckpoint {
+impl<F: ndarray::NdFloat> fmt::Display for OQNLPCheckpoint<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "━━━━━━━━━━━ OQNLP Checkpoint ━━━━━━━━━━━")?;
         writeln!(f, "Timestamp: {}", self.timestamp)?;
@@ -736,7 +754,7 @@ impl fmt::Display for OQNLPCheckpoint {
         writeln!(f, "  Local solver: {:?}", self.params.local_solver_type)?;
         writeln!(f, "  Seed: {}", self.params.seed)?;
 
-        if let Some(target) = self.target_objective {
+        if let Some(target) = &self.target_objective {
             writeln!(f, "  Target objective: {:.8e}", target)?;
         } else {
             writeln!(f, "  Target objective: None")?;
@@ -756,76 +774,130 @@ mod tests_types {
     use ndarray::array;
 
     #[test]
+    fn test_oqnlp_params_default_f32() {
+        test_oqnlp_params_default::<f32>()
+    }
+
+    #[test]
+    fn test_oqnlp_params_default_f64() {
+        test_oqnlp_params_default::<f64>()
+    }
+
     /// Test the default parameters for the OQNLP algorithm
-    fn test_oqnlp_params_default() {
-        let params = OQNLPParams::default();
+    fn test_oqnlp_params_default<F: ndarray::NdFloat>() {
+        let one = F::one();
+        let two = one + one;
+        let params = OQNLPParams::<F>::default();
         assert_eq!(params.iterations, 300);
         assert_eq!(params.population_size, 1000);
         assert_eq!(params.wait_cycle, 15);
-        assert_eq!(params.threshold_factor, 0.2);
-        assert_eq!(params.distance_factor, 0.75);
+        assert_eq!(params.threshold_factor, one / (two * two + one));
+        assert_eq!(params.distance_factor, (one + two) / (two + two));
         assert_eq!(params.seed, 0);
     }
 
     #[test]
+    fn test_solution_set_len_f32() {
+        test_solution_set_len::<f32>()
+    }
+
+    #[test]
+    fn test_solution_set_len_f64() {
+        test_solution_set_len::<f64>()
+    }
+
     /// Test the len method for the SolutionSet struct
-    fn test_solution_set_len() {
+    fn test_solution_set_len<F: ndarray::NdFloat>() {
+        let one = F::one();
+        let two = one + one;
         let solutions = Array1::from_vec(vec![
             LocalSolution {
-                point: array![1.0, 2.0],
-                objective: -1.0,
+                point: array![one, two],
+                objective: -one,
             },
             LocalSolution {
-                point: array![3.0, 4.0],
-                objective: -2.0,
+                point: array![one + two, two + two],
+                objective: -two,
             },
         ]);
-        let solution_set: SolutionSet = SolutionSet { solutions };
+        let solution_set: SolutionSet<F> = SolutionSet { solutions };
         assert_eq!(solution_set.len(), 2);
     }
 
     #[test]
+    fn test_solution_set_is_empty_f32() {
+        test_solution_set_is_empty::<f32>();
+    }
+
+    #[test]
+    fn test_solution_set_is_empty_f64() {
+        test_solution_set_is_empty::<f64>();
+    }
+
     /// Test the is_empty method for the SolutionSet struct
-    fn test_solution_set_is_empty() {
-        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![]);
-        let solution_set: SolutionSet = SolutionSet { solutions };
+    fn test_solution_set_is_empty<F: ndarray::NdFloat>() {
+        let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![]);
+        let solution_set: SolutionSet<F> = SolutionSet { solutions };
         assert!(solution_set.is_empty());
 
-        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![LocalSolution {
-            point: array![1.0],
-            objective: -1.0,
+        let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![LocalSolution {
+            point: array![F::one()],
+            objective: -F::one(),
         }]);
-        let solution_set: SolutionSet = SolutionSet { solutions };
+        let solution_set: SolutionSet<F> = SolutionSet { solutions };
         assert!(!solution_set.is_empty());
     }
 
     #[test]
-    /// Test indexing into the SolutionSet struct
-    fn test_solution_set_index() {
-        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![
-            LocalSolution {
-                point: array![1.0, 2.0],
-                objective: -1.0,
-            },
-            LocalSolution {
-                point: array![3.0, 4.0],
-                objective: -2.0,
-            },
-        ]);
-        let solution_set: SolutionSet = SolutionSet { solutions };
-
-        assert_eq!(solution_set[0].objective, -1.0);
-        assert_eq!(solution_set[1].objective, -2.0);
+    fn test_solution_set_index_f32() {
+        test_solution_set_index::<f32>()
     }
 
     #[test]
+    fn test_solution_set_index_f64() {
+        test_solution_set_index::<f64>()
+    }
+
+    /// Test indexing into the SolutionSet struct
+    fn test_solution_set_index<F: ndarray::NdFloat>() {
+        let one = F::one();
+        let two = one + one;
+        let three = two + one;
+        let four = two * two;
+
+        let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![
+            LocalSolution {
+                point: array![one, two],
+                objective: -one,
+            },
+            LocalSolution {
+                point: array![three, four],
+                objective: -two,
+            },
+        ]);
+        let solution_set: SolutionSet<F> = SolutionSet { solutions };
+
+        assert_eq!(solution_set[0].objective, -one);
+        assert_eq!(solution_set[1].objective, -two);
+    }
+
+    #[test]
+    fn test_solution_set_display_f32() {
+        test_solution_set_display::<f32>()
+    }
+
+    #[test]
+    fn test_solution_set_display_f64() {
+        test_solution_set_display::<f64>()
+    }
+
     /// Test the Display trait for the SolutionSet struct
-    fn test_solution_set_display() {
-        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![LocalSolution {
-            point: array![1.0],
-            objective: -1.0,
+    fn test_solution_set_display<F: ndarray::NdFloat>() {
+        let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![LocalSolution {
+            point: array![F::one()],
+            objective: -F::one(),
         }]);
-        let solution_set: SolutionSet = SolutionSet { solutions };
+        let solution_set: SolutionSet<F> = SolutionSet { solutions };
 
         println!("{}", solution_set);
 
@@ -837,10 +909,19 @@ mod tests_types {
     }
 
     #[test]
+    fn test_empty_solution_set_display_f32() {
+        test_empty_solution_set_display::<f32>()
+    }
+
+    #[test]
+    fn test_empty_solution_set_display_f64() {
+        test_empty_solution_set_display::<f64>()
+    }
+
     /// Test the display of empty solution set
-    fn test_empty_solution_set_display() {
-        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![]);
-        let solution_set: SolutionSet = SolutionSet { solutions };
+    fn test_empty_solution_set_display<F: ndarray::NdFloat>() {
+        let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![]);
+        let solution_set: SolutionSet<F> = SolutionSet { solutions };
 
         let display_output: String = format!("{}", solution_set);
         assert!(display_output.contains("Solution Set"));
@@ -849,10 +930,20 @@ mod tests_types {
 
     #[test]
     #[should_panic]
-    fn test_solution_set_index_out_of_bounds() {
-        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![]);
-        let solution_set: SolutionSet = SolutionSet { solutions };
-        let _should_panic: LocalSolution = solution_set[0].clone();
+    fn test_solution_set_index_out_of_bounds_f32() {
+        test_solution_set_index_out_of_bounds::<f32>()
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_solution_set_index_out_of_bounds_f64() {
+        test_solution_set_index_out_of_bounds::<f64>()
+    }
+
+    fn test_solution_set_index_out_of_bounds<F: ndarray::NdFloat>() {
+        let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![]);
+        let solution_set: SolutionSet<F> = SolutionSet { solutions };
+        let _should_panic: LocalSolution<F> = solution_set[0].clone();
     }
 
     #[test]
@@ -897,26 +988,38 @@ mod tests_types {
     }
 
     #[test]
+    fn test_solution_set_best_solution_f32() {
+        test_solution_set_best_solution::<f32>()
+    }
+
+    #[test]
+    fn test_solution_set_best_solution_f64() {
+        test_solution_set_best_solution::<f64>()
+    }
+
     /// Test best_solution from SolutionSet
-    fn test_solution_set_best_solution() {
-        let solutions: Array1<LocalSolution> = Array1::from_vec(vec![
+    fn test_solution_set_best_solution<F: ndarray::NdFloat>() {
+        let one = F::one();
+        let two = one + one;
+        let three = two + one;
+        let solutions: Array1<LocalSolution<F>> = Array1::from_vec(vec![
             LocalSolution {
-                point: array![1.0],
-                objective: -1.0,
+                point: array![one],
+                objective: -one,
             },
             LocalSolution {
-                point: array![2.0],
-                objective: -1.0,
+                point: array![two],
+                objective: -one,
             },
             LocalSolution {
-                point: array![3.0],
-                objective: -1.0,
+                point: array![three],
+                objective: -one,
             },
         ]);
-        let solution_set: SolutionSet = SolutionSet { solutions };
+        let solution_set: SolutionSet<F> = SolutionSet { solutions };
 
         let best_solution = solution_set.best_solution().unwrap();
-        assert_eq!(best_solution.objective, -1.0);
+        assert_eq!(best_solution.objective, -one);
     }
 
     #[cfg(feature = "checkpointing")]
@@ -945,7 +1048,8 @@ mod tests_types {
                 distance_factor: 0.8,
                 seed: 42,
                 local_solver_type: LocalSolverType::COBYLA,
-                local_solver_config: crate::local_solver::builders::COBYLABuilder::default().build(),
+                local_solver_config: crate::local_solver::builders::COBYLABuilder::default()
+                    .build(),
             },
             current_iteration: 50,
             merit_threshold: 1.25,
@@ -986,37 +1090,39 @@ mod tests_types {
     fn test_solution_set_display_with_constraints() {
         use crate::problem::Problem;
         use crate::types::EvaluationError;
-        
+
         // Create a mock problem with constraints
         #[derive(Debug, Clone)]
         struct TestProblemWithConstraints;
-        
-        impl Problem for TestProblemWithConstraints {
-            fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+
+        impl<F: ndarray::NdFloat> Problem<F> for TestProblemWithConstraints {
+            fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
                 Ok(x[0].powi(2) + x[1].powi(2))
             }
-            
-            fn variable_bounds(&self) -> ndarray::Array2<f64> {
-                ndarray::array![[-2.0, 2.0], [-2.0, 2.0]]
+
+            fn variable_bounds(&self) -> ndarray::Array2<F> {
+                let two = F::one() + F::one();
+                ndarray::array![[-two, two], [-two, two]]
             }
-            
-            fn constraints(&self) -> Vec<fn(&[f64], &mut ()) -> f64> {
+
+            fn constraints(&self) -> Vec<fn(&[F], &mut ()) -> F> {
                 vec![
-                    |x: &[f64], _: &mut ()| 1.0 - x[0] - x[1], // x[0] + x[1] <= 1.0
+                    |x: &[F], _: &mut ()| F::one() - x[0] - x[1], // x[0] + x[1] <= 1.0
                 ]
             }
         }
-        
+
         let solutions = Array1::from_vec(vec![LocalSolution {
             point: array![0.3, 0.3],
             objective: 0.18,
         }]);
         let solution_set = SolutionSet { solutions };
         let problem = TestProblemWithConstraints;
-        
+
         let constraint_descriptions = ["x[0] + x[1] <= 1.0"];
-        let display_output = solution_set.display_with_constraints(&problem, Some(&constraint_descriptions));
-        
+        let display_output =
+            solution_set.display_with_constraints(&problem, Some(&constraint_descriptions));
+
         assert!(display_output.contains("Solution Set"));
         assert!(display_output.contains("Total solutions: 1"));
         assert!(display_output.contains("Constraint violations:"));
@@ -1026,34 +1132,45 @@ mod tests_types {
     }
 
     #[test]
+    fn test_solution_set_display_with_problem_no_constraints_f32() {
+        test_solution_set_display_with_problem_no_constraints::<f32>()
+    }
+
+    #[test]
+    fn test_solution_set_display_with_problem_no_constraints_f64() {
+        test_solution_set_display_with_problem_no_constraints::<f64>()
+    }
+
     /// Test constraint-aware display without constraints
-    fn test_solution_set_display_with_problem_no_constraints() {
+    fn test_solution_set_display_with_problem_no_constraints<F: ndarray::NdFloat>() {
         use crate::problem::Problem;
         use crate::types::EvaluationError;
-        
+        let two = F::one() + F::one();
+
         // Create a mock problem without constraints
         #[derive(Debug, Clone)]
         struct TestProblemNoConstraints;
-        
-        impl Problem for TestProblemNoConstraints {
-            fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+
+        impl<F: ndarray::NdFloat> Problem<F> for TestProblemNoConstraints {
+            fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
                 Ok(x[0].powi(2) + x[1].powi(2))
             }
-            
-            fn variable_bounds(&self) -> ndarray::Array2<f64> {
-                ndarray::array![[-2.0, 2.0], [-2.0, 2.0]]
+
+            fn variable_bounds(&self) -> ndarray::Array2<F> {
+                let two = F::one() + F::one();
+                ndarray::array![[-two, two], [-two, two]]
             }
         }
-        
+
         let solutions = Array1::from_vec(vec![LocalSolution {
-            point: array![1.0, 1.0],
-            objective: 2.0,
+            point: array![F::one(), F::one()],
+            objective: two,
         }]);
         let solution_set = SolutionSet { solutions };
         let problem = TestProblemNoConstraints;
-        
+
         let display_output = solution_set.display_with_problem(&problem);
-        
+
         assert!(display_output.contains("Solution Set"));
         assert!(display_output.contains("Total solutions: 1"));
         assert!(!display_output.contains("Constraint violations:")); // Should not have constraints

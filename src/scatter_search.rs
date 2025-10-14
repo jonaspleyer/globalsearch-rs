@@ -25,11 +25,11 @@
 //! #
 //! # #[derive(Debug, Clone)]
 //! # struct TestProblem;
-//! # impl Problem for TestProblem {
-//! #     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+//! # impl Problem<F> for TestProblem {
+//! #     fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
 //! #         Ok(x[0].powi(2) + x[1].powi(2))
 //! #     }
-//! #     fn variable_bounds(&self) -> Array2<f64> {
+//! #     fn variable_bounds(&self) -> Array2<F> {
 //! #         array![[-5.0, 5.0], [-5.0, 5.0]]
 //! #     }
 //! # }
@@ -80,9 +80,9 @@ use kdam::{Bar, BarExt};
 /// };
 /// ```
 #[derive(Debug, Clone)]
-pub struct VariableBounds {
-    pub lower: Array1<f64>,
-    pub upper: Array1<f64>,
+pub struct VariableBounds<F> {
+    pub lower: Array1<F>,
+    pub upper: Array1<F>,
 }
 
 #[derive(Debug, Error)]
@@ -101,15 +101,15 @@ pub enum ScatterSearchError {
 }
 
 /// Type alias for the complex return type of scatter search run method
-type ScatterSearchResult = (Vec<(Array1<f64>, f64)>, Array1<f64>);
+type ScatterSearchResult = (Vec<(Array1<F>, F)>, Array1<F>);
 
 /// Scatter Search algorithm implementation struct
-pub struct ScatterSearch<P: Problem> {
+pub struct ScatterSearch<P: Problem<F>, F> {
     problem: P,
     params: OQNLPParams,
-    reference_set: Vec<Array1<f64>>,
-    reference_set_objectives: Vec<f64>,
-    bounds: VariableBounds,
+    reference_set: Vec<Array1<F>>,
+    reference_set_objectives: Vec<F>,
+    bounds: VariableBounds<F>,
     rng: Mutex<StdRng>,
     #[cfg(feature = "progress_bar")]
     progress_bar: Option<Bar>,
@@ -118,7 +118,7 @@ pub struct ScatterSearch<P: Problem> {
     enable_parallel: bool,
 }
 
-impl<P: Problem + Sync + Send> ScatterSearch<P> {
+impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
     pub fn new(problem: P, params: OQNLPParams) -> Result<Self, ScatterSearchError> {
         let var_bounds = problem.variable_bounds();
         let bounds = VariableBounds {
@@ -127,7 +127,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         };
 
         let seed: u64 = params.seed;
-        let ss: ScatterSearch<P> = Self {
+        let ss: ScatterSearch<P, F> = Self {
             problem,
             params: params.clone(),
             reference_set: Vec::with_capacity(params.population_size),
@@ -145,7 +145,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     }
 
     /// Control whether parallel processing is enabled at runtime
-    /// 
+    ///
     /// This method allows you to disable parallel processing even when the `rayon` feature is enabled,
     /// which can be useful for:
     /// - Python bindings
@@ -183,18 +183,18 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             pb.set_description("Stage 1, found best solution");
             pb.update(1).expect("Failed to update progress bar");
         }
-        
-        let reference_set_with_objectives: Vec<(Array1<f64>, f64)> = self
+
+        let reference_set_with_objectives: Vec<(Array1<F>, F)> = self
             .reference_set
             .into_iter()
             .zip(self.reference_set_objectives)
             .collect();
-            
+
         Ok((reference_set_with_objectives, best))
     }
 
     pub fn initialize_reference_set(&mut self) -> Result<(), ScatterSearchError> {
-        let mut ref_set: Vec<Array1<f64>> = Vec::with_capacity(self.params.population_size);
+        let mut ref_set: Vec<Array1<F>> = Vec::with_capacity(self.params.population_size);
 
         ref_set.push(self.bounds.lower.to_owned());
         ref_set.push(self.bounds.upper.to_owned());
@@ -207,13 +207,13 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         }
 
         self.diversify_reference_set(&mut ref_set)?;
-        
+
         // Evaluate objectives for the initial reference set
-        let objectives: Vec<f64> = ref_set
+        let objectives: Vec<F> = ref_set
             .iter()
             .map(|point| self.problem.objective(point))
-            .collect::<Result<Vec<f64>, _>>()?;
-            
+            .collect::<Result<Vec<F>, _>>()?;
+
         self.reference_set = ref_set;
         self.reference_set_objectives = objectives;
 
@@ -228,12 +228,12 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     /// Diversify the reference set by adding new points to it
     pub fn diversify_reference_set(
         &mut self,
-        ref_set: &mut Vec<Array1<f64>>,
+        ref_set: &mut Vec<Array1<F>>,
     ) -> Result<(), ScatterSearchError> {
         let mut candidates = self.generate_stratified_samples(self.params.population_size)?;
 
         #[cfg(feature = "rayon")]
-        let mut min_dists: Vec<f64> = if self.enable_parallel {
+        let mut min_dists: Vec<F> = if self.enable_parallel {
             candidates
                 .par_iter()
                 .map(|c| self.min_distance(c, ref_set))
@@ -246,7 +246,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         };
 
         #[cfg(not(feature = "rayon"))]
-        let mut min_dists: Vec<f64> = candidates
+        let mut min_dists: Vec<F> = candidates
             .iter()
             .map(|c| self.min_distance(c, ref_set))
             .collect();
@@ -328,7 +328,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     pub fn generate_stratified_samples(
         &self,
         n: usize,
-    ) -> Result<Vec<Array1<f64>>, ScatterSearchError> {
+    ) -> Result<Vec<Array1<F>>, ScatterSearchError> {
         let dim: usize = self.bounds.lower.len();
 
         // Precompute seeds while holding the mutex once
@@ -375,19 +375,19 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     }
 
     /// Compute the minimum distance between a point and a reference set
-    pub fn min_distance(&self, point: &Array1<f64>, ref_set: &[Array1<f64>]) -> f64 {
+    pub fn min_distance(&self, point: &Array1<F>, ref_set: &[Array1<F>]) -> F {
         #[cfg(feature = "rayon")]
         {
             if self.enable_parallel {
                 ref_set
                     .par_iter()
                     .map(|p| euclidean_distance_squared(point, p))
-                    .reduce(|| f64::INFINITY, f64::min)
+                    .reduce(|| F::INFINITY, F::min)
             } else {
                 ref_set
                     .iter()
                     .map(|p| euclidean_distance_squared(point, p))
-                    .fold(f64::INFINITY, f64::min)
+                    .fold(F::INFINITY, F::min)
             }
         }
         #[cfg(not(feature = "rayon"))]
@@ -395,13 +395,13 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             ref_set
                 .iter()
                 .map(|p| euclidean_distance_squared(point, p))
-                .fold(f64::INFINITY, f64::min)
+                .fold(F::INFINITY, F::min)
         }
     }
 
-    pub fn generate_trial_points(&mut self) -> Result<Vec<Array1<f64>>, ScatterSearchError> {
+    pub fn generate_trial_points(&mut self) -> Result<Vec<Array1<F>>, ScatterSearchError> {
         // Only use the best k points for combinations
-        let k = (self.reference_set.len() as f64).sqrt() as usize;
+        let k = (self.reference_set.len() as F).sqrt() as usize;
         let k = k.max(2).min(self.reference_set.len());
 
         // Create combinations only between the best k points
@@ -412,7 +412,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         // Pre-allocate the result vector
         let n_combinations = indices.len();
         let n_trial_points_per_combo = 6; // 4 linear combinations + 2 random
-        let mut trial_points: Vec<Array1<f64>> =
+        let mut trial_points: Vec<Array1<F>> =
             Vec::with_capacity(n_combinations * n_trial_points_per_combo);
 
         // Precompute seeds for each combine_points call
@@ -425,7 +425,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
         #[cfg(feature = "rayon")]
         {
-            let points_per_combo: Vec<Vec<Array1<f64>>> = indices
+            let points_per_combo: Vec<Vec<Array1<F>>> = indices
                 .par_iter()
                 .zip(seeds.par_iter())
                 .map(|(&(i, j), &seed)| {
@@ -453,14 +453,14 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     /// Combines two points into several trial points.
     pub fn combine_points(
         &self,
-        a: &Array1<f64>,
-        b: &Array1<f64>,
+        a: &Array1<F>,
+        b: &Array1<F>,
         seed: u64,
-    ) -> Result<Vec<Array1<f64>>, ScatterSearchError> {
+    ) -> Result<Vec<Array1<F>>, ScatterSearchError> {
         let mut points = Vec::with_capacity(6);
 
         // Linear combinations.
-        let directions: Vec<f64> = vec![0.25, 0.5, 0.75, 1.25];
+        let directions: Vec<F> = vec![0.25, 0.5, 0.75, 1.25];
         for &alpha in &directions {
             let mut point = a * alpha + b * (1.0 - alpha);
             self.apply_bounds(&mut point);
@@ -481,7 +481,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         Ok(points)
     }
 
-    pub fn apply_bounds(&self, point: &mut Array1<f64>) {
+    pub fn apply_bounds(&self, point: &mut Array1<F>) {
         for i in 0..point.len() {
             point[i] = point[i].clamp(self.bounds.lower[i], self.bounds.upper[i]);
         }
@@ -489,7 +489,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
     pub fn update_reference_set(
         &mut self,
-        trials: Vec<Array1<f64>>,
+        trials: Vec<Array1<F>>,
     ) -> Result<(), ScatterSearchError> {
         // Early termination if no trials
         if trials.is_empty() {
@@ -498,24 +498,24 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
         // Evaluate reference set points first
         #[cfg(feature = "rayon")]
-        let mut ref_evaluated: Vec<(Array1<f64>, f64)> = self
+        let mut ref_evaluated: Vec<(Array1<F>, F)> = self
             .reference_set
             .par_iter()
             .map(|point| {
                 let obj = self.problem.objective(point)?;
                 Ok((point.clone(), obj))
             })
-            .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
+            .collect::<Result<Vec<(Array1<F>, F)>, ScatterSearchError>>()?;
 
         #[cfg(not(feature = "rayon"))]
-        let mut ref_evaluated: Vec<(Array1<f64>, f64)> = self
+        let mut ref_evaluated: Vec<(Array1<F>, F)> = self
             .reference_set
             .iter()
             .map(|point| {
                 let obj = self.problem.objective(point)?;
                 Ok((point.clone(), obj))
             })
-            .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
+            .collect::<Result<Vec<(Array1<F>, F)>, ScatterSearchError>>()?;
 
         // Sort reference set by objective value
         ref_evaluated.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
@@ -524,10 +524,10 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         let worst_obj = ref_evaluated
             .last()
             .map(|(_, obj)| *obj)
-            .unwrap_or(f64::INFINITY);
+            .unwrap_or(F::INFINITY);
 
         #[cfg(feature = "rayon")]
-        let trial_evaluated: Vec<(Array1<f64>, f64)> = trials
+        let trial_evaluated: Vec<(Array1<F>, F)> = trials
             .par_iter()
             .filter_map(|point| {
                 // Check if point might be better than worst in reference set
@@ -541,7 +541,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             .collect();
 
         #[cfg(not(feature = "rayon"))]
-        let trial_evaluated: Vec<(Array1<f64>, f64)> = trials
+        let trial_evaluated: Vec<(Array1<F>, F)> = trials
             .iter()
             .filter_map(|point| {
                 // Check if point might be better than worst in reference set
@@ -564,22 +564,22 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         all_points.truncate(pop_size);
 
         // Update reference set and objectives
-        let (points, objectives): (Vec<Array1<f64>>, Vec<f64>) = all_points.into_iter().unzip();
+        let (points, objectives): (Vec<Array1<F>>, Vec<F>) = all_points.into_iter().unzip();
         self.reference_set = points;
         self.reference_set_objectives = objectives;
 
         Ok(())
     }
 
-    pub fn best_solution(&self) -> Result<Array1<f64>, ScatterSearchError> {
+    pub fn best_solution(&self) -> Result<Array1<F>, ScatterSearchError> {
         #[cfg(feature = "rayon")]
         {
             let best = self
                 .reference_set
                 .par_iter()
                 .min_by(|a, b| {
-                    let obj_a: f64 = self.problem.objective(a).unwrap();
-                    let obj_b: f64 = self.problem.objective(b).unwrap();
+                    let obj_a: F = self.problem.objective(a).unwrap();
+                    let obj_b: F = self.problem.objective(b).unwrap();
                     obj_a.partial_cmp(&obj_b).unwrap()
                 })
                 .ok_or(ScatterSearchError::NoCandidates)?;
@@ -587,9 +587,9 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         }
         #[cfg(not(feature = "rayon"))]
         {
-            let mut best_point: Option<(&Array1<f64>, f64)> = None;
+            let mut best_point: Option<(&Array1<F>, F)> = None;
             for point in &self.reference_set {
-                let obj: f64 = self.problem.objective(point)?;
+                let obj: F = self.problem.objective(point)?;
                 best_point = match best_point {
                     None => Some((point, obj)),
                     Some((_, best_obj)) if obj < best_obj => Some((point, obj)),
@@ -602,7 +602,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         }
     }
 
-    pub fn store_trial(&mut self, trial: Array1<f64>) {
+    pub fn store_trial(&mut self, trial: Array1<F>) {
         self.reference_set.push(trial);
     }
 }
@@ -610,7 +610,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 /// Compute the squared Euclidean distance between two points
 ///
 /// Use this function for performance since we don't use the square root
-fn euclidean_distance_squared(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
+fn euclidean_distance_squared(a: &Array1<F>, b: &Array1<F>) -> F {
     (a - b).mapv(|x| x * x).sum()
 }
 
@@ -623,7 +623,7 @@ fn euclidean_distance_squared(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 // ///
 // /// Use euclidean_distance_squared when only comparing distances for better performance
 // /// given that if a < b, then a² < b²
-// fn euclidean_distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
+// fn euclidean_distance(a: &Array1<F>, b: &Array1<F>) -> F {
 //     euclidean_distance_squared(a, b).sqrt()
 // }
 
@@ -638,7 +638,7 @@ mod tests_scatter_search {
     pub struct SixHumpCamel;
 
     impl Problem for SixHumpCamel {
-        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+        fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
             Ok(
                 (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
                     + x[0] * x[1]
@@ -646,7 +646,7 @@ mod tests_scatter_search {
             )
         }
 
-        fn variable_bounds(&self) -> Array2<f64> {
+        fn variable_bounds(&self) -> Array2<F> {
             array![[-3.0, 3.0], [-2.0, 2.0]]
         }
     }
@@ -746,11 +746,11 @@ mod tests_scatter_search {
         let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let trial_points: Vec<Array1<f64>> = ss.generate_trial_points().unwrap();
+        let trial_points: Vec<Array1<F>> = ss.generate_trial_points().unwrap();
 
         // Compute expected based on subsampling logic: k = floor(sqrt(N)) combinations
         let n = ss.reference_set.len();
-        let k = (n as f64).sqrt() as usize;
+        let k = (n as F).sqrt() as usize;
         let expected = k * (k - 1) / 2 * 6;
         assert_eq!(trial_points.len(), expected);
     }
@@ -770,10 +770,10 @@ mod tests_scatter_search {
         };
 
         let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
-        let a: Array1<f64> = array![1.0, 1.0];
-        let b: Array1<f64> = array![2.0, 2.0];
+        let a: Array1<F> = array![1.0, 1.0];
+        let b: Array1<F> = array![2.0, 2.0];
 
-        let trial_points: Vec<Array1<f64>> = ss.combine_points(&a, &b, 0).unwrap();
+        let trial_points: Vec<Array1<F>> = ss.combine_points(&a, &b, 0).unwrap();
 
         // 4 linear combinations and 2 random perturbations
         assert_eq!(trial_points.len(), 6);
@@ -798,7 +798,7 @@ mod tests_scatter_search {
         // Initially empty reference set (not initialized)
         assert_eq!(ss.reference_set.len(), 0);
 
-        let trial: Array1<f64> = array![1.0, 1.0];
+        let trial: Array1<F> = array![1.0, 1.0];
         ss.store_trial(trial.clone());
 
         // Verify trial was stored
@@ -823,7 +823,7 @@ mod tests_scatter_search {
         let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let trials: Vec<Array1<f64>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
+        let trials: Vec<Array1<F>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
         ss.update_reference_set(trials).unwrap();
 
         assert_eq!(ss.reference_set.len(), 4);
@@ -846,8 +846,8 @@ mod tests_scatter_search {
         let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let point: Array1<f64> = array![-3.0, -2.0];
-        let min_dist: f64 = ss.min_distance(&point, &ss.reference_set);
+        let point: Array1<F> = array![-3.0, -2.0];
+        let min_dist: F = ss.min_distance(&point, &ss.reference_set);
 
         // The minimum distance should be 0 since the point is in the reference set
         assert_eq!(min_dist, 0.0);
@@ -856,9 +856,9 @@ mod tests_scatter_search {
     #[test]
     /// Test euclidean distance squared
     fn test_euclidean_distance_squared() {
-        let a: Array1<f64> = array![1.0, 2.0];
-        let b: Array1<f64> = array![3.0, 4.0];
-        let dist: f64 = euclidean_distance_squared(&a, &b);
+        let a: Array1<F> = array![1.0, 2.0];
+        let b: Array1<F> = array![3.0, 4.0];
+        let dist: F = euclidean_distance_squared(&a, &b);
         assert_eq!(dist, 8.0);
     }
 
@@ -880,11 +880,11 @@ mod tests_scatter_search {
         let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let trial_points: Vec<Array1<f64>> = ss.generate_trial_points().unwrap();
+        let trial_points: Vec<Array1<F>> = ss.generate_trial_points().unwrap();
 
         // Compute expected based on subsampling logic: k = floor(sqrt(N)) combinations
         let n = ss.reference_set.len();
-        let k = (n as f64).sqrt() as usize;
+        let k = (n as F).sqrt() as usize;
         let expected = k * (k - 1) / 2 * 6;
         assert_eq!(trial_points.len(), expected);
     }
@@ -907,7 +907,7 @@ mod tests_scatter_search {
         let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let trials: Vec<Array1<f64>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
+        let trials: Vec<Array1<F>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
         ss.update_reference_set(trials).unwrap();
 
         assert_eq!(ss.reference_set.len(), 4);
@@ -931,8 +931,8 @@ mod tests_scatter_search {
         let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let point: Array1<f64> = array![-3.0, -2.0];
-        let min_dist: f64 = ss.min_distance(&point, &ss.reference_set);
+        let point: Array1<F> = array![-3.0, -2.0];
+        let min_dist: F = ss.min_distance(&point, &ss.reference_set);
 
         // The minimum distance should be 0 since the point is in the reference set
         assert_eq!(min_dist, 0.0);

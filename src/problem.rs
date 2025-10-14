@@ -21,7 +21,7 @@
 //! ## Implementation Guidelines
 //!
 //! ### Objective Function
-//! - **Return Type**: `Result<f64, EvaluationError>` for error handling
+//! - **Return Type**: `Result<F, EvaluationError>` for error handling
 //! - **Convention**: Lower values indicate better solutions (minimization)
 //! - **Error Handling**: Return `EvaluationError` for invalid inputs or computation failures
 //!
@@ -31,14 +31,14 @@
 //! - **Purpose**: Defines the feasible region for optimization
 //!
 //! ### Constraints (Optional, only valid with the COBYLA local solver)
-//! - **Sign Convention**: 
+//! - **Sign Convention**:
 //!   - `g(x) ≥ 0`: Constraint satisfied
 //!   - `g(x) < 0`: Constraint violated
 //! - **Return Type**: Vector of constraint function closures
 //! - **Use Cases**: Nonlinear inequality constraints beyond simple bounds
 //!
 //! ## Example: Six-Hump Camel Function
-//! 
+//!
 //! ```rust
 //! /// References:
 //! ///
@@ -51,7 +51,7 @@
 //! #[derive(Debug, Clone)]
 //! pub struct SixHumpCamel;
 //!
-//! impl Problem for SixHumpCamel {
+//! impl Problem<f64> for SixHumpCamel {
 //!     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
 //!        Ok(
 //!              (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
@@ -94,82 +94,82 @@ use ndarray::{Array1, Array2};
 ///
 /// This trait defines the methods that an optimization problem must implement, including the objective function, gradient, hessian and variable bounds.
 ///
-/// The objective function is the function to minimize, evaluated at a given point x (`Array1<f64>`).
+/// The objective function is the function to minimize, evaluated at a given point x (`Array1<F>`).
 ///
-/// The gradient is the derivative of the objective function, evaluated at a given point x (`Array1<f64>`).
+/// The gradient is the derivative of the objective function, evaluated at a given point x (`Array1<F>`).
 ///
-/// The hessian is the square matrix of the second order partial derivatives of the objective function, evaluated at a given point x (`Array1<f64>`).
+/// The hessian is the square matrix of the second order partial derivatives of the objective function, evaluated at a given point x (`Array1<F>`).
 ///
 /// The variable bounds are the lower and upper bounds for the optimization problem.
 ///
 /// Constraint functions for constrained optimization problems can also be defined using the `constraints` method.
-/// 
+///
 /// The default implementation of the gradient and hessian returns an error indicating the gradient and hessian are not implemented.
 /// Some local solvers require the gradient and hessian to be implemented, while for others it isn't needed.
 /// You should check the documentation of the local solver you are using to know if the gradient and hessian are needed.
-pub trait Problem {
-    /// Objective function to minimize, given at point x (`Array1<f64>`)
+pub trait Problem<F> {
+    /// Objective function to minimize, given at point x (`Array1<F>`)
     ///
-    /// Returns a `Result<f64, EvaluationError>` of the value of the objective function at x
-    fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError>;
+    /// Returns a `Result<F, EvaluationError>` of the value of the objective function at x
+    fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError>;
 
-    /// Gradient of the objective function at point x (`Array1<f64>`)
+    /// Gradient of the objective function at point x (`Array1<F>`)
     ///
-    /// Returns a `Result<Array1<f64>, EvaluationError>` of the gradient of the objective function at x
+    /// Returns a `Result<Array1<F>, EvaluationError>` of the gradient of the objective function at x
     ///
     /// The default implementation returns an error indicating the gradient is not implemented
     /// in case it is needed
-    fn gradient(&self, _x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+    fn gradient(&self, _x: &Array1<F>) -> Result<Array1<F>, EvaluationError> {
         Err(EvaluationError::GradientNotImplemented)
     }
 
-    /// Returns the Hessian at point x (`Array1<f64>`).
+    /// Returns the Hessian at point x (`Array1<F>`).
     ///
-    /// Returns a `Result<Array2<f64>, EvaluationError>` of the hessian of the objective function at x
+    /// Returns a `Result<Array2<F>, EvaluationError>` of the hessian of the objective function at x
     ///
     /// The default implementation returns an error indicating the hessian is not implemented
     /// in case it is needed
-    fn hessian(&self, _x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError> {
+    fn hessian(&self, _x: &Array1<F>) -> Result<Array2<F>, EvaluationError> {
         Err(EvaluationError::HessianNotImplemented)
     }
 
     /// Variable bounds for the optimization problem
     ///
-    /// Returns a `Result<Array2<f64>>` of the variable bounds for the optimization problem.
+    /// Returns a `Result<Array2<F>>` of the variable bounds for the optimization problem.
     ///
     /// This bounds are only used in the scatter search phase of the algorithm.
     /// The local solver is unconstrained (See [argmin issue #137](https://github.com/argmin-rs/argmin/issues/137)) and therefor can return solutions out of the bounds.
     /// You may be able to guide your solutions to your desired bounds/constraints by using a penalty method.
-    fn variable_bounds(&self) -> Array2<f64>;
+    fn variable_bounds(&self) -> Array2<F>;
 
     /// Constraint functions for constrained optimization
     ///
     /// Returns constraint functions in the format expected by optimization solvers.
-    /// Function pointers that take (&[f64], &mut ()) and return f64.
-    /// 
-    /// **Sign Convention**: 
+    /// Function pointers that take (&[F], &mut ()) and return F.
+    ///
+    /// **Sign Convention**:
     /// - **Positive or zero**: constraint satisfied  
     /// - **Negative**: constraint violated
-    /// 
+    ///
     /// The default implementation returns an empty vector (no constraints).
     ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// use globalsearch::problem::Problem;
     /// use globalsearch::types::EvaluationError;
     /// use ndarray::Array1;
-    /// 
+    ///
     /// struct MyProblem;
-    /// impl Problem for MyProblem {
+    /// impl Problem<f64> for MyProblem {
     ///     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
     ///         Ok(x[0].powi(2) + x[1].powi(2))
     ///     }
-    /// 
+    ///
     ///     fn variable_bounds(&self) -> ndarray::Array2<f64> {
     ///         ndarray::array![[-1.0, 1.0], [-1.0, 1.0]]
     ///     }
-    /// 
+    ///
     ///     fn constraints(&self) -> Vec<fn(&[f64], &mut ()) -> f64> {
     ///         vec![
     ///             |x: &[f64], _: &mut ()| 1.0 - x[0] - x[1], // x[0] + x[1] <= 1.0 -> 1.0 - x[0] - x[1] >= 0
@@ -177,7 +177,7 @@ pub trait Problem {
     ///     }
     /// }
     /// ```
-    fn constraints(&self) -> Vec<fn(&[f64], &mut ()) -> f64> {
+    fn constraints(&self) -> Vec<fn(&[F], &mut ()) -> F> {
         vec![]
     }
 }

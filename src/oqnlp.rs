@@ -69,7 +69,7 @@
 //! pub struct SixHumpCamel;
 //!
 //! impl Problem for SixHumpCamel {
-//!    fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+//!    fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
 //!       Ok(
 //!          (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
 //!            + x[0] * x[1]
@@ -78,7 +78,7 @@
 //!     }
 //!
 //!     // Calculated analytically, reference didn't provide gradient
-//!     fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+//!     fn gradient(&self, x: &Array1<F>) -> Result<Array1<F>, EvaluationError> {
 //!         Ok(array![
 //!             (8.0 - 8.4 * x[0].powi(2) + 2.0 * x[0].powi(4)) * x[0] + x[1],
 //!             x[0] + (-8.0 + 16.0 * x[1].powi(2)) * x[1]
@@ -86,7 +86,7 @@
 //!     }
 //!
 //!     // Calculated analytically, reference didn't provide hessian
-//!     fn hessian(&self, x: &Array1<f64>) -> Result<Array2<f64>, EvaluationError> {
+//!     fn hessian(&self, x: &Array1<F>) -> Result<Array2<F>, EvaluationError> {
 //!         Ok(array![
 //!             [(4.0 * x[0].powi(2) - 4.2) * x[0].powi(2)
 //!                 + 4.0 * (4.0 / 3.0 * x[0].powi(3) - 4.2 * x[0]) * x[0]
@@ -95,7 +95,7 @@
 //!             [1.0, 40.0 * x[1].powi(2) + 2.0 * (4.0 * x[1].powi(2) - 4.0)]])
 //!     }
 //!
-//!     fn variable_bounds(&self) -> Array2<f64> {
+//!     fn variable_bounds(&self) -> Array2<F> {
 //!         array![[-3.0, 3.0], [-2.0, 2.0]]
 //!     }
 //! }
@@ -227,7 +227,10 @@ pub enum OQNLPError {
 #[cfg_attr(feature = "rayon", doc = "")]
 #[cfg_attr(feature = "rayon", doc = "### Parallel Processing")]
 #[cfg_attr(feature = "rayon", doc = "")]
-#[cfg_attr(feature = "rayon", doc = "- [`batch_iterations()`](OQNLP::batch_iterations): Set batch size for parallel processing of stage two iterations")]
+#[cfg_attr(
+    feature = "rayon",
+    doc = "- [`batch_iterations()`](OQNLP::batch_iterations): Set batch size for parallel processing of stage two iterations"
+)]
 #[cfg_attr(feature = "rayon", doc = "")]
 /// ### Time Control
 ///
@@ -242,8 +245,14 @@ pub enum OQNLPError {
 #[cfg_attr(feature = "checkpointing", doc = "")]
 #[cfg_attr(feature = "checkpointing", doc = "### State Persistence")]
 #[cfg_attr(feature = "checkpointing", doc = "")]
-#[cfg_attr(feature = "checkpointing", doc = "- [`with_checkpointing()`](Self::with_checkpointing): Enable automatic state saving")]
-#[cfg_attr(feature = "checkpointing", doc = "- [`resume_with_modified_params()`](Self::resume_with_modified_params): Continue with new parameters")]
+#[cfg_attr(
+    feature = "checkpointing",
+    doc = "- [`with_checkpointing()`](Self::with_checkpointing): Enable automatic state saving"
+)]
+#[cfg_attr(
+    feature = "checkpointing",
+    doc = "- [`resume_with_modified_params()`](Self::resume_with_modified_params): Continue with new parameters"
+)]
 #[cfg_attr(feature = "checkpointing", doc = "")]
 ///
 /// ## Example Usage
@@ -256,11 +265,11 @@ pub enum OQNLPError {
 /// struct QuadraticProblem;
 ///
 /// impl Problem for QuadraticProblem {
-///     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+///     fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
 ///         Ok(x[0].powi(2) + x[1].powi(2))  // Minimize x² + y²
 ///     }
 ///
-///     fn variable_bounds(&self) -> Array2<f64> {
+///     fn variable_bounds(&self) -> Array2<F> {
 ///         array![[-5.0, 5.0], [-5.0, 5.0]]  // x, y ∈ [-5, 5]
 ///     }
 /// }
@@ -313,7 +322,7 @@ pub struct OQNLP<P: Problem + Clone> {
     ///
     /// When set, optimization stops after this duration in Stage 2.
     /// Timer starts after the first local search completes.
-    max_time: Option<f64>,
+    max_time: Option<F>,
 
     /// Batch size for parallel processing in Stage 2 (only available with rayon feature).
     ///
@@ -338,7 +347,7 @@ pub struct OQNLP<P: Problem + Clone> {
     ///
     /// Optimization stops when a solution with objective ≤ this value is found.
     /// Useful when the global optimum or "good enough" threshold is known.
-    target_objective: Option<f64>,
+    target_objective: Option<F>,
 
     /// Variable bounds enforcement flag.
     ///
@@ -358,7 +367,7 @@ pub struct OQNLP<P: Problem + Clone> {
 
     /// Active reference set for scatter search state.
     #[cfg(feature = "checkpointing")]
-    current_reference_set: Option<Vec<Array1<f64>>>,
+    current_reference_set: Option<Vec<Array1<F>>>,
 
     /// Counter for cycles without solution improvement.
     #[cfg(feature = "checkpointing")]
@@ -483,20 +492,20 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             }
 
             #[cfg(feature = "rayon")]
-            let ss: ScatterSearch<P> = ScatterSearch::new(self.problem.clone(), self.params.clone())?
-                .parallel(self.enable_parallel);
+            let ss: ScatterSearch<P> =
+                ScatterSearch::new(self.problem.clone(), self.params.clone())?
+                    .parallel(self.enable_parallel);
             #[cfg(not(feature = "rayon"))]
-            let ss: ScatterSearch<P> = ScatterSearch::new(self.problem.clone(), self.params.clone())?;
+            let ss: ScatterSearch<P> =
+                ScatterSearch::new(self.problem.clone(), self.params.clone())?;
             let (ref_set_with_objectives, scatter_candidate) =
                 ss.run().map_err(OQNLPError::ScatterSearchRunError)?;
-                
+
             // Destructure the reference set to separate points and their pre-computed objectives
-            let (ref_set, ref_objectives): (Vec<Array1<f64>>, Vec<f64>) = 
+            let (ref_set, ref_objectives): (Vec<Array1<F>>, Vec<F>) =
                 ref_set_with_objectives.into_iter().unzip();
-                
-            let local_sol: LocalSolution = self
-                .local_solver
-                .solve(scatter_candidate)?;
+
+            let local_sol: LocalSolution = self.local_solver.solve(scatter_candidate)?;
 
             self.merit_filter.update_threshold(local_sol.objective);
 
@@ -546,7 +555,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 self.solution_set
                     .as_ref()
                     .and_then(|s| s.best_solution())
-                    .map_or(f64::INFINITY, |s| s.objective)
+                    .map_or(F::INFINITY, |s| s.objective)
             ))
             .build()
             .expect("Failed to create progress bar");
@@ -601,7 +610,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 // Use a more intelligent default: balance between overhead and parallelism
                 let thread_count = rayon::current_num_threads();
                 let remaining_iterations = self.params.iterations.saturating_sub(start_iter);
-                
+
                 if remaining_iterations < 4 || thread_count == 1 {
                     1 // Use sequential for small workloads or single-threaded
                 } else {
@@ -610,7 +619,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 }
             })
         };
-        
+
         #[cfg(not(feature = "rayon"))]
         let effective_batch_size = 1; // Always sequential when rayon is not available
 
@@ -625,7 +634,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         for batch in trials_to_process.chunks(effective_batch_size) {
             // Check timeout before processing each batch
             if let (Some(max_secs), Some(start)) = (self.max_time, start_timer) {
-                if start.elapsed().as_secs_f64() > max_secs {
+                if start.elapsed().as_secs_F() > max_secs {
                     if self.verbose {
                         println!("Timeout reached after {} seconds", max_secs);
                     }
@@ -636,14 +645,32 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             // Process batch in parallel if rayon is enabled and batch size > 1
             #[cfg(feature = "rayon")]
             if effective_batch_size > 1 {
-                self.process_batch_parallel(batch, &mut unchanged_cycles, start_iter, resumed_from_checkpoint, ref_objectives.as_ref())?;
+                self.process_batch_parallel(
+                    batch,
+                    &mut unchanged_cycles,
+                    start_iter,
+                    resumed_from_checkpoint,
+                    ref_objectives.as_ref(),
+                )?;
             } else {
-                self.process_batch_sequential(batch, &mut unchanged_cycles, start_iter, resumed_from_checkpoint, ref_objectives.as_ref())?;
+                self.process_batch_sequential(
+                    batch,
+                    &mut unchanged_cycles,
+                    start_iter,
+                    resumed_from_checkpoint,
+                    ref_objectives.as_ref(),
+                )?;
             }
 
             #[cfg(not(feature = "rayon"))]
             {
-                self.process_batch_sequential(batch, &mut unchanged_cycles, start_iter, resumed_from_checkpoint, ref_objectives.as_ref())?;
+                self.process_batch_sequential(
+                    batch,
+                    &mut unchanged_cycles,
+                    start_iter,
+                    resumed_from_checkpoint,
+                    ref_objectives.as_ref(),
+                )?;
             }
 
             // Check if target objective has been reached after processing the batch
@@ -669,7 +696,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
     // Helper methods
     /// Check if a local search should be started based on the merit and distance filters
-    fn should_start_local(&self, point: &Array1<f64>, obj: f64) -> Result<bool, OQNLPError> {
+    fn should_start_local(&self, point: &Array1<F>, obj: F) -> Result<bool, OQNLPError> {
         let passes_merit: bool = obj <= self.merit_filter.threshold;
         let passes_distance: bool = self.distance_filter.check(point);
         Ok(passes_merit && passes_distance)
@@ -693,7 +720,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     }
 
     /// Check if a point is within the variable bounds
-    fn is_within_bounds(&self, point: &Array1<f64>) -> bool {
+    fn is_within_bounds(&self, point: &Array1<F>) -> bool {
         let bounds = self.problem.variable_bounds();
 
         for (i, &value) in point.iter().enumerate() {
@@ -710,8 +737,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
     /// Process a local solution, updating the best solution and filters
     fn process_local_solution(&mut self, solution: LocalSolution) -> Result<bool, OQNLPError> {
-        const ABS_TOL: f64 = 1e-8;
-        const REL_TOL: f64 = 1e-6;
+        const ABS_TOL: F = 1e-8;
+        const REL_TOL: F = 1e-6;
 
         // If exclude_out_of_bounds is enabled, check if the solution is within bounds
         if self.exclude_out_of_bounds && !self.is_within_bounds(&solution.point) {
@@ -787,7 +814,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     ///
     /// The time limit is in seconds and it starts timing after the
     /// first local search.
-    pub fn max_time(mut self, max_time: f64) -> Self {
+    pub fn max_time(mut self, max_time: F) -> Self {
         self.max_time = Some(max_time);
         self
     }
@@ -814,7 +841,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 batch_size, self.params.iterations
             );
         }
-        
+
         self.batch_iterations = Some(batch_size);
         self
     }
@@ -847,12 +874,12 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// # #[derive(Clone)]
     /// # struct TestProblem;
     /// # impl Problem for TestProblem {
-    /// #     fn objective(&self, x: &ndarray::Array1<f64>) -> Result<f64, EvaluationError> { Ok(0.0) }
-    /// #     fn variable_bounds(&self) -> ndarray::Array2<f64> { ndarray::array![[-1.0, 1.0]] }
+    /// #     fn objective(&self, x: &ndarray::Array1<F>) -> Result<F, EvaluationError> { Ok(0.0) }
+    /// #     fn variable_bounds(&self) -> ndarray::Array2<F> { ndarray::array![[-1.0, 1.0]] }
     /// # }
     /// let problem = TestProblem;
     /// let params = OQNLPParams::default();
-    /// 
+    ///
     /// // Disable parallel processing for benchmarking
     /// let oqnlp = OQNLP::new(problem, params)
     ///     .unwrap()
@@ -885,14 +912,14 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// # #[derive(Clone)]
     /// # struct TestProblem;
     /// # impl Problem for TestProblem {
-    /// #     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> { Ok(x.sum().powi(2)) }
-    /// #     fn variable_bounds(&self) -> Array2<f64> { array![[-1.0, 1.0]] }
+    /// #     fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> { Ok(x.sum().powi(2)) }
+    /// #     fn variable_bounds(&self) -> Array2<F> { array![[-1.0, 1.0]] }
     /// # }
     /// let mut oqnlp = OQNLP::new(TestProblem, OQNLPParams::default())
     ///     .unwrap()
     ///     .target_objective(0.0);  // Stop when objective <= 0.0
     /// ```
-    pub fn target_objective(mut self, target: f64) -> Self {
+    pub fn target_objective(mut self, target: F) -> Self {
         self.target_objective = Some(target);
         self
     }
@@ -1012,7 +1039,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     #[cfg(feature = "checkpointing")]
     fn expand_reference_set(
         &self,
-        ref_set: &mut Vec<Array1<f64>>,
+        ref_set: &mut Vec<Array1<F>>,
         old_size: usize,
         new_size: usize,
     ) -> Result<(), OQNLPError> {
@@ -1028,14 +1055,13 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         };
 
         #[cfg(feature = "rayon")]
-        let mut scatter_search = ScatterSearch::new(self.problem.clone(), temp_params)?
-            .parallel(self.enable_parallel);
+        let mut scatter_search =
+            ScatterSearch::new(self.problem.clone(), temp_params)?.parallel(self.enable_parallel);
         #[cfg(not(feature = "rayon"))]
         let mut scatter_search = ScatterSearch::new(self.problem.clone(), temp_params)?;
 
         // ScatterSearch's diversify_reference_set method to expand our existing set
-        scatter_search
-            .diversify_reference_set(ref_set)?;
+        scatter_search.diversify_reference_set(ref_set)?;
 
         Ok(())
     }
@@ -1123,7 +1149,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     fn create_checkpoint(&self) -> OQNLPCheckpoint {
         let elapsed_time = self
             .start_time
-            .map(|start| start.elapsed().as_secs_f64())
+            .map(|start| start.elapsed().as_secs_F())
             .unwrap_or(0.0);
 
         OQNLPCheckpoint {
@@ -1180,8 +1206,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     ///
     /// The threshold is adjusted using the equation:
     /// `threshold = threshold + threshold_factor * (1 + abs(threshold))`
-    fn adjust_threshold(&mut self, current_threshold: f64) {
-        let new_threshold: f64 =
+    fn adjust_threshold(&mut self, current_threshold: F) {
+        let new_threshold: F =
             current_threshold + self.params.threshold_factor * (1.0 + current_threshold.abs());
         self.merit_filter.update_threshold(new_threshold);
     }
@@ -1189,11 +1215,11 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     /// Process a batch of trials sequentially
     fn process_batch_sequential(
         &mut self,
-        batch: &[(usize, &Array1<f64>)],
+        batch: &[(usize, &Array1<F>)],
         unchanged_cycles: &mut usize,
         start_iter: usize,
         resumed_from_checkpoint: bool,
-        ref_objectives: Option<&Vec<f64>>,
+        ref_objectives: Option<&Vec<F>>,
     ) -> Result<(), OQNLPError> {
         for &(local_iter, trial) in batch {
             // Skip iterations that were already processed when resuming from checkpoint
@@ -1214,9 +1240,9 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             }
 
             let trial = trial.clone();
-            
+
             // Use pre-computed objective if available, otherwise evaluate
-            let obj: f64 = if let Some(objectives) = ref_objectives {
+            let obj: F = if let Some(objectives) = ref_objectives {
                 // Map iteration index to reference set index (cycle through ref_set)
                 let ref_set_index = local_iter % objectives.len();
 
@@ -1230,9 +1256,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
             if self.should_start_local(&trial, obj)? {
                 self.merit_filter.update_threshold(obj);
-                let local_trial: LocalSolution = self
-                    .local_solver
-                    .solve(trial)?;
+                let local_trial: LocalSolution = self.local_solver.solve(trial)?;
                 let added: bool = self.process_local_solution(local_trial.clone())?;
 
                 if self.verbose && added {
@@ -1283,15 +1307,16 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
     #[cfg(feature = "rayon")]
     fn process_batch_parallel(
         &mut self,
-        batch: &[(usize, &Array1<f64>)],
+        batch: &[(usize, &Array1<F>)],
         unchanged_cycles: &mut usize,
         start_iter: usize,
         resumed_from_checkpoint: bool,
-        ref_objectives: Option<&Vec<f64>>,
+        ref_objectives: Option<&Vec<F>>,
     ) -> Result<(), OQNLPError> {
         // Filter out iterations that were already processed when resuming from checkpoint
         let filtered_batch: Vec<_> = if resumed_from_checkpoint {
-            batch.iter()
+            batch
+                .iter()
                 .filter(|&&(local_iter, _)| local_iter >= start_iter)
                 .copied()
                 .collect()
@@ -1305,7 +1330,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
         }
 
         // For parallel processing, we need to collect the objective evaluations first
-        let batch_results: Result<Vec<(usize, Array1<f64>, f64)>, OQNLPError> = filtered_batch
+        let batch_results: Result<Vec<(usize, Array1<F>, F)>, OQNLPError> = filtered_batch
             .par_iter()
             .map(|&(local_iter, trial)| {
                 // Use pre-computed objective if available, otherwise evaluate
@@ -1315,7 +1340,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     objectives[ref_set_index]
                 } else {
                     // Fallback to evaluating objective function (e.g., when resuming from checkpoint)
-                    self.problem.objective(trial)
+                    self.problem
+                        .objective(trial)
                         .map_err(|_| OQNLPError::ObjectiveFunctionEvaluationFailed)?
                 };
                 Ok((local_iter, trial.clone(), obj))
@@ -1326,9 +1352,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
         // Process results with parallel local solver calls where beneficial
         // Group by whether local search is needed to optimize parallelization
-        let (local_candidates, quick_candidates): (Vec<_>, Vec<_>) = batch_results
-            .into_iter()
-            .partition(|(_, trial, obj)| {
+        let (local_candidates, quick_candidates): (Vec<_>, Vec<_>) =
+            batch_results.into_iter().partition(|(_, trial, obj)| {
                 let passes_merit = *obj <= self.merit_filter.threshold;
                 let passes_distance = self.distance_filter.check(trial);
                 passes_merit && passes_distance
@@ -1342,7 +1367,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 self.unchanged_cycles = *unchanged_cycles;
                 self.current_seed = self.params.seed + self.current_iteration as u64;
             }
-            
+
             *unchanged_cycles += 1;
             if *unchanged_cycles >= self.params.wait_cycle {
                 if self.verbose {
@@ -1356,7 +1381,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 self.adjust_threshold(self.merit_filter.threshold);
                 *unchanged_cycles = 0;
             }
-            
+
             #[cfg(feature = "checkpointing")]
             self.maybe_save_checkpoint()?;
         }
@@ -1369,7 +1394,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 let problem = self.problem.clone();
                 let solver_type = self.params.local_solver_type.clone();
                 let solver_config = self.params.local_solver_config.clone();
-                
+
                 // Parallel processing for multiple local searches
                 let local_results: Result<Vec<_>, OQNLPError> = local_candidates
                     .par_iter()
@@ -1380,10 +1405,9 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                             solver_type.clone(),
                             solver_config.clone(),
                         );
-                        
-                        let local_solution = local_solver
-                            .solve(trial.clone())?;
-                        
+
+                        let local_solution = local_solver.solve(trial.clone())?;
+
                         Ok((*local_iter, trial.clone(), *obj, local_solution))
                     })
                     .collect();
@@ -1420,7 +1444,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                         }
                         return Ok(());
                     }
-                    
+
                     #[cfg(feature = "checkpointing")]
                     self.maybe_save_checkpoint()?;
                 }
@@ -1435,9 +1459,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     }
 
                     self.merit_filter.update_threshold(obj);
-                    let local_trial = self
-                        .local_solver
-                        .solve(trial)?;
+                    let local_trial = self.local_solver.solve(trial)?;
                     let added = self.process_local_solution(local_trial.clone())?;
 
                     if self.verbose && added {
@@ -1458,12 +1480,12 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                         }
                         return Ok(());
                     }
-                    
+
                     #[cfg(feature = "checkpointing")]
                     self.maybe_save_checkpoint()?;
                 }
             }
-            
+
             #[cfg(not(feature = "rayon"))]
             {
                 // Sequential processing when Rayon is not available
@@ -1500,7 +1522,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                         }
                         return Ok(());
                     }
-                    
+
                     #[cfg(feature = "checkpointing")]
                     self.maybe_save_checkpoint()?;
                 }
@@ -1520,15 +1542,15 @@ mod tests_oqnlp {
     #[derive(Clone)]
     struct DummyProblem;
     impl Problem for DummyProblem {
-        fn objective(&self, trial: &Array1<f64>) -> Result<f64, EvaluationError> {
+        fn objective(&self, trial: &Array1<F>) -> Result<F, EvaluationError> {
             Ok(trial.sum())
         }
 
-        fn gradient(&self, trial: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+        fn gradient(&self, trial: &Array1<F>) -> Result<Array1<F>, EvaluationError> {
             Ok(Array1::ones(trial.len()))
         }
 
-        fn variable_bounds(&self) -> Array2<f64> {
+        fn variable_bounds(&self) -> Array2<F> {
             array![[-5.0, 5.0], [-5.0, 5.0], [-5.0, 5.0]]
         }
     }
@@ -1536,7 +1558,7 @@ mod tests_oqnlp {
     #[derive(Clone)]
     struct SixHumpCamel;
     impl Problem for SixHumpCamel {
-        fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+        fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
             Ok(
                 (4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
                     + x[0] * x[1]
@@ -1545,14 +1567,14 @@ mod tests_oqnlp {
         }
 
         // Calculated analytically, reference didn't provide gradient
-        fn gradient(&self, x: &Array1<f64>) -> Result<Array1<f64>, EvaluationError> {
+        fn gradient(&self, x: &Array1<F>) -> Result<Array1<F>, EvaluationError> {
             Ok(array![
                 (8.0 - 8.4 * x[0].powi(2) + 2.0 * x[0].powi(4)) * x[0] + x[1],
                 x[0] + (-8.0 + 16.0 * x[1].powi(2)) * x[1]
             ])
         }
 
-        fn variable_bounds(&self) -> Array2<f64> {
+        fn variable_bounds(&self) -> Array2<F> {
             array![[-3.0, 3.0], [-2.0, 2.0]]
         }
     }
@@ -1651,13 +1673,13 @@ mod tests_oqnlp {
 
         // A trial far enough in space but with objective above the threshold
         let trial = Array1::from(vec![10.0, 10.0, 10.0]);
-        let obj: f64 = trial.sum(); // 30.0 > 10.0 threshold
+        let obj: F = trial.sum(); // 30.0 > 10.0 threshold
         let start: bool = oqnlp.should_start_local(&trial, obj).unwrap();
         assert!(!start);
 
         // A trial with objective below threshold and spatially acceptable
         let trial2 = Array1::from(vec![1.0, 1.0, 1.0]);
-        let obj2: f64 = trial2.sum(); // 3.0 < 10.0 threshold
+        let obj2: F = trial2.sum(); // 3.0 < 10.0 threshold
         let start2: bool = oqnlp.should_start_local(&trial2, obj2).unwrap();
         assert!(start2);
     }
@@ -1674,7 +1696,7 @@ mod tests_oqnlp {
         oqnlp.adjust_threshold(10.0);
 
         // New threshold = 10.0 + 0.2*(1 + 10.0) = 12.2
-        assert!((oqnlp.merit_filter.threshold - 12.2).abs() < f64::EPSILON);
+        assert!((oqnlp.merit_filter.threshold - 12.2).abs() < F::EPSILON);
     }
 
     #[test]
@@ -2319,7 +2341,7 @@ mod tests_oqnlp {
         );
 
         // Test case 3: Empty reference set expansion
-        let mut ref_set3: Vec<Array1<f64>> = vec![];
+        let mut ref_set3: Vec<Array1<F>> = vec![];
         let result3 = oqnlp.expand_reference_set(&mut ref_set3, 0, 5);
         assert!(
             result3.is_ok(),
@@ -3082,14 +3104,14 @@ mod tests_oqnlp {
         let checkpoint_large_threshold = OQNLPCheckpoint {
             params: params.clone(),
             current_iteration: 2,
-            merit_threshold: f64::MAX / 2.0,
+            merit_threshold: F::MAX / 2.0,
             solution_set: None,
             reference_set: vec![Array1::from(vec![0.0, 0.0])],
             unchanged_cycles: 1,
             elapsed_time: 5.0,
             distance_filter_solutions: vec![],
             current_seed: 999,
-            target_objective: Some(f64::MIN / 2.0),
+            target_objective: Some(F::MIN / 2.0),
             exclude_out_of_bounds: true,
             #[cfg(feature = "rayon")]
             batch_iterations: Some(8),
@@ -3100,8 +3122,8 @@ mod tests_oqnlp {
 
         let result2 = oqnlp.restore_from_checkpoint(checkpoint_large_threshold);
         assert!(result2.is_ok(), "Should handle large threshold values");
-        assert!((oqnlp.merit_filter.threshold - (f64::MAX / 2.0)).abs() < f64::MAX / 4.0);
-        assert_eq!(oqnlp.target_objective, Some(f64::MIN / 2.0));
+        assert!((oqnlp.merit_filter.threshold - (F::MAX / 2.0)).abs() < F::MAX / 4.0);
+        assert_eq!(oqnlp.target_objective, Some(F::MIN / 2.0));
 
         // Test case 3: Checkpoint with many unchanged cycles
         let checkpoint_many_cycles = OQNLPCheckpoint {
@@ -3430,7 +3452,7 @@ mod tests_oqnlp {
             .unwrap()
             .with_checkpointing(checkpoint_config)
             .unwrap()
-            .target_objective(f64::NEG_INFINITY); // Edge case: extreme target
+            .target_objective(F::NEG_INFINITY); // Edge case: extreme target
 
         // Test case 1: Very large iteration number
         oqnlp.current_iteration = usize::MAX / 2;
@@ -3438,7 +3460,7 @@ mod tests_oqnlp {
         oqnlp.current_seed = u64::MAX / 2;
 
         // Set extreme merit threshold
-        oqnlp.merit_filter.update_threshold(f64::MAX / 2.0);
+        oqnlp.merit_filter.update_threshold(F::MAX / 2.0);
 
         // Set start time in the past (edge case for elapsed time)
         oqnlp.start_time = Some(
@@ -3464,12 +3486,12 @@ mod tests_oqnlp {
             "Should handle large seed values"
         );
         assert!(
-            (checkpoint1.merit_threshold - (f64::MAX / 2.0)).abs() < f64::MAX / 4.0,
+            (checkpoint1.merit_threshold - (F::MAX / 2.0)).abs() < F::MAX / 4.0,
             "Should handle large threshold"
         );
         assert_eq!(
             checkpoint1.target_objective,
-            Some(f64::NEG_INFINITY),
+            Some(F::NEG_INFINITY),
             "Should handle extreme target objective"
         );
         assert!(
@@ -3568,7 +3590,10 @@ mod tests_oqnlp {
             .verbose();
 
         let result = oqnlp.run();
-        assert!(result.is_ok(), "OQNLP should run successfully with batch_iterations = 1");
+        assert!(
+            result.is_ok(),
+            "OQNLP should run successfully with batch_iterations = 1"
+        );
 
         // Verify that solutions were found
         let sol_set = result.unwrap();
@@ -3578,7 +3603,10 @@ mod tests_oqnlp {
         let mut oqnlp2 = OQNLP::new(problem, params).unwrap().verbose();
 
         let result2 = oqnlp2.run();
-        assert!(result2.is_ok(), "OQNLP should run successfully without batch_iterations");
+        assert!(
+            result2.is_ok(),
+            "OQNLP should run successfully without batch_iterations"
+        );
 
         let sol_set2 = result2.unwrap();
         assert!(!sol_set2.is_empty(), "Should find at least one solution");
@@ -3602,20 +3630,32 @@ mod tests_oqnlp {
             .verbose();
 
         let result = oqnlp.run();
-        assert!(result.is_ok(), "OQNLP should run successfully with parallel batch processing");
+        assert!(
+            result.is_ok(),
+            "OQNLP should run successfully with parallel batch processing"
+        );
 
         // Verify that solutions were found
         let sol_set = result.unwrap();
-        assert!(!sol_set.is_empty(), "Should find at least one solution with parallel processing");
+        assert!(
+            !sol_set.is_empty(),
+            "Should find at least one solution with parallel processing"
+        );
 
         // Test with auto-determined batch size (should use number of CPUs)
         let mut oqnlp2 = OQNLP::new(problem, params).unwrap().verbose();
 
         let result2 = oqnlp2.run();
-        assert!(result2.is_ok(), "OQNLP should run successfully with auto batch size");
+        assert!(
+            result2.is_ok(),
+            "OQNLP should run successfully with auto batch size"
+        );
 
         let sol_set2 = result2.unwrap();
-        assert!(!sol_set2.is_empty(), "Should find solutions with auto batch size");
+        assert!(
+            !sol_set2.is_empty(),
+            "Should find solutions with auto batch size"
+        );
     }
 
     #[test]
@@ -3637,7 +3677,10 @@ mod tests_oqnlp {
             .verbose();
 
         let result = oqnlp.run();
-        assert!(result.is_ok(), "OQNLP should run successfully with batch_iterations and target_objective");
+        assert!(
+            result.is_ok(),
+            "OQNLP should run successfully with batch_iterations and target_objective"
+        );
 
         let sol_set = result.unwrap();
         assert!(!sol_set.is_empty(), "Should find at least one solution");
@@ -3657,7 +3700,7 @@ mod tests_oqnlp {
     fn test_batch_iterations_with_max_time() {
         let problem = SixHumpCamel;
         let params = OQNLPParams {
-            iterations: 100,     // Large number that would take a while
+            iterations: 100, // Large number that would take a while
             population_size: 200,
             ..Default::default()
         };
@@ -3671,15 +3714,24 @@ mod tests_oqnlp {
 
         let start_time = std::time::Instant::now();
         let result = oqnlp.run();
-        let elapsed = start_time.elapsed().as_secs_f64();
+        let elapsed = start_time.elapsed().as_secs_F();
 
-        assert!(result.is_ok(), "OQNLP should run successfully with batch_iterations and max_time");
+        assert!(
+            result.is_ok(),
+            "OQNLP should run successfully with batch_iterations and max_time"
+        );
 
         // Should stop due to time limit (allowing some overhead)
-        assert!(elapsed < 2.0, "Should stop within reasonable time due to max_time limit");
+        assert!(
+            elapsed < 2.0,
+            "Should stop within reasonable time due to max_time limit"
+        );
 
         let sol_set = result.unwrap();
-        assert!(!sol_set.is_empty(), "Should find at least one solution before timeout");
+        assert!(
+            !sol_set.is_empty(),
+            "Should find at least one solution before timeout"
+        );
     }
 
     #[test]
@@ -3712,12 +3764,18 @@ mod tests_oqnlp {
             .unwrap()
             .batch_iterations(10); // Larger than iterations (4)
         let result3 = oqnlp3.run();
-        assert!(result3.is_ok(), "Should work with batch_iterations > iterations");
+        assert!(
+            result3.is_ok(),
+            "Should work with batch_iterations > iterations"
+        );
 
         // Test without setting batch_iterations (should use default)
         let mut oqnlp4 = OQNLP::new(problem, params).unwrap();
         let result4 = oqnlp4.run();
-        assert!(result4.is_ok(), "Should work without setting batch_iterations");
+        assert!(
+            result4.is_ok(),
+            "Should work without setting batch_iterations"
+        );
     }
 
     #[test]
@@ -3739,10 +3797,16 @@ mod tests_oqnlp {
             .verbose();
 
         let result = oqnlp.run();
-        assert!(result.is_ok(), "OQNLP should run successfully with parallel processing");
+        assert!(
+            result.is_ok(),
+            "OQNLP should run successfully with parallel processing"
+        );
 
         let sol_set = result.unwrap();
-        assert!(!sol_set.is_empty(), "Should find solutions with parallel processing");
+        assert!(
+            !sol_set.is_empty(),
+            "Should find solutions with parallel processing"
+        );
 
         // This test mainly verifies that the code compiles and runs without errors
         // when using rayon features. Actual parallel execution verification would
@@ -3761,16 +3825,20 @@ mod tests_oqnlp {
         };
 
         // Test that batch_iterations doesn't interfere with normal error conditions
-        let mut oqnlp = OQNLP::new(problem, params)
-            .unwrap()
-            .batch_iterations(3);
+        let mut oqnlp = OQNLP::new(problem, params).unwrap().batch_iterations(3);
 
         // The algorithm should still work normally and find solutions
         let result = oqnlp.run();
-        assert!(result.is_ok(), "OQNLP should handle batch processing correctly");
+        assert!(
+            result.is_ok(),
+            "OQNLP should handle batch processing correctly"
+        );
 
         let sol_set = result.unwrap();
-        assert!(!sol_set.is_empty(), "Should find solutions even with batch processing");
+        assert!(
+            !sol_set.is_empty(),
+            "Should find solutions even with batch processing"
+        );
     }
 
     #[test]
@@ -3807,10 +3875,16 @@ mod tests_oqnlp {
             .verbose();
 
         let result = oqnlp.run();
-        assert!(result.is_ok(), "OQNLP should work with batch_iterations and checkpointing");
+        assert!(
+            result.is_ok(),
+            "OQNLP should work with batch_iterations and checkpointing"
+        );
 
         let sol_set = result.unwrap();
-        assert!(!sol_set.is_empty(), "Should find solutions with batch processing and checkpointing");
+        assert!(
+            !sol_set.is_empty(),
+            "Should find solutions with batch processing and checkpointing"
+        );
 
         // Clean up test directory
         let _ = std::fs::remove_dir_all(&checkpoint_dir);
@@ -3902,72 +3976,165 @@ mod tests_oqnlp {
             .unwrap();
 
         let restore_result = oqnlp2.restore_from_checkpoint(checkpoint);
-        assert!(restore_result.is_ok(), "Checkpoint restoration should succeed");
+        assert!(
+            restore_result.is_ok(),
+            "Checkpoint restoration should succeed"
+        );
 
         // Verify all state was consistently restored
-        assert_eq!(oqnlp1.params.iterations, oqnlp2.params.iterations, "Iterations should match");
-        assert_eq!(oqnlp1.params.population_size, oqnlp2.params.population_size, "Population size should match");
-        assert!((oqnlp1.params.distance_factor - oqnlp2.params.distance_factor).abs() < 1e-10, "Distance factor should match");
-        assert!((oqnlp1.params.threshold_factor - oqnlp2.params.threshold_factor).abs() < 1e-10, "Threshold factor should match");
+        assert_eq!(
+            oqnlp1.params.iterations, oqnlp2.params.iterations,
+            "Iterations should match"
+        );
+        assert_eq!(
+            oqnlp1.params.population_size, oqnlp2.params.population_size,
+            "Population size should match"
+        );
+        assert!(
+            (oqnlp1.params.distance_factor - oqnlp2.params.distance_factor).abs() < 1e-10,
+            "Distance factor should match"
+        );
+        assert!(
+            (oqnlp1.params.threshold_factor - oqnlp2.params.threshold_factor).abs() < 1e-10,
+            "Threshold factor should match"
+        );
         assert_eq!(oqnlp1.params.seed, oqnlp2.params.seed, "Seed should match");
 
-        assert_eq!(oqnlp1.current_iteration, oqnlp2.current_iteration, "Current iteration should match");
-        assert!((oqnlp1.merit_filter.threshold - oqnlp2.merit_filter.threshold).abs() < 1e-10, "Merit threshold should match");
-        assert_eq!(oqnlp1.unchanged_cycles, oqnlp2.unchanged_cycles, "Unchanged cycles should match");
-        assert_eq!(oqnlp1.current_seed, oqnlp2.current_seed, "Current seed should match");
-        assert_eq!(oqnlp1.target_objective, oqnlp2.target_objective, "Target objective should match");
-        assert_eq!(oqnlp1.exclude_out_of_bounds, oqnlp2.exclude_out_of_bounds, "Exclude out of bounds should match");
+        assert_eq!(
+            oqnlp1.current_iteration, oqnlp2.current_iteration,
+            "Current iteration should match"
+        );
+        assert!(
+            (oqnlp1.merit_filter.threshold - oqnlp2.merit_filter.threshold).abs() < 1e-10,
+            "Merit threshold should match"
+        );
+        assert_eq!(
+            oqnlp1.unchanged_cycles, oqnlp2.unchanged_cycles,
+            "Unchanged cycles should match"
+        );
+        assert_eq!(
+            oqnlp1.current_seed, oqnlp2.current_seed,
+            "Current seed should match"
+        );
+        assert_eq!(
+            oqnlp1.target_objective, oqnlp2.target_objective,
+            "Target objective should match"
+        );
+        assert_eq!(
+            oqnlp1.exclude_out_of_bounds, oqnlp2.exclude_out_of_bounds,
+            "Exclude out of bounds should match"
+        );
 
         // Verify batch_iterations is restored if rayon feature is available
         #[cfg(feature = "rayon")]
         {
-            assert_eq!(oqnlp1.batch_iterations, oqnlp2.batch_iterations, "Batch iterations should match");
+            assert_eq!(
+                oqnlp1.batch_iterations, oqnlp2.batch_iterations,
+                "Batch iterations should match"
+            );
         }
 
         // Verify solution sets match
-        let sol_set1 = oqnlp1.solution_set.as_ref().expect("Original should have solution set");
-        let sol_set2 = oqnlp2.solution_set.as_ref().expect("Restored should have solution set");
-        assert_eq!(sol_set1.len(), sol_set2.len(), "Solution set lengths should match");
-        
+        let sol_set1 = oqnlp1
+            .solution_set
+            .as_ref()
+            .expect("Original should have solution set");
+        let sol_set2 = oqnlp2
+            .solution_set
+            .as_ref()
+            .expect("Restored should have solution set");
+        assert_eq!(
+            sol_set1.len(),
+            sol_set2.len(),
+            "Solution set lengths should match"
+        );
+
         for (s1, s2) in sol_set1.solutions.iter().zip(sol_set2.solutions.iter()) {
-            assert!((s1.objective - s2.objective).abs() < 1e-10, "Solution objectives should match");
-            assert_eq!(s1.point.len(), s2.point.len(), "Solution point dimensions should match");
+            assert!(
+                (s1.objective - s2.objective).abs() < 1e-10,
+                "Solution objectives should match"
+            );
+            assert_eq!(
+                s1.point.len(),
+                s2.point.len(),
+                "Solution point dimensions should match"
+            );
             for (p1, p2) in s1.point.iter().zip(s2.point.iter()) {
-                assert!((p1 - p2).abs() < 1e-10, "Solution point values should match");
+                assert!(
+                    (p1 - p2).abs() < 1e-10,
+                    "Solution point values should match"
+                );
             }
         }
 
         // Verify reference sets match
-        let ref_set1 = oqnlp1.current_reference_set.as_ref().expect("Original should have reference set");
-        let ref_set2 = oqnlp2.current_reference_set.as_ref().expect("Restored should have reference set");
-        assert_eq!(ref_set1.len(), ref_set2.len(), "Reference set lengths should match");
-        
+        let ref_set1 = oqnlp1
+            .current_reference_set
+            .as_ref()
+            .expect("Original should have reference set");
+        let ref_set2 = oqnlp2
+            .current_reference_set
+            .as_ref()
+            .expect("Restored should have reference set");
+        assert_eq!(
+            ref_set1.len(),
+            ref_set2.len(),
+            "Reference set lengths should match"
+        );
+
         for (r1, r2) in ref_set1.iter().zip(ref_set2.iter()) {
-            assert_eq!(r1.len(), r2.len(), "Reference point dimensions should match");
+            assert_eq!(
+                r1.len(),
+                r2.len(),
+                "Reference point dimensions should match"
+            );
             for (p1, p2) in r1.iter().zip(r2.iter()) {
-                assert!((p1 - p2).abs() < 1e-10, "Reference point values should match");
+                assert!(
+                    (p1 - p2).abs() < 1e-10,
+                    "Reference point values should match"
+                );
             }
         }
 
         // Verify distance filter solutions match
         let dist_filter1 = oqnlp1.distance_filter.get_solutions();
         let dist_filter2 = oqnlp2.distance_filter.get_solutions();
-        assert_eq!(dist_filter1.len(), dist_filter2.len(), "Distance filter solution counts should match");
+        assert_eq!(
+            dist_filter1.len(),
+            dist_filter2.len(),
+            "Distance filter solution counts should match"
+        );
 
         for (d1, d2) in dist_filter1.iter().zip(dist_filter2.iter()) {
-            assert!((d1.objective - d2.objective).abs() < 1e-10, "Distance filter objectives should match");
-            assert_eq!(d1.point.len(), d2.point.len(), "Distance filter point dimensions should match");
+            assert!(
+                (d1.objective - d2.objective).abs() < 1e-10,
+                "Distance filter objectives should match"
+            );
+            assert_eq!(
+                d1.point.len(),
+                d2.point.len(),
+                "Distance filter point dimensions should match"
+            );
             for (p1, p2) in d1.point.iter().zip(d2.point.iter()) {
-                assert!((p1 - p2).abs() < 1e-10, "Distance filter point values should match");
+                assert!(
+                    (p1 - p2).abs() < 1e-10,
+                    "Distance filter point values should match"
+                );
             }
         }
 
         // Verify that both instances can continue optimization successfully
         let result1 = oqnlp1.run();
         let result2 = oqnlp2.run();
-        
-        assert!(result1.is_ok(), "Original instance should continue successfully");
-        assert!(result2.is_ok(), "Restored instance should continue successfully");
+
+        assert!(
+            result1.is_ok(),
+            "Original instance should continue successfully"
+        );
+        assert!(
+            result2.is_ok(),
+            "Restored instance should continue successfully"
+        );
 
         // Clean up test directory
         let _ = std::fs::remove_dir_all(&checkpoint_dir);
@@ -3979,19 +4146,22 @@ mod tests_oqnlp {
     fn test_batch_iterations_edge_case_small_remaining() {
         let problem = DummyProblem;
         let params = OQNLPParams {
-            iterations: 5,        // Small total iterations
-            population_size: 10,  // Must be >= iterations
+            iterations: 5,       // Small total iterations
+            population_size: 10, // Must be >= iterations
             ..Default::default()
         };
 
         // Test with batch size larger than remaining iterations
         let mut oqnlp = OQNLP::new(problem, params)
             .unwrap()
-            .batch_iterations(10)  // Batch size = 10, but only 5 total iterations
+            .batch_iterations(10) // Batch size = 10, but only 5 total iterations
             .verbose();
 
         let result = oqnlp.run();
-        assert!(result.is_ok(), "OQNLP should handle large batch size gracefully");
+        assert!(
+            result.is_ok(),
+            "OQNLP should handle large batch size gracefully"
+        );
 
         let sol_set = result.unwrap();
         assert!(!sol_set.is_empty(), "Should find at least one solution");
@@ -4003,15 +4173,15 @@ mod tests_oqnlp {
     fn test_batch_iterations_exact_match() {
         let problem = DummyProblem;
         let params = OQNLPParams {
-            iterations: 8,        
-            population_size: 12,  
+            iterations: 8,
+            population_size: 12,
             ..Default::default()
         };
 
         // Test with batch size exactly matching iterations
         let mut oqnlp = OQNLP::new(problem, params)
             .unwrap()
-            .batch_iterations(8)   // Batch size = iterations
+            .batch_iterations(8) // Batch size = iterations
             .verbose();
 
         let result = oqnlp.run();
@@ -4033,7 +4203,10 @@ mod tests_oqnlp {
 
         // Test default behavior (parallel enabled)
         let oqnlp1 = OQNLP::new(problem, params.clone()).unwrap();
-        assert!(oqnlp1.enable_parallel, "Parallel should be enabled by default");
+        assert!(
+            oqnlp1.enable_parallel,
+            "Parallel should be enabled by default"
+        );
 
         // Test disabling parallel
         let mut oqnlp2 = OQNLP::new(DummyProblem, params.clone())
@@ -4051,6 +4224,9 @@ mod tests_oqnlp {
         let result = oqnlp2.run();
         assert!(result.is_ok(), "OQNLP should work with parallel disabled");
         let sol_set = result.unwrap();
-        assert!(!sol_set.is_empty(), "Should find solutions even with parallel disabled");
+        assert!(
+            !sol_set.is_empty(),
+            "Should find solutions even with parallel disabled"
+        );
     }
 }

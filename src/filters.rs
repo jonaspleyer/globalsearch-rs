@@ -70,7 +70,7 @@ use thiserror::Error;
 pub enum FiltersErrors {
     /// Distance factor must be positive or equal to zero
     #[error("Distance factor must be positive or equal to zero, got {0}.")]
-    NegativeDistanceFactor(f64),
+    NegativeDistanceFactor(F),
 }
 
 /// Quality-based filter for controlling solution acceptance in optimization.
@@ -105,7 +105,7 @@ pub enum FiltersErrors {
     derive(serde::Serialize, serde::Deserialize)
 )]
 pub struct MeritFilter {
-    pub threshold: f64,
+    pub threshold: F,
 }
 
 impl Default for MeritFilter {
@@ -118,16 +118,16 @@ impl MeritFilter {
     /// Create a new MeritFilter
     pub fn new() -> Self {
         Self {
-            threshold: f64::INFINITY,
+            threshold: F::INFINITY,
         }
     }
 
-    pub fn update_threshold(&mut self, threshold: f64) {
+    pub fn update_threshold(&mut self, threshold: F) {
         self.threshold = threshold;
     }
 
     /// Check if the given value is below the threshold
-    pub fn check(&self, value: f64) -> bool {
+    pub fn check(&self, value: F) -> bool {
         value <= self.threshold
     }
 }
@@ -221,7 +221,7 @@ impl DistanceFilter {
     }
 
     /// Check if the given point is far enough from all solutions in DistanceFilter
-    pub fn check(&self, point: &Array1<f64>) -> bool {
+    pub fn check(&self, point: &Array1<F>) -> bool {
         self.solutions.iter().all(|s| {
             euclidean_distance_squared(point, &s.point)
                 > self.params.distance_factor * self.params.distance_factor
@@ -242,11 +242,11 @@ impl DistanceFilter {
 }
 
 /// Euclidean distance squared
-fn euclidean_distance_squared(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
+fn euclidean_distance_squared(a: &Array1<F>, b: &Array1<F>) -> F {
     a.iter()
         .zip(b.iter())
         .map(|(x, y)| (x - y).powi(2))
-        .sum::<f64>()
+        .sum::<F>()
 }
 
 #[cfg(test)]
