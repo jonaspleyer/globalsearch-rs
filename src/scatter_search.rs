@@ -25,11 +25,11 @@
 //! #
 //! # #[derive(Debug, Clone)]
 //! # struct TestProblem;
-//! # impl Problem<F> for TestProblem {
-//! #     fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
+//! # impl Problem<f64> for TestProblem {
+//! #     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
 //! #         Ok(x[0].powi(2) + x[1].powi(2))
 //! #     }
-//! #     fn variable_bounds(&self) -> Array2<F> {
+//! #     fn variable_bounds(&self) -> Array2<f64> {
 //! #         array![[-5.0, 5.0], [-5.0, 5.0]]
 //! #     }
 //! # }
@@ -101,12 +101,12 @@ pub enum ScatterSearchError {
 }
 
 /// Type alias for the complex return type of scatter search run method
-type ScatterSearchResult = (Vec<(Array1<F>, F)>, Array1<F>);
+type ScatterSearchResult<F> = (Vec<(Array1<F>, F)>, Array1<F>);
 
 /// Scatter Search algorithm implementation struct
 pub struct ScatterSearch<P: Problem<F>, F> {
     problem: P,
-    params: OQNLPParams,
+    params: OQNLPParams<F>,
     reference_set: Vec<Array1<F>>,
     reference_set_objectives: Vec<F>,
     bounds: VariableBounds<F>,
@@ -118,8 +118,8 @@ pub struct ScatterSearch<P: Problem<F>, F> {
     enable_parallel: bool,
 }
 
-impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
-    pub fn new(problem: P, params: OQNLPParams) -> Result<Self, ScatterSearchError> {
+impl<P: Problem<F> + Sync + Send, F: ndarray::NdFloat> ScatterSearch<P, F> {
+    pub fn new(problem: P, params: OQNLPParams<F>) -> Result<Self, ScatterSearchError> {
         let var_bounds = problem.variable_bounds();
         let bounds = VariableBounds {
             lower: var_bounds.column(0).to_owned(),
@@ -162,7 +162,10 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
     /// Run the Scatter Search algorithm
     ///
     /// Returns the reference set with objective values and the best solution found
-    pub fn run(mut self) -> Result<ScatterSearchResult, ScatterSearchError> {
+    pub fn run(mut self) -> Result<ScatterSearchResult<F>, ScatterSearchError>
+    where
+        F: rand::distr::uniform::SampleUniform,
+    {
         #[cfg(feature = "progress_bar")]
         {
             self.progress_bar = Some(
@@ -190,12 +193,15 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
         Ok((reference_set_with_objectives, best))
     }
 
-    pub fn initialize_reference_set(&mut self) -> Result<(), ScatterSearchError> {
+    pub fn initialize_reference_set(&mut self) -> Result<(), ScatterSearchError>
+    where
+        F: rand::distr::uniform::SampleUniform,
+    {
         let mut ref_set: Vec<Array1<F>> = Vec::with_capacity(self.params.population_size);
 
         ref_set.push(self.bounds.lower.to_owned());
         ref_set.push(self.bounds.upper.to_owned());
-        ref_set.push((&self.bounds.lower + &self.bounds.upper) / 2.0);
+        ref_set.push((&self.bounds.lower + &self.bounds.upper) / (F::one() + F::one()));
 
         #[cfg(feature = "progress_bar")]
         if let Some(pb) = &mut self.progress_bar {
@@ -226,7 +232,10 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
     pub fn diversify_reference_set(
         &mut self,
         ref_set: &mut Vec<Array1<F>>,
-    ) -> Result<(), ScatterSearchError> {
+    ) -> Result<(), ScatterSearchError>
+    where
+        F: rand::distr::uniform::SampleUniform,
+    {
         let mut candidates = self.generate_stratified_samples(self.params.population_size)?;
 
         #[cfg(feature = "rayon")]
@@ -246,7 +255,7 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
                 (0..min_dists.len())
                     .into_par_iter()
                     .map(|i| (i, min_dists[i]))
-                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
                     .ok_or(ScatterSearchError::NoCandidates)?
             } else {
                 min_dists
@@ -317,7 +326,10 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
     pub fn generate_stratified_samples(
         &self,
         n: usize,
-    ) -> Result<Vec<Array1<F>>, ScatterSearchError> {
+    ) -> Result<Vec<Array1<F>>, ScatterSearchError>
+    where
+        F: rand::distr::uniform::SampleUniform,
+    {
         let dim: usize = self.bounds.lower.len();
 
         // Precompute seeds while holding the mutex once
@@ -371,23 +383,26 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
                 ref_set
                     .par_iter()
                     .map(|p| euclidean_distance_squared(point, p))
-                    .reduce(|| F::INFINITY, F::min)
+                    .reduce(|| F::infinity(), F::min)
             } else {
                 ref_set
                     .iter()
                     .map(|p| euclidean_distance_squared(point, p))
-                    .fold(F::INFINITY, F::min)
+                    .fold(F::infinity(), F::min)
             }
         }
         #[cfg(not(feature = "rayon"))]
         {
-            ref_set.iter().map(|p| euclidean_distance_squared(point, p)).fold(F::INFINITY, F::min)
+            ref_set.iter().map(|p| euclidean_distance_squared(point, p)).fold(F::infinity(), F::min)
         }
     }
 
-    pub fn generate_trial_points(&mut self) -> Result<Vec<Array1<F>>, ScatterSearchError> {
+    pub fn generate_trial_points(&mut self) -> Result<Vec<Array1<F>>, ScatterSearchError>
+    where
+        F: rand::distr::uniform::SampleUniform,
+    {
         // Only use the best k points for combinations
-        let k = (self.reference_set.len() as F).sqrt() as usize;
+        let k = (self.reference_set.len() as f64).sqrt() as usize;
         let k = k.max(2).min(self.reference_set.len());
 
         // Create combinations only between the best k points
@@ -439,13 +454,22 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
         a: &Array1<F>,
         b: &Array1<F>,
         seed: u64,
-    ) -> Result<Vec<Array1<F>>, ScatterSearchError> {
+    ) -> Result<Vec<Array1<F>>, ScatterSearchError>
+    where
+        F: rand::distr::uniform::SampleUniform,
+    {
+        let one = F::one();
+        let two = one + one;
+        let three = two + one;
+        let four = two + two;
+        let five = four + one;
+        let p_one = one / (two * five);
         let mut points = Vec::with_capacity(6);
 
         // Linear combinations.
-        let directions: Vec<F> = vec![0.25, 0.5, 0.75, 1.25];
+        let directions: Vec<F> = vec![one / four, one / two, three / four, five / four];
         for &alpha in &directions {
-            let mut point = a * alpha + b * (1.0 - alpha);
+            let mut point = a * alpha + b * (one - alpha);
             self.apply_bounds(&mut point);
             points.push(point);
         }
@@ -453,9 +477,10 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
         // Random perturbations using the provided seed
         let mut rng: StdRng = StdRng::seed_from_u64(seed);
         for _ in 0..2 {
-            let mut point = (a + b) / 2.0;
+            let mut point = (a + b) / two;
             point.iter_mut().enumerate().for_each(|(i, x)| {
-                *x += rng.random_range(-0.1..0.1) * (self.bounds.upper[i] - self.bounds.lower[i]);
+                *x +=
+                    rng.random_range(-p_one..p_one) * (self.bounds.upper[i] - self.bounds.lower[i]);
             });
             self.apply_bounds(&mut point);
             points.push(point);
@@ -504,7 +529,7 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
         ref_evaluated.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
         // Get worst objective value in reference set
-        let worst_obj = ref_evaluated.last().map(|(_, obj)| *obj).unwrap_or(F::INFINITY);
+        let worst_obj = ref_evaluated.last().map(|(_, obj)| *obj).unwrap_or(F::infinity());
 
         #[cfg(feature = "rayon")]
         let trial_evaluated: Vec<(Array1<F>, F)> = trials
@@ -540,7 +565,7 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
 
         // Keep only the best points
         let pop_size = self.params.population_size;
-        all_points.select_nth_unstable_by(pop_size, |a, b| a.1.total_cmp(&b.1));
+        all_points.select_nth_unstable_by(pop_size, |a, b| a.1.partial_cmp(&b.1).unwrap());
         all_points.truncate(pop_size);
 
         // Update reference set and objectives
@@ -588,7 +613,7 @@ impl<P: Problem<F> + Sync + Send, F> ScatterSearch<P, F> {
 /// Compute the squared Euclidean distance between two points
 ///
 /// Use this function for performance since we don't use the square root
-fn euclidean_distance_squared(a: &Array1<F>, b: &Array1<F>) -> F {
+fn euclidean_distance_squared<F: ndarray::NdFloat>(a: &Array1<F>, b: &Array1<F>) -> F {
     (a - b).mapv(|x| x * x).sum()
 }
 
@@ -615,54 +640,83 @@ mod tests_scatter_search {
     #[derive(Debug, Clone)]
     pub struct SixHumpCamel;
 
-    impl Problem for SixHumpCamel {
+    impl<F: ndarray::NdFloat> Problem<F> for SixHumpCamel {
         fn objective(&self, x: &Array1<F>) -> Result<F, EvaluationError> {
-            Ok((4.0 - 2.1 * x[0].powi(2) + x[0].powi(4) / 3.0) * x[0].powi(2)
+            let one = F::one();
+            let two = one + one;
+            let four = two + two;
+            let ten = (two * two + one) * two;
+            Ok((four - (two + ten.powi(-1)) * x[0].powi(2) + x[0].powi(4) / (one + two))
+                * x[0].powi(2)
                 + x[0] * x[1]
-                + (-4.0 + 4.0 * x[1].powi(2)) * x[1].powi(2))
+                + (-four + four * x[1].powi(2)) * x[1].powi(2))
         }
 
         fn variable_bounds(&self) -> Array2<F> {
-            array![[-3.0, 3.0], [-2.0, 2.0]]
+            let two = F::one() + F::one();
+            let three = two + F::one();
+            array![[-three, three], [-two, two]]
         }
     }
 
     #[test]
+    fn test_population_size_f32() {
+        test_population_size::<f32>()
+    }
+
+    #[test]
+    fn test_population_size_f64() {
+        test_population_size::<f64>()
+    }
+
     /// Test if the population size is correctly set in the `ScatterSearch` struct
-    fn test_population_size() {
+    fn test_population_size<F: ndarray::NdFloat + rand::distr::uniform::SampleUniform>() {
+        let one = F::one();
+        let two = one + one;
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params: OQNLPParams<F> = OQNLPParams {
             iterations: 50,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 100,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let ss: ScatterSearch<SixHumpCamel, F> = ScatterSearch::new(problem, params).unwrap();
         let (ref_set, _) = ss.run().unwrap();
         assert_eq!(ref_set.len(), 100);
     }
 
     #[test]
+    fn test_bounds_in_reference_set_f32() {
+        test_bounds_in_reference_set::<f32>()
+    }
+
+    #[test]
+    fn test_bounds_in_reference_set_f64() {
+        test_bounds_in_reference_set::<f64>()
+    }
+
     /// Test if the bounds are correctly set in the `ScatterSearch` struct and
     /// all the points in the reference set are within the bounds
-    fn test_bounds_in_reference_set() {
+    fn test_bounds_in_reference_set<F: ndarray::NdFloat + rand::distr::uniform::SampleUniform>() {
+        let one = F::one();
+        let two = one + one;
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params: OQNLPParams<F> = OQNLPParams {
             iterations: 50,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 100,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
-        let bounds: VariableBounds = ss.bounds.clone();
+        let ss: ScatterSearch<SixHumpCamel, F> = ScatterSearch::new(problem, params).unwrap();
+        let bounds: VariableBounds<F> = ss.bounds.clone();
         let (ref_set, _) = ss.run().unwrap();
 
         assert_eq!(ref_set.len(), 100);
@@ -676,23 +730,34 @@ mod tests_scatter_search {
     }
 
     #[test]
+    fn test_same_reference_set_f32() {
+        test_same_reference_set::<f32>()
+    }
+
+    #[test]
+    fn test_same_reference_set_f64() {
+        test_same_reference_set::<f64>()
+    }
+
     /// Test that, given the same seed and population size, the reference set
     /// is the same for two different `ScatterSearch` instances
-    fn test_same_reference_set() {
+    fn test_same_reference_set<F: ndarray::NdFloat + rand::distr::uniform::SampleUniform>() {
+        let one = F::one();
+        let two = one + one;
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params: OQNLPParams<F> = OQNLPParams {
             iterations: 50,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 100,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let ss1: ScatterSearch<SixHumpCamel> =
+        let ss1: ScatterSearch<SixHumpCamel, F> =
             ScatterSearch::new(problem.clone(), params.clone()).unwrap();
-        let ss2: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let ss2: ScatterSearch<SixHumpCamel, F> = ScatterSearch::new(problem, params).unwrap();
 
         let (ref_set1, _) = ss1.run().unwrap();
         let (ref_set2, _) = ss2.run().unwrap();
@@ -706,48 +771,70 @@ mod tests_scatter_search {
     }
 
     #[test]
+    fn test_generate_trial_points_f32() {
+        test_generate_trial_points::<f32>()
+    }
+
+    #[test]
+    fn test_generate_trial_points_f64() {
+        test_generate_trial_points::<f64>()
+    }
+
     /// Test generating trial points for a `ScatterSearch` instance
-    fn test_generate_trial_points() {
+    fn test_generate_trial_points<F: ndarray::NdFloat + rand::distr::uniform::SampleUniform>() {
+        let one = F::one();
+        let two = one + one;
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params: OQNLPParams<F> = OQNLPParams {
             iterations: 1,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 10,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let mut ss: ScatterSearch<SixHumpCamel, F> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
         let trial_points: Vec<Array1<F>> = ss.generate_trial_points().unwrap();
 
         // Compute expected based on subsampling logic: k = floor(sqrt(N)) combinations
         let n = ss.reference_set.len();
-        let k = (n as F).sqrt() as usize;
+        let k = (n as f64).sqrt() as usize;
         let expected = k * (k - 1) / 2 * 6;
         assert_eq!(trial_points.len(), expected);
     }
 
     #[test]
+    fn test_combine_points_f32() {
+        test_combine_points::<f32>()
+    }
+
+    #[test]
+    fn test_combine_points_f64() {
+        test_combine_points::<f64>()
+    }
+
     /// Test combining two points into trial points
-    fn test_combine_points() {
+    fn test_combine_points<F: ndarray::NdFloat + rand::distr::uniform::SampleUniform>() {
+        let one = F::one();
+        let two = one + one;
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params = OQNLPParams {
             iterations: 1,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 10,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
-        let a: Array1<F> = array![1.0, 1.0];
-        let b: Array1<F> = array![2.0, 2.0];
+        let ss: ScatterSearch<SixHumpCamel, F> = ScatterSearch::new(problem, params).unwrap();
+        let a: Array1<F> = array![one, one];
+        let b: Array1<F> = array![two, two];
 
         let trial_points: Vec<Array1<F>> = ss.combine_points(&a, &b, 0).unwrap();
 
@@ -756,25 +843,36 @@ mod tests_scatter_search {
     }
 
     #[test]
+    fn test_store_trials_f32() {
+        test_store_trials::<f32>()
+    }
+
+    #[test]
+    fn test_store_trials_f64() {
+        test_store_trials::<f64>()
+    }
+
     /// Test storing trials in the reference set
-    fn test_store_trials() {
+    fn test_store_trials<F: ndarray::NdFloat>() {
+        let one = F::one();
+        let two = one + one;
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params = OQNLPParams {
             iterations: 1,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 4,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let mut ss = ScatterSearch::new(problem, params).unwrap();
 
         // Initially empty reference set (not initialized)
         assert_eq!(ss.reference_set.len(), 0);
 
-        let trial: Array1<F> = array![1.0, 1.0];
+        let trial: Array1<F> = array![one, one];
         ss.store_trial(trial.clone());
 
         // Verify trial was stored
@@ -783,107 +881,174 @@ mod tests_scatter_search {
     }
 
     #[test]
+    fn test_update_reference_set_f32() {
+        test_update_reference_set::<f32>()
+    }
+
+    #[test]
+    fn test_update_reference_set_f64() {
+        test_update_reference_set::<f64>()
+    }
+
     /// Test updating the reference set with new trials
-    fn test_update_reference_set() {
+    fn test_update_reference_set<F: ndarray::NdFloat + rand::distr::uniform::SampleUniform>() {
+        let one = F::one();
+        let two = one + one;
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params = OQNLPParams {
             iterations: 1,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 4,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let mut ss: ScatterSearch<SixHumpCamel, F> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let trials: Vec<Array1<F>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
+        let trials: Vec<Array1<F>> = vec![array![one, one], array![two, two]];
         ss.update_reference_set(trials).unwrap();
 
         assert_eq!(ss.reference_set.len(), 4);
     }
 
     #[test]
+    fn test_min_distance_f32() {
+        test_min_distance::<f32>()
+    }
+
+    #[test]
+    fn test_min_distance_f64() {
+        test_min_distance::<f64>()
+    }
+
     /// Test computing the minimum distance between a point and a reference set
-    fn test_min_distance() {
+    fn test_min_distance<F: ndarray::NdFloat + rand::distr::uniform::SampleUniform>() {
+        let one = F::one();
+        let two = one + one;
+        let three = two + one;
+
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params = OQNLPParams {
             iterations: 1,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 4,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let mut ss: ScatterSearch<SixHumpCamel, F> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let point: Array1<F> = array![-3.0, -2.0];
+        let point: Array1<F> = array![-three, -two];
         let min_dist: F = ss.min_distance(&point, &ss.reference_set);
 
         // The minimum distance should be 0 since the point is in the reference set
-        assert_eq!(min_dist, 0.0);
+        assert_eq!(min_dist, F::zero());
     }
 
     #[test]
+    fn test_euclidean_distance_squared_f32() {
+        test_euclidean_distance_squared::<f32>()
+    }
+
+    #[test]
+    fn test_euclidean_distance_squared_f64() {
+        test_euclidean_distance_squared::<f64>()
+    }
+
     /// Test euclidean distance squared
-    fn test_euclidean_distance_squared() {
-        let a: Array1<F> = array![1.0, 2.0];
-        let b: Array1<F> = array![3.0, 4.0];
+    fn test_euclidean_distance_squared<F: ndarray::NdFloat>() {
+        let one = F::one();
+        let two = one + one;
+        let three = two + one;
+        let four = two + two;
+        let a: Array1<F> = array![one, two];
+        let b: Array1<F> = array![three, four];
         let dist: F = euclidean_distance_squared(&a, &b);
-        assert_eq!(dist, 8.0);
+        assert_eq!(dist, four + four);
     }
 
     #[cfg(feature = "rayon")]
     #[test]
+    fn test_generate_trial_points_rayon_f32() {
+        test_generate_trial_points_rayon::<f32>()
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn test_generate_trial_points_rayon_f64() {
+        test_generate_trial_points_rayon::<f64>()
+    }
+
     /// Test generating trial points using rayon
-    fn test_generate_trial_points_rayon() {
+    fn test_generate_trial_points_rayon<
+        F: ndarray::NdFloat + rand::distr::uniform::SampleUniform,
+    >() {
+        let one = F::one();
+        let two = one + one;
+
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params = OQNLPParams {
             iterations: 1,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 10,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let mut ss: ScatterSearch<SixHumpCamel, F> = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
         let trial_points: Vec<Array1<F>> = ss.generate_trial_points().unwrap();
 
         // Compute expected based on subsampling logic: k = floor(sqrt(N)) combinations
         let n = ss.reference_set.len();
-        let k = (n as F).sqrt() as usize;
+        let k = (n as f64).sqrt() as usize;
         let expected = k * (k - 1) / 2 * 6;
         assert_eq!(trial_points.len(), expected);
     }
 
     #[cfg(feature = "rayon")]
     #[test]
+    fn test_update_reference_set_rayon_f32() {
+        test_update_reference_set_rayon::<f32>()
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn test_update_reference_set_rayon_f64() {
+        test_update_reference_set_rayon::<f64>()
+    }
+
     /// Test updating the reference set using rayon
-    fn test_update_reference_set_rayon() {
+    fn test_update_reference_set_rayon<
+        F: ndarray::NdFloat + rand::distr::uniform::SampleUniform,
+    >() {
+        let one = F::one();
+        let two = one + one;
+
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params = OQNLPParams {
             iterations: 1,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + two + one),
+            distance_factor: (two + one) / (two + two),
             population_size: 4,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let mut ss = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let trials: Vec<Array1<F>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
+        let trials: Vec<Array1<F>> = vec![array![one, one], array![two, two]];
         ss.update_reference_set(trials).unwrap();
 
         assert_eq!(ss.reference_set.len(), 4);
@@ -891,26 +1056,40 @@ mod tests_scatter_search {
 
     #[cfg(feature = "rayon")]
     #[test]
+    fn test_min_distance_rayon_f32() {
+        test_min_distance_rayon::<f32>()
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn test_min_distance_rayon_f64() {
+        test_min_distance_rayon::<f64>()
+    }
+
     /// Test computing the minimum distance between a point and a reference set using rayon
-    fn test_min_distance_rayon() {
+    fn test_min_distance_rayon<F: ndarray::NdFloat + rand::distr::uniform::SampleUniform>() {
+        let one = F::one();
+        let two = one + one;
+        let three = two + one;
+
         let problem: SixHumpCamel = SixHumpCamel;
-        let params: OQNLPParams = OQNLPParams {
+        let params = OQNLPParams {
             iterations: 1,
             wait_cycle: 30,
-            threshold_factor: 0.2,
-            distance_factor: 0.75,
+            threshold_factor: one / (two + three),
+            distance_factor: three / (two + two),
             population_size: 4,
             seed: 0,
             ..OQNLPParams::default()
         };
 
-        let mut ss: ScatterSearch<SixHumpCamel> = ScatterSearch::new(problem, params).unwrap();
+        let mut ss = ScatterSearch::new(problem, params).unwrap();
         ss.initialize_reference_set().unwrap();
 
-        let point: Array1<F> = array![-3.0, -2.0];
+        let point: Array1<F> = array![-three, -two];
         let min_dist: F = ss.min_distance(&point, &ss.reference_set);
 
         // The minimum distance should be 0 since the point is in the reference set
-        assert_eq!(min_dist, 0.0);
+        assert_eq!(min_dist, F::zero());
     }
 }
