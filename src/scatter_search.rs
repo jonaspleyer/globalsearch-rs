@@ -510,104 +510,95 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             return Ok(());
         }
 
-        let mut ref_evaluated: Vec<(Array1<f64>, f64)> = self
+        // Reference set is already sorted (from previous iteration or initialize_reference_set)
+        // so we can directly use the cached objectives without re-sorting
+        let worst_obj = self.reference_set_objectives.last().copied().unwrap_or(f64::INFINITY);
+
+        // Prepare reference set for later merging with evaluated trials
+        let ref_evaluated: Vec<(Array1<f64>, f64)> = self
             .reference_set
             .iter()
             .zip(self.reference_set_objectives.iter())
             .map(|(point, &obj)| (point.clone(), obj))
             .collect();
 
-        // Sort reference set by objective value
-        ref_evaluated.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        // Compute a minimum distance threshold (once) based on reference set diversity
+        let min_dist_threshold = {
+            let ref_set = &self.reference_set;
+            if ref_set.len() < 2 {
+                0.0
+            } else {
+                // Sample k pairs to estimate typical distances (k = sqrt(population_size))
+                // This scales appropriately with population size
+                let k = ((ref_set.len() as f64).sqrt() as usize).max(2).min(ref_set.len());
+                let sample_size = k;
 
-        // Get worst objective value in reference set
-        let worst_obj = ref_evaluated.last().map(|(_, obj)| *obj).unwrap_or(f64::INFINITY);
+                #[cfg(feature = "rayon")]
+                let sum_dist = if self.enable_parallel {
+                    (0..sample_size)
+                        .into_par_iter()
+                        .map(|i| {
+                            euclidean_distance_squared(
+                                &ref_set[i],
+                                &ref_set[(i + 1) % ref_set.len()],
+                            )
+                        })
+                        .sum::<f64>()
+                } else {
+                    (0..sample_size)
+                        .map(|i| {
+                            euclidean_distance_squared(
+                                &ref_set[i],
+                                &ref_set[(i + 1) % ref_set.len()],
+                            )
+                        })
+                        .sum::<f64>()
+                };
 
-        // Distance prefilter: Compute min distance from each trial to reference set
-        // Only evaluate trials that are sufficiently far from existing points
-        // This reduces evaluations while maintaining diversity
-        // Strategy: Keep top 30% of trials by distance, then evaluate only those
-        #[cfg(feature = "rayon")]
-        let mut trial_distances: Vec<(usize, f64)> = if self.enable_parallel {
-            trials
-                .par_iter()
-                .enumerate()
-                .map(|(idx, trial)| {
-                    let min_dist = self.min_distance(trial, &self.reference_set);
-                    (idx, min_dist)
-                })
-                .collect()
-        } else {
-            trials
-                .iter()
-                .enumerate()
-                .map(|(idx, trial)| {
-                    let min_dist = self.min_distance(trial, &self.reference_set);
-                    (idx, min_dist)
-                })
-                .collect()
+                #[cfg(not(feature = "rayon"))]
+                let sum_dist = (0..sample_size)
+                    .map(|i| {
+                        euclidean_distance_squared(&ref_set[i], &ref_set[(i + 1) % ref_set.len()])
+                    })
+                    .sum::<f64>();
+
+                (sum_dist / sample_size as f64) * 0.10 // Use 10% of average distance as threshold
+            }
         };
 
-        #[cfg(not(feature = "rayon"))]
-        let mut trial_distances: Vec<(usize, f64)> = trials
-            .iter()
-            .enumerate()
-            .map(|(idx, trial)| {
-                let min_dist = self.min_distance(trial, &self.reference_set);
-                (idx, min_dist)
-            })
-            .collect();
+        // Evaluate trial points with two-level filtering:
+        // 1. Cheap distance filter to skip near-duplicates (up to 5 distance computations)
+        // 2. Expensive objective evaluation only for diverse points
+        let evaluate_trial = |point: &Array1<f64>| -> Option<(Array1<f64>, f64)> {
+            // Filter 1: Distance check - only check against top 5 reference points
+            let is_diverse =
+                self.reference_set.iter().take(5).all(|ref_point| {
+                    euclidean_distance_squared(point, ref_point) > min_dist_threshold
+                });
 
-        // Sort by distance (descending) and keep top 30% of trials by distance
-        // This ensures we evaluate the most diverse/distant trials first
-        trial_distances.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        let keep_count = (trials.len() as f64 * 0.3).ceil() as usize;
-        let trials_to_evaluate: Vec<&Array1<f64>> =
-            trial_distances.iter().take(keep_count).map(|(idx, _)| &trials[*idx]).collect();
+            if !is_diverse {
+                return None; // Skip evaluation if too close
+            }
 
-        // Evaluate filtered trial points
+            // Filter 2: Objective evaluation (expensive operation)
+            let obj = self.problem.objective(point).ok()?;
+            if obj < worst_obj {
+                Some((point.clone(), obj))
+            } else {
+                None
+            }
+        };
+
         #[cfg(feature = "rayon")]
         let trial_evaluated: Vec<(Array1<f64>, f64)> = if self.enable_parallel {
-            trials_to_evaluate
-                .par_iter()
-                .filter_map(|point| {
-                    // Check if point might be better than worst in reference set
-                    let obj = self.problem.objective(point).ok()?;
-                    if obj < worst_obj {
-                        Some(((*point).clone(), obj))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
+            trials.par_iter().filter_map(evaluate_trial).collect()
         } else {
-            trials_to_evaluate
-                .iter()
-                .filter_map(|point| {
-                    // Check if point might be better than worst in reference set
-                    let obj = self.problem.objective(point).ok()?;
-                    if obj < worst_obj {
-                        Some(((*point).clone(), obj))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
+            trials.iter().filter_map(evaluate_trial).collect()
         };
 
         #[cfg(not(feature = "rayon"))]
-        let trial_evaluated: Vec<(Array1<f64>, f64)> = trials_to_evaluate
-            .iter()
-            .filter_map(|point| {
-                // Check if point might be better than worst in reference set
-                let obj = self.problem.objective(point).ok()?;
-                if obj < worst_obj {
-                    Some(((*point).clone(), obj))
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let trial_evaluated: Vec<(Array1<f64>, f64)> =
+            trials.iter().filter_map(evaluate_trial).collect();
 
         // Combine and sort all points
         let mut all_points = ref_evaluated;
