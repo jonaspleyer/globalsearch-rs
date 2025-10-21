@@ -175,7 +175,27 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             );
         }
 
+        // Phase 1 & 2: Initialization and Diversification
         self.initialize_reference_set()?;
+
+        #[cfg(feature = "progress_bar")]
+        if let Some(pb) = &mut self.progress_bar {
+            pb.set_description("Stage 1, initialized and diversified");
+            pb.update(1).expect("Failed to update progress bar");
+        }
+
+        // Phase 3: Intensification using k-selection
+        // Generate trial points from best k points and update reference set
+        let trial_points = self.generate_trial_points()?;
+
+        #[cfg(feature = "progress_bar")]
+        if let Some(pb) = &mut self.progress_bar {
+            pb.set_description("Stage 1, generated trial points");
+            pb.update(1).expect("Failed to update progress bar");
+        }
+
+        self.update_reference_set(trial_points)?;
+
         let best = self.best_solution()?;
 
         #[cfg(feature = "progress_bar")]
@@ -211,8 +231,16 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             .map(|point| self.problem.objective(point))
             .collect::<Result<Vec<f64>, _>>()?;
 
-        self.reference_set = ref_set;
-        self.reference_set_objectives = objectives;
+        // Sort reference set by objective value (best first) for k-selection
+        let mut points_with_objectives: Vec<(Array1<f64>, f64)> =
+            ref_set.into_iter().zip(objectives).collect();
+        points_with_objectives.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        let (sorted_points, sorted_objectives): (Vec<Array1<f64>>, Vec<f64>) =
+            points_with_objectives.into_iter().unzip();
+
+        self.reference_set = sorted_points;
+        self.reference_set_objectives = sorted_objectives;
 
         #[cfg(feature = "progress_bar")]
         if let Some(pb) = &mut self.progress_bar {
@@ -482,68 +510,118 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             return Ok(());
         }
 
-        // Evaluate reference set points first
-        #[cfg(feature = "rayon")]
-        let mut ref_evaluated: Vec<(Array1<f64>, f64)> = self
-            .reference_set
-            .par_iter()
-            .map(|point| {
-                let obj = self.problem.objective(point)?;
-                Ok((point.clone(), obj))
-            })
-            .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
+        // Reference set is already sorted (from previous iteration or initialize_reference_set)
+        // so we can directly use the cached objectives without re-sorting
+        let worst_obj = self.reference_set_objectives.last().copied().unwrap_or(f64::INFINITY);
 
-        #[cfg(not(feature = "rayon"))]
-        let mut ref_evaluated: Vec<(Array1<f64>, f64)> = self
+        // Prepare reference set for later merging with evaluated trials
+        let ref_evaluated: Vec<(Array1<f64>, f64)> = self
             .reference_set
             .iter()
-            .map(|point| {
-                let obj = self.problem.objective(point)?;
-                Ok((point.clone(), obj))
-            })
-            .collect::<Result<Vec<(Array1<f64>, f64)>, ScatterSearchError>>()?;
+            .zip(self.reference_set_objectives.iter())
+            .map(|(point, &obj)| (point.clone(), obj))
+            .collect();
 
-        // Sort reference set by objective value
-        ref_evaluated.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        // Compute a minimum distance threshold (once) based on reference set diversity
+        let min_dist_threshold = {
+            let ref_set = &self.reference_set;
+            if ref_set.len() < 2 {
+                0.0
+            } else {
+                // Sample k pairs to estimate typical distances (k = sqrt(population_size))
+                // This scales appropriately with population size
+                let k = ((ref_set.len() as f64).sqrt() as usize).max(2).min(ref_set.len());
+                let sample_size = k;
 
-        // Get worst objective value in reference set
-        let worst_obj = ref_evaluated.last().map(|(_, obj)| *obj).unwrap_or(f64::INFINITY);
+                #[cfg(feature = "rayon")]
+                let sum_dist = if self.enable_parallel {
+                    (0..sample_size)
+                        .into_par_iter()
+                        .map(|i| {
+                            euclidean_distance_squared(
+                                &ref_set[i],
+                                &ref_set[(i + 1) % ref_set.len()],
+                            )
+                        })
+                        .sum::<f64>()
+                } else {
+                    (0..sample_size)
+                        .map(|i| {
+                            euclidean_distance_squared(
+                                &ref_set[i],
+                                &ref_set[(i + 1) % ref_set.len()],
+                            )
+                        })
+                        .sum::<f64>()
+                };
+
+                #[cfg(not(feature = "rayon"))]
+                let sum_dist = (0..sample_size)
+                    .map(|i| {
+                        euclidean_distance_squared(&ref_set[i], &ref_set[(i + 1) % ref_set.len()])
+                    })
+                    .sum::<f64>();
+
+                (sum_dist / sample_size as f64) * 0.10 // Use 10% of average distance as threshold
+            }
+        };
+
+        // Evaluate trial points with two-level filtering:
+        // 1. Cheap distance filter to skip near-duplicates (up to 5 distance computations)
+        // 2. Expensive objective evaluation only for diverse points
+        let evaluate_trial = |point: &Array1<f64>| -> Option<(Array1<f64>, f64)> {
+            // Filter 1: Distance check - only check against top 5 reference points
+            let is_diverse =
+                self.reference_set.iter().take(5).all(|ref_point| {
+                    euclidean_distance_squared(point, ref_point) > min_dist_threshold
+                });
+
+            if !is_diverse {
+                return None; // Skip evaluation if too close
+            }
+
+            // Filter 2: Objective evaluation (expensive operation)
+            let obj = self.problem.objective(point).ok()?;
+            if obj < worst_obj {
+                Some((point.clone(), obj))
+            } else {
+                None
+            }
+        };
 
         #[cfg(feature = "rayon")]
-        let trial_evaluated: Vec<(Array1<f64>, f64)> = trials
-            .par_iter()
-            .filter_map(|point| {
-                // Check if point might be better than worst in reference set
-                let obj = self.problem.objective(point).ok()?;
-                if obj < worst_obj {
-                    Some((point.clone(), obj))
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let trial_evaluated: Vec<(Array1<f64>, f64)> = if self.enable_parallel {
+            trials.par_iter().filter_map(evaluate_trial).collect()
+        } else {
+            trials.iter().filter_map(evaluate_trial).collect()
+        };
 
         #[cfg(not(feature = "rayon"))]
-        let trial_evaluated: Vec<(Array1<f64>, f64)> = trials
-            .iter()
-            .filter_map(|point| {
-                // Check if point might be better than worst in reference set
-                let obj = self.problem.objective(point).ok()?;
-                if obj < worst_obj {
-                    Some((point.clone(), obj))
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let trial_evaluated: Vec<(Array1<f64>, f64)> =
+            trials.iter().filter_map(evaluate_trial).collect();
 
         // Combine and sort all points
         let mut all_points = ref_evaluated;
         all_points.extend(trial_evaluated);
 
-        // Keep only the best points
+        // Keep only the best population_size points
+        // This ensures reference set always has exactly population_size points
         let pop_size = self.params.population_size;
-        all_points.select_nth_unstable_by(pop_size, |a, b| a.1.total_cmp(&b.1));
+
+        // Only select and sort the best k points needed for k-selection
+        // The rest can remain unsorted since they won't be used for generating trial points
+        let k = ((pop_size as f64).sqrt() as usize).max(2).min(pop_size);
+
+        // Partition so the k best elements are at the front (these will be the global best k)
+        all_points.select_nth_unstable_by(k - 1, |a, b| a.1.total_cmp(&b.1));
+
+        // Now sort only the first k elements (these are guaranteed to be the k best globally)
+        all_points[..k].sort_by(|a, b| a.1.total_cmp(&b.1));
+
+        // Partition the remaining to get the pop_size best overall
+        all_points.select_nth_unstable_by(pop_size - 1, |a, b| a.1.total_cmp(&b.1));
+
+        // Truncate to keep only pop_size points
         all_points.truncate(pop_size);
 
         // Update reference set and objectives
@@ -556,31 +634,32 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
 
     pub fn best_solution(&self) -> Result<Array1<f64>, ScatterSearchError> {
         #[cfg(feature = "rayon")]
-        {
-            let best = self
-                .reference_set
+        let best_idx = if self.enable_parallel {
+            self.reference_set_objectives
                 .par_iter()
-                .min_by(|a, b| {
-                    let obj_a: f64 = self.problem.objective(a).unwrap();
-                    let obj_b: f64 = self.problem.objective(b).unwrap();
-                    obj_a.partial_cmp(&obj_b).unwrap()
-                })
-                .ok_or(ScatterSearchError::NoCandidates)?;
-            Ok(best.clone())
-        }
+                .enumerate()
+                .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .map(|(idx, _)| idx)
+                .ok_or(ScatterSearchError::NoCandidates)?
+        } else {
+            self.reference_set_objectives
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .map(|(idx, _)| idx)
+                .ok_or(ScatterSearchError::NoCandidates)?
+        };
+
         #[cfg(not(feature = "rayon"))]
-        {
-            let mut best_point: Option<(&Array1<f64>, f64)> = None;
-            for point in &self.reference_set {
-                let obj: f64 = self.problem.objective(point)?;
-                best_point = match best_point {
-                    None => Some((point, obj)),
-                    Some((_, best_obj)) if obj < best_obj => Some((point, obj)),
-                    Some(current) => Some(current),
-                };
-            }
-            best_point.map(|(p, _)| p.clone()).ok_or(ScatterSearchError::NoCandidates)
-        }
+        let best_idx = self
+            .reference_set_objectives
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(idx, _)| idx)
+            .ok_or(ScatterSearchError::NoCandidates)?;
+
+        Ok(self.reference_set[best_idx].clone())
     }
 
     pub fn store_trial(&mut self, trial: Array1<f64>) {
