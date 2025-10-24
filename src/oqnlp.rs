@@ -127,6 +127,7 @@
 
 use crate::filters::{DistanceFilter, MeritFilter};
 use crate::local_solver::runner::LocalSolver;
+use crate::observers::Observer;
 use crate::problem::Problem;
 use crate::scatter_search::ScatterSearch;
 use crate::types::{FilterParams, LocalSolution, OQNLPParams, SolutionSet};
@@ -386,6 +387,9 @@ pub struct OQNLP<P: Problem + Clone> {
     /// Current random seed for reproducible continuation.
     #[cfg(feature = "checkpointing")]
     current_seed: u64,
+
+    /// Observer for tracking algorithm state and metrics
+    observer: Option<Observer>,
 }
 
 impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
@@ -458,11 +462,110 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             start_time: None,
             #[cfg(feature = "checkpointing")]
             current_seed: params.seed,
+            observer: None,
         })
+    }
+
+    /// Add an observer to track algorithm state
+    ///
+    /// The observer will track metrics during the optimization process,
+    /// such as function evaluations, solution set size, and timing information.
+    ///
+    /// # Arguments
+    ///
+    /// * `observer` - The observer to add
+    ///
+    /// ## Example Usage
+    ///
+    /// ```rust
+    /// use globalsearch::observers::{Observer, ObserverMode};
+    /// use globalsearch::oqnlp::OQNLP;
+    /// use globalsearch::types::OQNLPParams;
+    /// # use globalsearch::problem::Problem;
+    /// # use globalsearch::types::EvaluationError;
+    /// # use ndarray::{Array1, Array2, array};
+    /// #
+    /// # #[derive(Clone)]
+    /// # struct TestProblem;
+    /// # impl Problem for TestProblem {
+    /// #     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+    /// #         Ok(x[0].powi(2) + x[1].powi(2))
+    /// #     }
+    /// #     fn variable_bounds(&self) -> Array2<f64> {
+    /// #         array![[-5.0, 5.0], [-5.0, 5.0]]
+    /// #     }
+    /// # }
+    ///
+    /// let problem = TestProblem;
+    /// let params = OQNLPParams::default();
+    ///
+    /// // Create an observer with tracking for both stages
+    /// let observer = Observer::new()
+    ///     .with_stage1_tracking()
+    ///     .with_stage2_tracking()
+    ///     .with_timing();
+    ///
+    /// let mut optimizer = OQNLP::new(problem, params)
+    ///     .unwrap()
+    ///     .add_observer(observer);
+    ///
+    /// let solutions = optimizer.run();
+    ///
+    /// // After optimization, access observer metrics
+    /// // You can also use the observer's callback functionality to log metrics during optimization
+    /// if let Some(observer) = optimizer.observer() {
+    ///        if let Some(stage1) = observer.stage1_final() {
+    ///            println!("\nStage 1 (Scatter Search):");
+    ///            println!("  Reference set size: {}", stage1.reference_set_size());
+    ///            println!("  Best objective: {:.8}", stage1.best_objective());
+    ///            println!("  Function evaluations: {}", stage1.function_evaluations());
+    ///            println!("  Trial points generated: {}", stage1.trial_points_generated());
+    ///            if let Some(time) = stage1.total_time() {
+    ///                println!("  Total time: {:.3}s", time);
+    ///            }
+    ///        }
+    ///
+    ///        if let Some(stage2) = observer.stage2() {
+    ///            println!("\nStage 2 (Local Refinement):");
+    ///            println!("  Iterations completed: {}", stage2.current_iteration() + 1);
+    ///            println!("  Best objective: {:.8}", stage2.best_objective());
+    ///            println!("  Solutions found: {}", stage2.solution_set_size());
+    ///            println!(
+    ///                "  Local solver calls: {} (improved: {})",
+    ///                stage2.local_solver_calls(),
+    ///                stage2.improved_local_calls()
+    ///            );
+    ///            println!("  Function evaluations: {}", stage2.function_evaluations());
+    ///            println!("  Unchanged cycles: {}", stage2.unchanged_cycles());
+    ///            if let Some(time) = stage2.total_time() {
+    ///                println!("  Total time: {:.3}s", time);
+    ///          }
+    ///        }
+    ///    }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn add_observer(mut self, observer: Observer) -> Self {
+        self.observer = Some(observer);
+        self
+    }
+
+    /// Get a reference to the observer
+    pub fn observer(&self) -> Option<&Observer> {
+        self.observer.as_ref()
     }
 
     /// Run the OQNLP algorithm and return the solution set
     pub fn run(&mut self) -> Result<SolutionSet, OQNLPError> {
+        // Start observer timing if enabled
+        if let Some(ref mut observer) = self.observer {
+            observer.start_timer();
+            if observer.should_observe_stage1() {
+                if let Some(stage1) = observer.stage1_mut() {
+                    stage1.start();
+                }
+            }
+        }
+
         // Try to resume from checkpoint if enabled
         #[cfg(feature = "checkpointing")]
         let resumed_from_checkpoint = self.try_resume_from_checkpoint()?;
@@ -496,20 +599,60 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             }
 
             #[cfg(feature = "rayon")]
-            let ss: ScatterSearch<P> =
-                ScatterSearch::new(self.problem.clone(), self.params.clone())?
-                    .parallel(self.enable_parallel);
+            let ss = ScatterSearch::new(self.problem.clone(), self.params.clone())?
+                .parallel(self.enable_parallel);
             #[cfg(not(feature = "rayon"))]
-            let ss: ScatterSearch<P> =
-                ScatterSearch::new(self.problem.clone(), self.params.clone())?;
-            let (ref_set_with_objectives, scatter_candidate) =
-                ss.run().map_err(OQNLPError::ScatterSearchRunError)?;
+            let ss = ScatterSearch::new(self.problem.clone(), self.params.clone())?;
+
+            // Attach observer if present and should observe Stage 1
+            let (ref_set_with_objectives, scatter_candidate) = if let Some(ref mut observer) =
+                self.observer
+            {
+                if observer.should_observe_stage1() {
+                    ss.with_observer(observer).run().map_err(OQNLPError::ScatterSearchRunError)?
+                } else {
+                    ss.run().map_err(OQNLPError::ScatterSearchRunError)?
+                }
+            } else {
+                ss.run().map_err(OQNLPError::ScatterSearchRunError)?
+            };
 
             // Destructure the reference set to separate points and their pre-computed objectives
             let (ref_set, ref_objectives): (Vec<Array1<f64>>, Vec<f64>) =
                 ref_set_with_objectives.into_iter().unzip();
 
-            let local_sol: LocalSolution = self.local_solver.solve(scatter_candidate)?;
+            // Observer: Report scatter search complete
+            if let Some(ref mut observer) = self.observer {
+                if observer.should_observe_stage1() {
+                    if let Some(stage1) = observer.stage1_mut() {
+                        stage1.enter_substage("scatter_search_complete");
+                        stage1.set_reference_set_size(ref_set.len());
+                        if let Some(&best_obj) =
+                            ref_objectives.iter().min_by(|a, b| a.partial_cmp(b).unwrap())
+                        {
+                            stage1.set_best_objective(best_obj);
+                        }
+                    }
+                }
+                observer.invoke_callback();
+            }
+
+            // Observer: Enter local optimization substage
+            if let Some(ref mut observer) = self.observer {
+                if observer.should_observe_stage1() {
+                    if let Some(stage1) = observer.stage1_mut() {
+                        stage1.enter_substage("local_optimization");
+                    }
+                }
+            }
+
+            let (local_sol, local_fn_evals) =
+                if self.observer.as_ref().map(|obs| obs.should_observe_stage1()).unwrap_or(false) {
+                    self.local_solver.solve_with_tracking(scatter_candidate, true)?
+                } else {
+                    let sol = self.local_solver.solve(scatter_candidate)?;
+                    (sol, 0)
+                };
 
             self.merit_filter.update_threshold(local_sol.objective);
 
@@ -518,6 +661,19 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     "Stage 1: Local solution found with objective = {:.8}",
                     local_sol.objective
                 );
+            }
+
+            // Observer: Track local optimization result
+            if let Some(ref mut observer) = self.observer {
+                if observer.should_observe_stage1() {
+                    if let Some(stage1) = observer.stage1_mut() {
+                        stage1.enter_substage("local_optimization_complete");
+                        stage1.set_best_objective(local_sol.objective);
+                        stage1.add_function_evaluations(local_fn_evals as usize);
+                    }
+                }
+                // Invoke callback after local optimization
+                observer.invoke_callback();
             }
 
             self.process_local_solution(local_sol)?;
@@ -530,6 +686,21 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                         self.target_objective.unwrap()
                     );
                 }
+
+                // Observer: End Stage 1
+                if let Some(ref mut observer) = self.observer {
+                    if observer.should_observe_stage1() {
+                        if let Some(stage1) = observer.stage1_mut() {
+                            stage1.enter_substage("stage1_complete");
+                            stage1.end();
+                        }
+                    }
+                    // Invoke callback after Stage 1 completion (final Stage 1 log)
+                    observer.invoke_callback();
+                    // Mark Stage 1 as completed to prevent further logging
+                    observer.mark_stage1_complete();
+                }
+
                 return self.solution_set.clone().ok_or(OQNLPError::NoFeasibleSolution);
             }
 
@@ -539,11 +710,43 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 self.current_reference_set = Some(ref_set.clone());
             }
 
+            // Observer: End Stage 1
+            if let Some(ref mut observer) = self.observer {
+                if observer.should_observe_stage1() {
+                    if let Some(stage1) = observer.stage1_mut() {
+                        stage1.enter_substage("stage1_complete");
+                        stage1.end();
+                    }
+                }
+                // Invoke callback at the end of Stage 1 (final Stage 1 log)
+                observer.invoke_callback();
+                // Mark Stage 1 as completed to prevent further logging
+                observer.mark_stage1_complete();
+            }
+
             (ref_set, 0, Some(ref_objectives))
         };
 
         if self.verbose {
             println!("Starting Stage 2");
+        }
+
+        // Observer: Start Stage 2
+        if let Some(ref mut observer) = self.observer {
+            if observer.should_observe_stage2() {
+                if let Some(stage2) = observer.stage2_mut() {
+                    stage2.start();
+                    if let Some(ref sol_set) = self.solution_set {
+                        if let Some(best) = sol_set.best_solution() {
+                            stage2.set_best_objective(best.objective);
+                        }
+                        stage2.set_solution_set_size(sol_set.len());
+                    }
+                    stage2.set_threshold_value(self.merit_filter.threshold);
+                }
+            }
+            // Mark Stage 2 as started to enable logging
+            observer.mark_stage2_started();
         }
 
         #[cfg(feature = "progress_bar")]
@@ -675,6 +878,15 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     );
                 }
                 break;
+            }
+        }
+
+        // Observer: End Stage 2
+        if let Some(ref mut observer) = self.observer {
+            if observer.should_observe_stage2() {
+                if let Some(stage2) = observer.stage2_mut() {
+                    stage2.end();
+                }
             }
         }
 
@@ -1224,6 +1436,17 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
             let trial = trial.clone();
 
+            // Observer: Update iteration
+            if let Some(ref mut observer) = self.observer {
+                if observer.should_observe_stage2() {
+                    if let Some(stage2) = observer.stage2_mut() {
+                        stage2.set_iteration(local_iter);
+                        stage2.set_unchanged_cycles(*unchanged_cycles);
+                        stage2.set_threshold_value(self.merit_filter.threshold);
+                    }
+                }
+            }
+
             // Use pre-computed objective if available, otherwise evaluate
             let obj: f64 = if let Some(objectives) = ref_objectives {
                 // Map iteration index to reference set index (cycle through ref_set)
@@ -1237,10 +1460,50 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     .map_err(|_| OQNLPError::ObjectiveFunctionEvaluationFailed)?
             };
 
+            // Observer: Track function evaluation
+            // Note: Even if the objective was pre-computed in Stage 1, we count it here
+            // because Stage 2 is using this evaluation to make decisions
+            if let Some(ref mut observer) = self.observer {
+                if observer.should_observe_stage2() {
+                    if let Some(stage2) = observer.stage2_mut() {
+                        stage2.add_function_evaluations(1);
+                    }
+                }
+            }
+
             if self.should_start_local(&trial, obj)? {
                 self.merit_filter.update_threshold(obj);
-                let local_trial: LocalSolution = self.local_solver.solve(trial)?;
+
+                // Only track evaluations if observer is active
+                let (local_trial, eval_count) = if let Some(ref observer) = self.observer {
+                    if observer.should_observe_stage2() {
+                        self.local_solver.solve_with_tracking(trial, true)?
+                    } else {
+                        let sol = self.local_solver.solve(trial)?;
+                        (sol, 0)
+                    }
+                } else {
+                    let sol = self.local_solver.solve(trial)?;
+                    (sol, 0)
+                };
+
                 let added: bool = self.process_local_solution(local_trial.clone())?;
+
+                // Observer: Track local solver call and results
+                if let Some(ref mut observer) = self.observer {
+                    if observer.should_observe_stage2() {
+                        if let Some(stage2) = observer.stage2_mut() {
+                            stage2.add_local_solver_call(added);
+                            stage2.add_function_evaluations(eval_count as usize);
+                            if let Some(ref sol_set) = self.solution_set {
+                                if let Some(best) = sol_set.best_solution() {
+                                    stage2.set_best_objective(best.objective);
+                                }
+                                stage2.set_solution_set_size(sol_set.len());
+                            }
+                        }
+                    }
+                }
 
                 if self.verbose && added {
                     println!(
@@ -1276,6 +1539,13 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
                     self.adjust_threshold(self.merit_filter.threshold);
                     *unchanged_cycles = 0;
+                }
+            }
+
+            // Invoke observer callback if set and frequency matches
+            if let Some(ref observer) = self.observer {
+                if observer.should_invoke_callback(local_iter) {
+                    observer.invoke_callback();
                 }
             }
 
@@ -1329,6 +1599,17 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
         let batch_results = batch_results?;
 
+        // Observer: Track function evaluations for all points in the batch
+        // Note: Even if objectives were pre-computed in Stage 1, we count them here
+        // because Stage 2 is using these evaluations to make decisions
+        if let Some(ref mut observer) = self.observer {
+            if observer.should_observe_stage2() {
+                if let Some(stage2) = observer.stage2_mut() {
+                    stage2.add_function_evaluations(batch_results.len());
+                }
+            }
+        }
+
         // Process results with parallel local solver calls where beneficial
         // Group by whether local search is needed to optimize parallelization
         let (local_candidates, quick_candidates): (Vec<_>, Vec<_>) =
@@ -1373,6 +1654,8 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 let problem = self.problem.clone();
                 let solver_type = self.params.local_solver_type.clone();
                 let solver_config = self.params.local_solver_config.clone();
+                let track_evals =
+                    self.observer.as_ref().map(|obs| obs.should_observe_stage2()).unwrap_or(false);
 
                 // Parallel processing for multiple local searches
                 let local_results: Result<Vec<_>, OQNLPError> = local_candidates
@@ -1385,16 +1668,21 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                             solver_config.clone(),
                         );
 
-                        let local_solution = local_solver.solve(trial.clone())?;
+                        let (local_solution, eval_count) = if track_evals {
+                            local_solver.solve_with_tracking(trial.clone(), true)?
+                        } else {
+                            let sol = local_solver.solve(trial.clone())?;
+                            (sol, 0)
+                        };
 
-                        Ok((*local_iter, trial.clone(), *obj, local_solution))
+                        Ok((*local_iter, trial.clone(), *obj, local_solution, eval_count))
                     })
                     .collect();
 
                 let local_results = local_results?;
 
                 // Process local results sequentially to maintain state consistency
-                for (local_iter, _trial, obj, local_solution) in local_results {
+                for (local_iter, _trial, obj, local_solution, eval_count) in local_results {
                     #[cfg(feature = "checkpointing")]
                     {
                         self.current_iteration = local_iter;
@@ -1404,6 +1692,22 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
                     self.merit_filter.update_threshold(obj);
                     let added = self.process_local_solution(local_solution.clone())?;
+
+                    // Observer: Track local solver call and results (parallel case)
+                    if let Some(ref mut observer) = self.observer {
+                        if observer.should_observe_stage2() {
+                            if let Some(stage2) = observer.stage2_mut() {
+                                stage2.add_local_solver_call(added);
+                                stage2.add_function_evaluations(eval_count as usize);
+                                if let Some(ref sol_set) = self.solution_set {
+                                    if let Some(best) = sol_set.best_solution() {
+                                        stage2.set_best_objective(best.objective);
+                                    }
+                                    stage2.set_solution_set_size(sol_set.len());
+                                }
+                            }
+                        }
+                    }
 
                     if self.verbose && added {
                         println!(
@@ -1438,8 +1742,37 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     }
 
                     self.merit_filter.update_threshold(obj);
-                    let local_trial = self.local_solver.solve(trial)?;
+
+                    // Only track evaluations if observer is active
+                    let (local_trial, eval_count) = if let Some(ref observer) = self.observer {
+                        if observer.should_observe_stage2() {
+                            self.local_solver.solve_with_tracking(trial, true)?
+                        } else {
+                            let sol = self.local_solver.solve(trial)?;
+                            (sol, 0)
+                        }
+                    } else {
+                        let sol = self.local_solver.solve(trial)?;
+                        (sol, 0)
+                    };
+
                     let added = self.process_local_solution(local_trial.clone())?;
+
+                    // Observer: Track local solver call and results (single local search case)
+                    if let Some(ref mut observer) = self.observer {
+                        if observer.should_observe_stage2() {
+                            if let Some(stage2) = observer.stage2_mut() {
+                                stage2.add_local_solver_call(added);
+                                stage2.add_function_evaluations(eval_count as usize);
+                                if let Some(ref sol_set) = self.solution_set {
+                                    if let Some(best) = sol_set.best_solution() {
+                                        stage2.set_best_objective(best.objective);
+                                    }
+                                    stage2.set_solution_set_size(sol_set.len());
+                                }
+                            }
+                        }
+                    }
 
                     if self.verbose && added {
                         println!(

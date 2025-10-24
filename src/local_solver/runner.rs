@@ -136,22 +136,39 @@ impl<P: Problem> LocalSolver<P> {
     /// Solve the optimization problem using the local solver
     ///
     /// This function uses a match to select the local solver function to use based on the `LocalSolverType` enum.
+    /// If `track_evaluations` is true, function evaluations will be counted (incurs small overhead).
     pub fn solve(&self, initial_point: Array1<f64>) -> Result<LocalSolution, LocalSolverError> {
+        let (solution, _) = self.solve_with_tracking(initial_point, false)?;
+        Ok(solution)
+    }
+
+    /// Solve with optional function evaluation tracking
+    pub fn solve_with_tracking(
+        &self,
+        initial_point: Array1<f64>,
+        track_evaluations: bool,
+    ) -> Result<(LocalSolution, u64), LocalSolverError> {
         match self.local_solver_type {
-            LocalSolverType::LBFGS => self.solve_lbfgs(initial_point, &self.local_solver_config),
+            LocalSolverType::LBFGS => {
+                self.solve_lbfgs(initial_point, &self.local_solver_config, track_evaluations)
+            }
             LocalSolverType::NelderMead => {
-                self.solve_nelder_mead(initial_point, &self.local_solver_config)
+                self.solve_nelder_mead(initial_point, &self.local_solver_config, track_evaluations)
             }
-            LocalSolverType::SteepestDescent => {
-                self.solve_steepestdescent(initial_point, &self.local_solver_config)
-            }
+            LocalSolverType::SteepestDescent => self.solve_steepestdescent(
+                initial_point,
+                &self.local_solver_config,
+                track_evaluations,
+            ),
             LocalSolverType::TrustRegion => {
-                self.solve_trust_region(initial_point, &self.local_solver_config)
+                self.solve_trust_region(initial_point, &self.local_solver_config, track_evaluations)
             }
             LocalSolverType::NewtonCG => {
-                self.solve_newton_cg(initial_point, &self.local_solver_config)
+                self.solve_newton_cg(initial_point, &self.local_solver_config, track_evaluations)
             }
-            LocalSolverType::COBYLA => self.solve_cobyla(initial_point, &self.local_solver_config),
+            LocalSolverType::COBYLA => {
+                self.solve_cobyla(initial_point, &self.local_solver_config, track_evaluations)
+            }
         }
     }
 
@@ -160,9 +177,16 @@ impl<P: Problem> LocalSolver<P> {
         &self,
         initial_point: Array1<f64>,
         solver_config: &LocalSolverConfig,
-    ) -> Result<LocalSolution, LocalSolverError> {
+        track_evaluations: bool,
+    ) -> Result<(LocalSolution, u64), LocalSolverError> {
+        use std::sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        };
+
         struct ProblemCost<'a, P: Problem> {
             problem: &'a P,
+            eval_count: Option<Arc<AtomicU64>>,
         }
 
         impl<P: Problem> CostFunction for ProblemCost<'_, P> {
@@ -170,6 +194,9 @@ impl<P: Problem> LocalSolver<P> {
             type Output = f64;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
+                if let Some(counter) = &self.eval_count {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
                 self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
@@ -183,7 +210,8 @@ impl<P: Problem> LocalSolver<P> {
             }
         }
 
-        let cost = ProblemCost { problem: &self.problem };
+        let eval_count = if track_evaluations { Some(Arc::new(AtomicU64::new(0))) } else { None };
+        let cost = ProblemCost { problem: &self.problem, eval_count: eval_count.clone() };
 
         if let LocalSolverConfig::LBFGS {
             max_iter,
@@ -222,7 +250,7 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
-                    Ok(LocalSolution {
+                    let solution = LocalSolution {
                         point: res
                             .state()
                             .best_param
@@ -230,7 +258,10 @@ impl<P: Problem> LocalSolver<P> {
                             .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    })
+                    };
+                    let evaluations =
+                        eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+                    Ok((solution, evaluations))
                 }
                 LineSearchMethod::HagerZhang {
                     delta,
@@ -272,7 +303,7 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
-                    Ok(LocalSolution {
+                    let solution = LocalSolution {
                         point: res
                             .state()
                             .best_param
@@ -280,7 +311,10 @@ impl<P: Problem> LocalSolver<P> {
                             .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    })
+                    };
+                    let evaluations =
+                        eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+                    Ok((solution, evaluations))
                 }
             }
         } else {
@@ -293,9 +327,16 @@ impl<P: Problem> LocalSolver<P> {
         &self,
         initial_point: Array1<f64>,
         solver_config: &LocalSolverConfig,
-    ) -> Result<LocalSolution, LocalSolverError> {
+        track_evaluations: bool,
+    ) -> Result<(LocalSolution, u64), LocalSolverError> {
+        use std::sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        };
+
         struct ProblemCost<'a, P: Problem> {
             problem: &'a P,
+            eval_count: Option<Arc<AtomicU64>>,
         }
 
         impl<P: Problem> CostFunction for ProblemCost<'_, P> {
@@ -303,11 +344,15 @@ impl<P: Problem> LocalSolver<P> {
             type Output = f64;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
+                if let Some(counter) = &self.eval_count {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
                 self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
 
-        let cost = ProblemCost { problem: &self.problem };
+        let eval_count = if track_evaluations { Some(Arc::new(AtomicU64::new(0))) } else { None };
+        let cost = ProblemCost { problem: &self.problem, eval_count: eval_count.clone() };
 
         if let LocalSolverConfig::NelderMead {
             simplex_delta,
@@ -344,10 +389,12 @@ impl<P: Problem> LocalSolver<P> {
                 .run()
                 .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
-            Ok(LocalSolution {
+            let solution = LocalSolution {
                 point: res.state().best_param.as_ref().ok_or(LocalSolverError::NoSolution)?.clone(),
                 objective: res.state().best_cost,
-            })
+            };
+            let evaluations = eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+            Ok((solution, evaluations))
         } else {
             Err(LocalSolverError::InvalidNelderMeadConfig(
                 "Error parsing solver configuration".to_string(),
@@ -360,9 +407,16 @@ impl<P: Problem> LocalSolver<P> {
         &self,
         initial_point: Array1<f64>,
         solver_config: &LocalSolverConfig,
-    ) -> Result<LocalSolution, LocalSolverError> {
+        track_evaluations: bool,
+    ) -> Result<(LocalSolution, u64), LocalSolverError> {
+        use std::sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        };
+
         struct ProblemCost<'a, P: Problem> {
             problem: &'a P,
+            eval_count: Option<Arc<AtomicU64>>,
         }
 
         impl<P: Problem> CostFunction for ProblemCost<'_, P> {
@@ -370,6 +424,9 @@ impl<P: Problem> LocalSolver<P> {
             type Output = f64;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
+                if let Some(counter) = &self.eval_count {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
                 self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
@@ -383,7 +440,8 @@ impl<P: Problem> LocalSolver<P> {
             }
         }
 
-        let cost = ProblemCost { problem: &self.problem };
+        let eval_count = if track_evaluations { Some(Arc::new(AtomicU64::new(0))) } else { None };
+        let cost = ProblemCost { problem: &self.problem, eval_count: eval_count.clone() };
 
         if let LocalSolverConfig::SteepestDescent { max_iter, line_search_params } = solver_config {
             // Match line search method
@@ -410,7 +468,7 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
-                    Ok(LocalSolution {
+                    let solution = LocalSolution {
                         point: res
                             .state()
                             .best_param
@@ -418,7 +476,10 @@ impl<P: Problem> LocalSolver<P> {
                             .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    })
+                    };
+                    let evaluations =
+                        eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+                    Ok((solution, evaluations))
                 }
                 LineSearchMethod::HagerZhang {
                     delta,
@@ -462,7 +523,7 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
-                    Ok(LocalSolution {
+                    let solution = LocalSolution {
                         point: res
                             .state()
                             .best_param
@@ -470,7 +531,10 @@ impl<P: Problem> LocalSolver<P> {
                             .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    })
+                    };
+                    let evaluations =
+                        eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+                    Ok((solution, evaluations))
                 }
             }
         } else {
@@ -480,14 +544,21 @@ impl<P: Problem> LocalSolver<P> {
         }
     }
 
-    /// Solve the optimization problem using the Nelder-Mead local solver
+    /// Solve the optimization problem using the Trust Region local solver
     fn solve_trust_region(
         &self,
         initial_point: Array1<f64>,
         solver_config: &LocalSolverConfig,
-    ) -> Result<LocalSolution, LocalSolverError> {
+        track_evaluations: bool,
+    ) -> Result<(LocalSolution, u64), LocalSolverError> {
+        use std::sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        };
+
         struct ProblemCost<'a, P: Problem> {
             problem: &'a P,
+            eval_count: Option<Arc<AtomicU64>>,
         }
 
         impl<P: Problem> CostFunction for ProblemCost<'_, P> {
@@ -495,6 +566,9 @@ impl<P: Problem> LocalSolver<P> {
             type Output = f64;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
+                if let Some(counter) = &self.eval_count {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
                 self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
@@ -517,7 +591,8 @@ impl<P: Problem> LocalSolver<P> {
             }
         }
 
-        let cost = ProblemCost { problem: &self.problem };
+        let eval_count = if track_evaluations { Some(Arc::new(AtomicU64::new(0))) } else { None };
+        let cost = ProblemCost { problem: &self.problem, eval_count: eval_count.clone() };
 
         if let LocalSolverConfig::TrustRegion {
             trust_region_radius_method,
@@ -548,7 +623,7 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
-                    Ok(LocalSolution {
+                    let solution = LocalSolution {
                         point: res
                             .state()
                             .best_param
@@ -556,7 +631,10 @@ impl<P: Problem> LocalSolver<P> {
                             .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    })
+                    };
+                    let evaluations =
+                        eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+                    Ok((solution, evaluations))
                 }
                 TrustRegionRadiusMethod::Steihaug => {
                     let subproblem = Steihaug::new();
@@ -578,7 +656,7 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
-                    Ok(LocalSolution {
+                    let solution = LocalSolution {
                         point: res
                             .state()
                             .best_param
@@ -586,7 +664,10 @@ impl<P: Problem> LocalSolver<P> {
                             .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    })
+                    };
+                    let evaluations =
+                        eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+                    Ok((solution, evaluations))
                 }
             }
         } else {
@@ -600,9 +681,16 @@ impl<P: Problem> LocalSolver<P> {
         &self,
         initial_point: Array1<f64>,
         solver_config: &LocalSolverConfig,
-    ) -> Result<LocalSolution, LocalSolverError> {
+        track_evaluations: bool,
+    ) -> Result<(LocalSolution, u64), LocalSolverError> {
+        use std::sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        };
+
         struct ProblemCost<'a, P: Problem> {
             problem: &'a P,
+            eval_count: Option<Arc<AtomicU64>>,
         }
 
         impl<P: Problem> CostFunction for ProblemCost<'_, P> {
@@ -610,6 +698,9 @@ impl<P: Problem> LocalSolver<P> {
             type Output = f64;
 
             fn cost(&self, param: &Self::Param) -> std::result::Result<Self::Output, Error> {
+                if let Some(counter) = &self.eval_count {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
                 self.problem.objective(param).map_err(|e| Error::msg(e.to_string()))
             }
         }
@@ -632,7 +723,8 @@ impl<P: Problem> LocalSolver<P> {
             }
         }
 
-        let cost = ProblemCost { problem: &self.problem };
+        let eval_count = if track_evaluations { Some(Arc::new(AtomicU64::new(0))) } else { None };
+        let cost = ProblemCost { problem: &self.problem, eval_count: eval_count.clone() };
 
         if let LocalSolverConfig::NewtonCG {
             max_iter,
@@ -667,7 +759,7 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
-                    Ok(LocalSolution {
+                    let solution = LocalSolution {
                         point: res
                             .state()
                             .best_param
@@ -675,7 +767,10 @@ impl<P: Problem> LocalSolver<P> {
                             .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    })
+                    };
+                    let evaluations =
+                        eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+                    Ok((solution, evaluations))
                 }
                 LineSearchMethod::HagerZhang {
                     delta,
@@ -719,7 +814,7 @@ impl<P: Problem> LocalSolver<P> {
                         .run()
                         .map_err(|e: Error| LocalSolverError::RunFailed(e.to_string()))?;
 
-                    Ok(LocalSolution {
+                    let solution = LocalSolution {
                         point: res
                             .state()
                             .best_param
@@ -727,7 +822,10 @@ impl<P: Problem> LocalSolver<P> {
                             .ok_or(LocalSolverError::NoSolution)?
                             .clone(),
                         objective: res.state().best_cost,
-                    })
+                    };
+                    let evaluations =
+                        eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+                    Ok((solution, evaluations))
                 }
             }
         } else {
@@ -740,7 +838,13 @@ impl<P: Problem> LocalSolver<P> {
         &self,
         initial_point: Array1<f64>,
         solver_config: &LocalSolverConfig,
-    ) -> Result<LocalSolution, LocalSolverError> {
+        track_evaluations: bool,
+    ) -> Result<(LocalSolution, u64), LocalSolverError> {
+        use std::sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        };
+
         if let LocalSolverConfig::COBYLA {
             max_iter,
             initial_step_size,
@@ -753,8 +857,16 @@ impl<P: Problem> LocalSolver<P> {
             // Convert initial point to Vec<f64> as required by COBYLA
             let x0: Vec<f64> = initial_point.to_vec();
 
+            // Conditionally track function evaluations
+            let eval_count =
+                if track_evaluations { Some(Arc::new(AtomicU64::new(0))) } else { None };
+            let eval_count_for_closure = eval_count.clone();
+
             // Create the objective function for COBYLA (needs 2 arguments: x and user_data)
-            let objective = |x: &[f64], _user_data: &mut ()| -> f64 {
+            let objective = move |x: &[f64], _user_data: &mut ()| -> f64 {
+                if let Some(ref counter) = eval_count_for_closure {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
                 let point = Array1::from_vec(x.to_vec());
 
                 match self.problem.objective(&point) {
@@ -793,8 +905,11 @@ impl<P: Problem> LocalSolver<P> {
             ) {
                 Ok((_status, solution_x, objective_value)) => {
                     let solution_point = Array1::from_vec(solution_x);
-
-                    Ok(LocalSolution { point: solution_point, objective: objective_value })
+                    let solution =
+                        LocalSolution { point: solution_point, objective: objective_value };
+                    let evaluations =
+                        eval_count.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+                    Ok((solution, evaluations))
                 }
                 Err(e) => {
                     Err(LocalSolverError::RunFailed(format!("COBYLA solver failed: {:?}", e)))
@@ -1371,5 +1486,45 @@ mod tests_local_solvers {
         let infeasible_point = array![1.0, 1.0];
         let constraint_val = constraints[0](&[infeasible_point[0], infeasible_point[1]], &mut ());
         assert!(constraint_val < 0.0); // Should be negative (violated in COBYLA convention)
+    }
+
+    #[test]
+    /// Test that COBYLA tracks function evaluations correctly
+    fn test_cobyla_tracks_evaluations() {
+        let problem: NoGradientSixHumpCamel = NoGradientSixHumpCamel;
+
+        let local_solver: LocalSolver<NoGradientSixHumpCamel> = LocalSolver::new(
+            problem.clone(),
+            LocalSolverType::COBYLA,
+            LocalSolverConfig::COBYLA {
+                max_iter: 100,
+                initial_step_size: 1.0,
+                ftol_rel: 1e-6,
+                ftol_abs: 1e-8,
+                xtol_rel: 0.0,
+                xtol_abs: vec![],
+            },
+        );
+
+        let initial_point: Array1<f64> = array![0.0, 0.0];
+
+        // Test with tracking enabled
+        let (res, eval_count) =
+            local_solver.solve_with_tracking(initial_point.clone(), true).unwrap();
+        assert!(
+            eval_count > 0,
+            "COBYLA should track function evaluations when enabled, got {}",
+            eval_count
+        );
+        assert!(res.objective < 0.0);
+
+        // Test with tracking disabled
+        let (res2, eval_count2) = local_solver.solve_with_tracking(initial_point, false).unwrap();
+        assert_eq!(
+            eval_count2, 0,
+            "COBYLA should return 0 evaluations when tracking disabled, got {}",
+            eval_count2
+        );
+        assert!(res2.objective < 0.0);
     }
 }

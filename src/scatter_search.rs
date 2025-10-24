@@ -42,6 +42,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+use crate::observers::Observer;
 use crate::problem::Problem;
 use crate::types::OQNLPParams;
 use ndarray::Array1;
@@ -100,11 +101,12 @@ pub enum ScatterSearchError {
     EvaluationError(#[from] crate::types::EvaluationError),
 }
 
-/// Type alias for the complex return type of scatter search run method
+/// Type alias for the return type of scatter search run method
+/// Returns (reference_set_with_objectives, best_solution)
 type ScatterSearchResult = (Vec<(Array1<f64>, f64)>, Array1<f64>);
 
 /// Scatter Search algorithm implementation struct
-pub struct ScatterSearch<P: Problem> {
+pub struct ScatterSearch<'a, P: Problem> {
     problem: P,
     params: OQNLPParams,
     reference_set: Vec<Array1<f64>>,
@@ -116,9 +118,11 @@ pub struct ScatterSearch<P: Problem> {
     /// Whether parallel processing is enabled at runtime
     #[cfg(feature = "rayon")]
     enable_parallel: bool,
+    /// Optional observer for tracking metrics
+    observer: Option<&'a mut Observer>,
 }
 
-impl<P: Problem + Sync + Send> ScatterSearch<P> {
+impl<'a, P: Problem + Sync + Send> ScatterSearch<'a, P> {
     pub fn new(problem: P, params: OQNLPParams) -> Result<Self, ScatterSearchError> {
         let var_bounds = problem.variable_bounds();
         let bounds = VariableBounds {
@@ -139,6 +143,7 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             // Enable parallel processing by default
             #[cfg(feature = "rayon")]
             enable_parallel: true,
+            observer: None,
         };
 
         Ok(ss)
@@ -156,6 +161,15 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
     #[cfg(feature = "rayon")]
     pub fn parallel(mut self, enable: bool) -> Self {
         self.enable_parallel = enable;
+        self
+    }
+
+    /// Attach an observer for metrics tracking
+    ///
+    /// This method allows the scatter search to update the observer directly
+    /// with detailed metrics during execution.
+    pub fn with_observer(mut self, observer: &'a mut Observer) -> Self {
+        self.observer = Some(observer);
         self
     }
 
@@ -178,6 +192,26 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         // Phase 1 & 2: Initialization and Diversification
         self.initialize_reference_set()?;
 
+        // Update observer with initialization metrics
+        if let Some(ref mut obs) = self.observer {
+            if obs.should_observe_stage1() {
+                if let Some(stage1) = obs.stage1_mut() {
+                    stage1.enter_substage("initialization_complete");
+                    stage1.set_reference_set_size(3); // 3 seed points created
+                }
+            }
+            obs.invoke_callback();
+
+            if obs.should_observe_stage1() {
+                if let Some(stage1) = obs.stage1_mut() {
+                    stage1.enter_substage("diversification_complete");
+                    stage1.set_reference_set_size(self.reference_set.len());
+                    stage1.add_function_evaluations(self.reference_set.len());
+                }
+            }
+            obs.invoke_callback();
+        }
+
         #[cfg(feature = "progress_bar")]
         if let Some(pb) = &mut self.progress_bar {
             pb.set_description("Stage 1, initialized and diversified");
@@ -194,7 +228,19 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
             pb.update(1).expect("Failed to update progress bar");
         }
 
-        self.update_reference_set(trial_points)?;
+        self.update_reference_set(&trial_points);
+
+        // Update observer with intensification metrics
+        if let Some(ref mut obs) = self.observer {
+            if obs.should_observe_stage1() {
+                if let Some(stage1) = obs.stage1_mut() {
+                    stage1.enter_substage("intensification_complete");
+                    stage1.add_trial_points(trial_points.len());
+                    stage1.set_reference_set_size(self.reference_set.len());
+                }
+            }
+            obs.invoke_callback();
+        }
 
         let best = self.best_solution()?;
 
@@ -501,13 +547,10 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         }
     }
 
-    pub fn update_reference_set(
-        &mut self,
-        trials: Vec<Array1<f64>>,
-    ) -> Result<(), ScatterSearchError> {
+    pub fn update_reference_set(&mut self, trials: &[Array1<f64>]) {
         // Early termination if no trials
         if trials.is_empty() {
-            return Ok(());
+            return;
         }
 
         // Reference set is already sorted (from previous iteration or initialize_reference_set)
@@ -628,8 +671,6 @@ impl<P: Problem + Sync + Send> ScatterSearch<P> {
         let (points, objectives): (Vec<Array1<f64>>, Vec<f64>) = all_points.into_iter().unzip();
         self.reference_set = points;
         self.reference_set_objectives = objectives;
-
-        Ok(())
     }
 
     pub fn best_solution(&self) -> Result<Array1<f64>, ScatterSearchError> {
@@ -882,7 +923,7 @@ mod tests_scatter_search {
         ss.initialize_reference_set().unwrap();
 
         let trials: Vec<Array1<f64>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
-        ss.update_reference_set(trials).unwrap();
+        ss.update_reference_set(&trials);
 
         assert_eq!(ss.reference_set.len(), 4);
     }
@@ -966,7 +1007,7 @@ mod tests_scatter_search {
         ss.initialize_reference_set().unwrap();
 
         let trials: Vec<Array1<f64>> = vec![array![1.0, 1.0], array![2.0, 2.0]];
-        ss.update_reference_set(trials).unwrap();
+        ss.update_reference_set(&trials);
 
         assert_eq!(ss.reference_set.len(), 4);
     }
