@@ -1460,11 +1460,9 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     .map_err(|_| OQNLPError::ObjectiveFunctionEvaluationFailed)?
             };
 
-            // Observer: Track function evaluation
-            // Note: Even if the objective was pre-computed in Stage 1, we count it here
-            // because Stage 2 is using this evaluation to make decisions
+            // Observer: Track function evaluation only if we actually evaluated (not cached)
             if let Some(ref mut observer) = self.observer {
-                if observer.should_observe_stage2() {
+                if observer.should_observe_stage2() && ref_objectives.is_none() {
                     if let Some(stage2) = observer.stage2_mut() {
                         stage2.add_function_evaluations(1);
                     }
@@ -1599,11 +1597,9 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
 
         let batch_results = batch_results?;
 
-        // Observer: Track function evaluations for all points in the batch
-        // Note: Even if objectives were pre-computed in Stage 1, we count them here
-        // because Stage 2 is using these evaluations to make decisions
+        // Observer: Track function evaluations only for actually evaluated points (not cached)
         if let Some(ref mut observer) = self.observer {
-            if observer.should_observe_stage2() {
+            if observer.should_observe_stage2() && ref_objectives.is_none() {
                 if let Some(stage2) = observer.stage2_mut() {
                     stage2.add_function_evaluations(batch_results.len());
                 }
