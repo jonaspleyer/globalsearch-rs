@@ -340,6 +340,10 @@ pub struct OQNLP<P: Problem + Clone> {
     batch_iterations: Option<usize>,
 
     /// Verbose flag to enable additional output during the optimization process.
+    /// 
+    /// When `true`, prints progress information to the console.
+    /// 
+    /// Consider using an [`Observer`] for more detailed output
     verbose: bool,
 
     /// Enable parallel processing when Rayon is available.

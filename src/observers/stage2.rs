@@ -1,10 +1,70 @@
 //! Stage 2 observer state tracking
 //!
-//! Tracks metrics during Stage 2 (iterative improvement phase)
+//! Tracks metrics during Stage 2 (iterative improvement phase).
+//! Stage 2 performs iterative refinement of the solution set through
+//! merit filtering, distance-based selection, and local optimization.
+//!
+//! ## Stage 2 Overview
+//!
+//! Stage 2 iteratively improves the solution set by:
+//!
+//! 1. **Merit Filtering**: Select best solutions based on quality and diversity
+//! 2. **Trial Point Generation**: Create new candidates from current solutions
+//! 3. **Local Optimization**: Apply local solvers to improve candidate solutions
+//! 4. **Solution Set Update**: Replace inferior solutions with improvements
+//! 5. **Convergence Check**: Monitor for termination conditions
+//!
+//! ## Tracked Metrics
+//!
+//! - **Solution Set**: Size and quality of the maintained solution collection
+//! - **Iterations**: Progress through the iterative improvement process
+//! - **Local Solver Calls**: Frequency and success of local optimization
+//! - **Function Evaluations**: Computational cost of Stage 2
+//! - **Convergence Metrics**: Threshold values and stagnation detection
+//! - **Timing**: Duration of Stage 2 execution (when enabled)
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use globalsearch::observers::Stage2State;
+//!
+//! // Access Stage 2 state from an observer
+//! if let Some(stage2) = observer.stage2() {
+//!     println!("Stage 2 Progress:");
+//!     println!("  Iteration: {}", stage2.current_iteration());
+//!     println!("  Best objective: {:.6}", stage2.best_objective());
+//!     println!("  Solution set size: {}", stage2.solution_set_size());
+//!     println!("  Local solver calls: {}", stage2.local_solver_calls());
+//! }
+//! ```
 
 use std::time::Instant;
 
 /// State tracker for Stage 2 of the algorithm
+///
+/// Tracks comprehensive metrics during the iterative refinement phase that
+/// improves the solution set through merit filtering and local optimization.
+/// This phase focuses on intensifying search around high-quality regions.
+///
+/// # Key Metrics
+///
+/// - **Best Objective**: Best objective function value found across all solutions
+/// - **Solution Set Size**: Number of solutions maintained in the working set
+/// - **Current Iteration**: Progress through the iterative improvement process
+/// - **Threshold Value**: Merit filter threshold for solution acceptance
+/// - **Local Solver Calls**: Total calls made to local optimization algorithms
+/// - **Improved Calls**: Number of local solver calls that improved solutions
+/// - **Function Evaluations**: Total objective function calls in Stage 2
+/// - **Unchanged Cycles**: Number of iterations without solution improvement
+/// - **Timing**: Total duration of Stage 2 execution (when enabled)
+///
+/// # Interpretation
+///
+/// - **Best Objective**: Overall quality of solutions found
+/// - **Solution Set Size**: Diversity and coverage maintained
+/// - **Local Solver Calls**: Intensity of local search effort
+/// - **Unchanged Cycles**: Convergence indicator (increasing suggests stagnation)
+/// - **Threshold Value**: Adaptivity of merit filtering (lower = more selective)
 #[derive(Debug, Clone)]
 pub struct Stage2State {
     /// Best objective function value found so far
@@ -40,6 +100,17 @@ pub struct Stage2State {
 
 impl Stage2State {
     /// Create a new Stage 2 state tracker
+    ///
+    /// Initializes all metrics to default values:
+    /// - Best objective: NaN (no valid solutions yet)
+    /// - Solution set size: 0
+    /// - Current iteration: 0
+    /// - Threshold value: +∞ (accept all initially)
+    /// - Local solver calls: 0
+    /// - Improved calls: 0
+    /// - Function evaluations: 0
+    /// - Unchanged cycles: 0
+    /// - Timing: None
     pub fn new() -> Self {
         Self {
             best_objective: f64::NAN,
@@ -108,46 +179,165 @@ impl Stage2State {
     }
 
     /// Get best objective value
+    ///
+    /// Returns the best (lowest) objective function value found across all
+    /// solutions in the current solution set. This represents the highest
+    /// quality solution discovered during Stage 2.
+    ///
+    /// # Returns
+    ///
+    /// - `f64`: Best objective value in the current solution set
+    /// - `NaN`: If no valid solutions exist in the solution set
+    ///
+    /// # Interpretation
+    ///
+    /// - **Decreasing values**: Algorithm is finding better solutions (good)
+    /// - **Stable values**: Algorithm has converged or is exploring
+    /// - **NaN**: Solution set is empty or uninitialized
     pub fn best_objective(&self) -> f64 {
         self.best_objective
     }
 
     /// Get solution set size
+    ///
+    /// Returns the current number of solutions maintained in the working solution set.
+    /// The solution set maintains a diverse collection of high-quality solutions
+    /// that balance quality and coverage of the search space.
+    ///
+    /// # Interpretation
+    ///
+    /// - **Stable values**: Algorithm maintaining target solution set size
+    /// - **Increasing values**: Solution set growing (may indicate exploration)
+    /// - **Decreasing values**: Solutions being filtered out (may indicate intensification)
+    /// - **Zero**: Solution set is empty (algorithm may have issues)
     pub fn solution_set_size(&self) -> usize {
         self.solution_set_size
     }
 
     /// Get current iteration
+    ///
+    /// Returns the current iteration number in Stage 2. Each iteration represents
+    /// a complete cycle of selection, generation, evaluation, and filtering.
+    ///
+    /// # Interpretation
+    ///
+    /// - **Increasing values**: Algorithm progressing through Stage 2
+    /// - **Higher values**: More computational effort invested
+    /// - **Zero**: Stage 2 hasn't started or is initializing
+    ///
+    /// # Relationship to Termination
+    ///
+    /// The algorithm terminates when either:
+    /// - Maximum iterations reached
+    /// - Convergence criteria met (unchanged cycles exceed limit)
+    /// - Target objective achieved
     pub fn current_iteration(&self) -> usize {
         self.current_iteration
     }
 
     /// Get threshold value
+    ///
+    /// Returns the current merit filter threshold value. Solutions must have
+    /// an objective value better than this threshold to be accepted into the
+    /// solution set during filtering operations.
+    ///
+    /// # Interpretation
+    ///
+    /// - **Lower values**: More selective filtering (higher quality requirement)
+    /// - **Higher values**: Less selective filtering (accepts more solutions)
+    /// - **∞ (infinity)**: Accept all solutions (initial state)
+    /// - **Decreasing over time**: Algorithm becoming more selective as it improves
+    ///
+    /// # Merit Filtering
+    ///
+    /// The threshold controls the trade-off between solution quality and diversity.
+    /// Lower thresholds maintain higher quality solutions but may reduce diversity.
     pub fn threshold_value(&self) -> f64 {
         self.threshold_value
     }
 
     /// Get number of local solver calls
+    ///
+    /// Returns the total number of times local optimization algorithms have been
+    /// invoked during Stage 2. Each call attempts to improve a candidate solution
+    /// through gradient-based or derivative-free local search.
+    ///
+    /// # Interpretation
+    ///
+    /// - **Higher values**: More intensive local search effort
+    /// - **Increasing over time**: Algorithm actively applying local optimization
+    /// - **Computational cost**: Local solver calls are typically expensive
+    ///
+    /// # Relationship to Improvements
+    ///
+    /// Compare with `improved_local_calls()` to assess local solver effectiveness.
+    /// A high ratio of improved to total calls indicates efficient local search.
     pub fn local_solver_calls(&self) -> usize {
         self.local_solver_calls
     }
 
     /// Get number of local solver calls that improved the solution set
+    ///
+    /// Returns the number of local solver calls that successfully improved the
+    /// solution set by finding better solutions. This measures the effectiveness
+    /// of local optimization in finding improvements.
+    ///
+    /// # Interpretation
+    ///
+    /// - **Higher values**: Local solvers frequently finding improvements
+    /// - **Ratio to total calls**: Efficiency of local search (improved/total)
+    /// - **Increasing over time**: Local solvers still effective
+    /// - **Stable/low values**: Local solvers not finding significant improvements
+    ///
+    /// # Success Metrics
+    ///
+    /// - **High ratio (>50%)**: Local solvers very effective
+    /// - **Moderate ratio (20-50%)**: Local solvers moderately effective
+    /// - **Low ratio (<20%)**: Local solvers rarely improving (may indicate convergence)
     pub fn improved_local_calls(&self) -> usize {
         self.improved_local_calls
     }
 
     /// Get total function evaluations
+    ///
+    /// Returns the cumulative count of objective function evaluations performed
+    /// during Stage 2. This includes evaluations for trial points generated
+    /// during each iteration and function evaluations performed by local solvers.
+    ///
+    /// # Interpretation
+    ///
+    /// - **Higher values**: More thorough exploration and local optimization
+    /// - **Increasing over time**: Algorithm actively evaluating candidates
+    /// - **Computational cost**: Primary measure of Stage 2 resource usage
+    ///
+    /// # Components
+    ///
+    /// Function evaluations include:
+    /// - Trial point evaluations during each iteration
+    /// - Local solver function evaluations (gradient computations, line searches, etc.)
     pub fn function_evaluations(&self) -> usize {
         self.function_evaluations
     }
 
     /// Get unchanged cycles count
+    ///
+    /// Returns the number of consecutive iterations where the solution set
+    /// has not improved. This is a key convergence indicator used to detect
+    /// when the algorithm should terminate due to stagnation.
     pub fn unchanged_cycles(&self) -> usize {
         self.unchanged_cycles
     }
 
     /// Get total time spent in Stage 2 (seconds)
+    ///
+    /// Returns the time elapsed since Stage 2 began. If Stage 2 is still running,
+    /// returns the current elapsed time. If Stage 2 has completed, returns the
+    /// total time spent in Stage 2.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(f64)`: Elapsed time in seconds
+    /// - `None`: If Stage 2 timing was not started
     pub fn total_time(&self) -> Option<f64> {
         if let Some(start) = self.stage_start {
             Some(start.elapsed().as_secs_f64())
