@@ -22,21 +22,6 @@
 //! - **Function Evaluations**: Computational cost of Stage 2
 //! - **Convergence Metrics**: Threshold values and stagnation detection
 //! - **Timing**: Duration of Stage 2 execution (when enabled)
-//!
-//! ## Usage
-//!
-//! ```rust
-//! use globalsearch::observers::Stage2State;
-//!
-//! // Access Stage 2 state from an observer
-//! if let Some(stage2) = observer.stage2() {
-//!     println!("Stage 2 Progress:");
-//!     println!("  Iteration: {}", stage2.current_iteration());
-//!     println!("  Best objective: {:.6}", stage2.best_objective());
-//!     println!("  Solution set size: {}", stage2.solution_set_size());
-//!     println!("  Local solver calls: {}", stage2.local_solver_calls());
-//! }
-//! ```
 
 use std::time::Instant;
 

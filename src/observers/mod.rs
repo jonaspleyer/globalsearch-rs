@@ -37,71 +37,28 @@
 //! ## Example Usage
 //!
 //! ```rust
-//! use globalsearch::observers::{Observer, ObserverMode};
-//! use globalsearch::oqnlp::OQNLP;
-//! use globalsearch::types::OQNLPParams;
-//! use globalsearch::problem::Problem;
-//! use globalsearch::types::EvaluationError;
-//! use ndarray::{Array1, Array2, array};
-//!
-//! [derive(Clone)]
-//! struct TestProblem;
-//! impl Problem for TestProblem {
-//!    fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
-//!        Ok(x[0].powi(2) + x[1].powi(2))
-//!    }
-//!    fn variable_bounds(&self) -> Array2<f64> {
-//!         array![[-5.0, 5.0], [-5.0, 5.0]]
-//!     }
-//! }
-//!
-//! let problem = TestProblem;
-//! let params = OQNLPParams::default();
+//! use globalsearch::observers::Observer;
 //!
 //! // Create an observer with tracking for both stages
 //! let observer = Observer::new()
 //!     .with_stage1_tracking()
 //!     .with_stage2_tracking()
-//!     .with_timing();
+//!     .with_timing()
+//!     .with_default_callback();
 //!
-//! let mut optimizer = OQNLP::new(problem, params)
-//!     .unwrap()
-//!     .add_observer(observer);
-//!
-//! let solutions = optimizer.run();
+//! // Use with OQNLP optimizer (see OQNLP documentation for details)
+//! // let mut optimizer = OQNLP::new(problem, params).unwrap().add_observer(observer);
+//! // let solutions = optimizer.run();
 //!
 //! // After optimization, access observer metrics
-//! // You can also use the observer's callback functionality to log metrics during optimization
-//! if let Some(observer) = optimizer.observer() {
-//!        if let Some(stage1) = observer.stage1_final() {
-//!            println!("\nStage 1 (Scatter Search):");
-//!            println!("  Reference set size: {}", stage1.reference_set_size());
-//!            println!("  Best objective: {:.8}", stage1.best_objective());
-//!            println!("  Function evaluations: {}", stage1.function_evaluations());
-//!            println!("  Trial points generated: {}", stage1.trial_points_generated());
-//!            if let Some(time) = stage1.total_time() {
-//!                println!("  Total time: {:.3}s", time);
-//!            }
-//!        }
-//!
-//!        if let Some(stage2) = observer.stage2() {
-//!            println!("\nStage 2 (Local Refinement):");
-//!            println!("  Iterations completed: {}", stage2.current_iteration() + 1);
-//!            println!("  Best objective: {:.8}", stage2.best_objective());
-//!            println!("  Solutions found: {}", stage2.solution_set_size());
-//!            println!(
-//!                "  Local solver calls: {} (improved: {})",
-//!                stage2.local_solver_calls(),
-//!                stage2.improved_local_calls()
-//!            );
-//!            println!("  Function evaluations: {}", stage2.function_evaluations());
-//!            println!("  Unchanged cycles: {}", stage2.unchanged_cycles());
-//!            if let Some(time) = stage2.total_time() {
-//!                println!("  Total time: {:.3}s", time);
-//!          }
-//!        }
-//!    }
-//! Ok::<(), Box<dyn::error::Error>>(())
+//! // if let Some(observer) = optimizer.observer() {
+//! //     if let Some(stage1) = observer.stage1_final() {
+//! //         println!("Stage 1 completed with {} evaluations", stage1.function_evaluations());
+//! //     }
+//! //     if let Some(stage2) = observer.stage2() {
+//! //         println!("Stage 2 found {} solutions", stage2.solution_set_size());
+//! //     }
+//! // }
 //! ```
 
 use std::time::Instant;
@@ -219,6 +176,8 @@ pub type ObserverCallback = Box<dyn Fn(&Observer) + Send + Sync>;
 /// 2. **After optimization**: Via the observer stored in the OQNLP instance
 ///
 /// ```rust
+/// use globalsearch::observers::Observer;
+///
 /// // During optimization (in callback)
 /// let observer = Observer::new()
 ///     .with_stage2_tracking()
@@ -227,15 +186,6 @@ pub type ObserverCallback = Box<dyn Fn(&Observer) + Send + Sync>;
 ///             println!("Current best: {}", stage2.best_objective());
 ///         }
 ///     });
-///
-/// // After optimization
-/// let solutions = optimizer.run();
-/// if let Some(observer) = optimizer.observer() {
-///     if let Some(stage1) = observer.stage1_final() {
-///         println!("Stage 1 completed in {} evaluations",
-///             stage1.function_evaluations());
-///     }
-/// }
 /// ```
 pub struct Observer {
     /// Observer mode determines which stages to track
@@ -596,7 +546,9 @@ impl Observer {
     ///
     /// # Output Format
     ///
-    /// ```
+    /// The default callback prints progress information to stderr:
+    ///
+    /// ```text
     /// [Stage 1] Scatter Search Complete | Best: 1.234567
     /// [Stage 2] Iter 50 | Best: 0.123456 | Solutions: 8 | Threshold: 0.500000 | Local Calls: 25 | Fn Evals: 1250
     /// ```
@@ -617,6 +569,8 @@ impl Observer {
     /// Use `with_callback_frequency()` to control how often Stage 2 updates are printed:
     ///
     /// ```rust
+    /// use globalsearch::observers::Observer;
+    ///
     /// let observer = Observer::new()
     ///     .with_stage1_tracking()
     ///     .with_stage2_tracking()
@@ -852,15 +806,15 @@ impl Observer {
     /// use globalsearch::observers::Observer;
     ///
     /// // After optimization completes
-    /// if let Some(observer) = optimizer.observer() {
-    ///     if let Some(stage1) = observer.stage1_final() {
-    ///         println!("Stage 1 Summary:");
-    ///         println!("  Total function evaluations: {}", stage1.function_evaluations());
-    ///         println!("  Trial points generated: {}", stage1.trial_points_generated());
-    ///         println!("  Final reference set size: {}", stage1.reference_set_size());
-    ///         if let Some(time) = stage1.total_time() {
-    ///             println!("  Total time: {:.3}s", time);
-    ///         }
+    /// let observer = Observer::new().with_stage1_tracking();
+    /// // ... run optimization ...
+    /// if let Some(stage1) = observer.stage1_final() {
+    ///     println!("Stage 1 Summary:");
+    ///     println!("  Total function evaluations: {}", stage1.function_evaluations());
+    ///     println!("  Trial points generated: {}", stage1.trial_points_generated());
+    ///     println!("  Final reference set size: {}", stage1.reference_set_size());
+    ///     if let Some(time) = stage1.total_time() {
+    ///         println!("  Total time: {:.3}s", time);
     ///     }
     /// }
     /// ```

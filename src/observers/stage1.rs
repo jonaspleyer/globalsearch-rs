@@ -22,21 +22,6 @@
 //! - **Trial Points**: Number of candidate solutions generated and tested
 //! - **Substage Tracking**: Current phase of Stage 1 execution
 //! - **Timing**: Duration of Stage 1 and substages (when enabled)
-//!
-//! ## Usage
-//!
-//! ```rust
-//! use globalsearch::observers::Stage1State;
-//!
-//! // Access Stage 1 state from an observer
-//! if let Some(stage1) = observer.stage1_final() {
-//!     println!("Stage 1 Results:");
-//!     println!("  Reference set size: {}", stage1.reference_set_size());
-//!     println!("  Best objective: {:.6}", stage1.best_objective());
-//!     println!("  Function evaluations: {}", stage1.function_evaluations());
-//!     println!("  Trial points generated: {}", stage1.trial_points_generated());
-//! }
-//! ```
 
 use std::time::Instant;
 
@@ -249,16 +234,6 @@ impl Stage1State {
     /// - `"scatter_search_complete"`: Scatter search convergence achieved
     /// - `"local_optimization_complete"`: Reference set local optimization done
     /// - `"stage1_complete"`: Stage 1 finished (internal marker)
-    ///
-    /// # Usage
-    ///
-    /// ```rust
-    /// match stage1.current_substage() {
-    ///     "scatter_search_complete" => println!("Scatter search finished"),
-    ///     "local_optimization_complete" => println!("Stage 1 complete"),
-    ///     _ => println!("Stage 1 in progress..."),
-    /// }
-    /// ```
     pub fn current_substage(&self) -> &str {
         &self.current_substage
     }
