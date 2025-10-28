@@ -306,10 +306,11 @@ impl Default for Stage1State {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_observers_stage1 {
     use super::*;
 
     #[test]
+    /// Test Stage1State creation with default values
     fn test_stage1_state_creation() {
         let state = Stage1State::new();
         assert_eq!(state.reference_set_size(), 0);
@@ -320,6 +321,7 @@ mod tests {
     }
 
     #[test]
+    /// Test basic Stage1State updates and best objective minimization
     fn test_stage1_state_updates() {
         let mut state = Stage1State::new();
 
@@ -341,6 +343,7 @@ mod tests {
     }
 
     #[test]
+    /// Test substage transitions and timing accumulation
     fn test_stage1_substages() {
         let mut state = Stage1State::new();
 
@@ -358,6 +361,7 @@ mod tests {
     }
 
     #[test]
+    /// Test timing functionality with start/end
     fn test_stage1_timing() {
         let mut state = Stage1State::new();
 
@@ -368,5 +372,182 @@ mod tests {
         let total_time = state.total_time();
         assert!(total_time.is_some());
         assert!(total_time.unwrap() > 0.0);
+    }
+
+    #[test]
+    /// Test best objective updates with edge cases (NaN, negative values, equal values)
+    fn test_stage1_best_objective_edge_cases() {
+        let mut state = Stage1State::new();
+
+        // Test with NaN initial value
+        assert!(state.best_objective().is_nan());
+
+        // First valid objective should be accepted
+        state.set_best_objective(5.0);
+        assert_eq!(state.best_objective(), 5.0);
+
+        // Better objective should update
+        state.set_best_objective(3.0);
+        assert_eq!(state.best_objective(), 3.0);
+
+        // Worse objective should not update
+        state.set_best_objective(4.0);
+        assert_eq!(state.best_objective(), 3.0);
+
+        // Equal objective should not update
+        state.set_best_objective(3.0);
+        assert_eq!(state.best_objective(), 3.0);
+
+        // Negative objectives should work
+        state.set_best_objective(-1.0);
+        assert_eq!(state.best_objective(), -1.0);
+
+        // Positive worse objective should not update
+        state.set_best_objective(0.0);
+        assert_eq!(state.best_objective(), -1.0);
+    }
+
+    #[test]
+    /// Test function evaluations accumulation with various increments
+    fn test_stage1_function_evaluations_accumulation() {
+        let mut state = Stage1State::new();
+
+        assert_eq!(state.function_evaluations(), 0);
+
+        state.add_function_evaluations(10);
+        assert_eq!(state.function_evaluations(), 10);
+
+        state.add_function_evaluations(5);
+        assert_eq!(state.function_evaluations(), 15);
+
+        state.add_function_evaluations(0);
+        assert_eq!(state.function_evaluations(), 15);
+
+        // Large numbers
+        state.add_function_evaluations(1000);
+        assert_eq!(state.function_evaluations(), 1015);
+    }
+
+    #[test]
+    /// Test trial points accumulation with various increments
+    fn test_stage1_trial_points_accumulation() {
+        let mut state = Stage1State::new();
+
+        assert_eq!(state.trial_points_generated(), 0);
+
+        state.add_trial_points(25);
+        assert_eq!(state.trial_points_generated(), 25);
+
+        state.add_trial_points(10);
+        assert_eq!(state.trial_points_generated(), 35);
+
+        state.add_trial_points(0);
+        assert_eq!(state.trial_points_generated(), 35);
+    }
+
+    #[test]
+    /// Test multiple substage transitions through complete Stage 1 sequence
+    fn test_stage1_multiple_substage_transitions() {
+        let mut state = Stage1State::new();
+
+        state.start();
+
+        // Test sequence of substages
+        let substages = vec![
+            "scatter_search_running",
+            "initialization_complete",
+            "diversification_complete",
+            "intensification_complete",
+            "scatter_search_complete",
+            "local_optimization_complete",
+            "stage1_complete",
+        ];
+
+        for substage in substages {
+            state.enter_substage(substage);
+            assert_eq!(state.current_substage(), substage);
+        }
+
+        state.end();
+        assert!(state.total_time().is_some());
+    }
+
+    #[test]
+    /// Test timing behavior when start() is not called
+    fn test_stage1_timing_without_start() {
+        let mut state = Stage1State::new();
+
+        // Should return None without start
+        assert!(state.total_time().is_none());
+
+        state.end();
+        // Still None since no start time
+        assert!(state.total_time().is_none());
+    }
+
+    #[test]
+    /// Test reference set size updates with various values
+    fn test_stage1_reference_set_size_updates() {
+        let mut state = Stage1State::new();
+
+        assert_eq!(state.reference_set_size(), 0);
+
+        state.set_reference_set_size(5);
+        assert_eq!(state.reference_set_size(), 5);
+
+        state.set_reference_set_size(0);
+        assert_eq!(state.reference_set_size(), 0);
+
+        state.set_reference_set_size(100);
+        assert_eq!(state.reference_set_size(), 100);
+    }
+
+    #[test]
+    /// Test timing precision during substage execution
+    fn test_stage1_substage_timing_precision() {
+        let mut state = Stage1State::new();
+
+        state.start();
+        state.enter_substage("test_stage");
+
+        // Sleep for a precise amount
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Check that time is accumulating
+        let time1 = state.total_time().unwrap();
+        assert!(time1 >= 0.05);
+
+        std::thread::sleep(std::time::Duration::from_millis(25));
+
+        let time2 = state.total_time().unwrap();
+        assert!(time2 >= time1 + 0.02); // Should be greater
+    }
+
+    #[test]
+    /// Test that clone preserves all state correctly
+    fn test_stage1_clone_behavior() {
+        let mut state = Stage1State::new();
+        state.set_reference_set_size(10);
+        state.set_best_objective(2.5);
+        state.add_function_evaluations(100);
+        state.add_trial_points(50);
+        state.enter_substage("test");
+
+        let cloned = state.clone();
+
+        assert_eq!(cloned.reference_set_size(), 10);
+        assert_eq!(cloned.best_objective(), 2.5);
+        assert_eq!(cloned.function_evaluations(), 100);
+        assert_eq!(cloned.trial_points_generated(), 50);
+        assert_eq!(cloned.current_substage(), "test");
+    }
+
+    #[test]
+    /// Test Default implementation creates same state as new()
+    fn test_stage1_default_implementation() {
+        let state = Stage1State::default();
+        assert_eq!(state.reference_set_size(), 0);
+        assert!(state.best_objective().is_nan());
+        assert_eq!(state.current_substage(), "not_started");
     }
 }

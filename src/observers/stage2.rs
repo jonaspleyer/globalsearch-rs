@@ -339,10 +339,11 @@ impl Default for Stage2State {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_observers_stage2 {
     use super::*;
 
     #[test]
+    /// Test Stage2State creation with default values
     fn test_stage2_state_creation() {
         let state = Stage2State::new();
         assert!(state.best_objective().is_nan());
@@ -356,6 +357,7 @@ mod tests {
     }
 
     #[test]
+    /// Test basic Stage2State updates and best objective minimization
     fn test_stage2_state_updates() {
         let mut state = Stage2State::new();
 
@@ -387,13 +389,8 @@ mod tests {
         state.set_unchanged_cycles(3);
         assert_eq!(state.unchanged_cycles(), 3);
     }
-
     #[test]
-    fn test_stage2_history_tracking() {
-        // History tracking removed — this test no longer applies
-    }
-
-    #[test]
+    /// Test timing functionality with start/end
     fn test_stage2_timing() {
         let mut state = Stage2State::new();
 
@@ -407,6 +404,7 @@ mod tests {
     }
 
     #[test]
+    /// Test local solver call tracking with improved/not improved calls
     fn test_stage2_improved_local_calls() {
         let mut state = Stage2State::new();
 
@@ -424,5 +422,281 @@ mod tests {
         state.add_local_solver_call(false);
         assert_eq!(state.local_solver_calls(), 4);
         assert_eq!(state.improved_local_calls(), 2);
+    }
+
+    #[test]
+    /// Test best objective updates with edge cases (NaN, negative values, equal values)
+    fn test_stage2_best_objective_edge_cases() {
+        let mut state = Stage2State::new();
+
+        // Test with NaN initial value
+        assert!(state.best_objective().is_nan());
+
+        // First valid objective should be accepted
+        state.set_best_objective(10.0);
+        assert_eq!(state.best_objective(), 10.0);
+
+        // Better objective should update
+        state.set_best_objective(5.0);
+        assert_eq!(state.best_objective(), 5.0);
+
+        // Worse objective should not update
+        state.set_best_objective(7.0);
+        assert_eq!(state.best_objective(), 5.0);
+
+        // Equal objective should not update
+        state.set_best_objective(5.0);
+        assert_eq!(state.best_objective(), 5.0);
+
+        // Negative objectives should work
+        state.set_best_objective(-2.0);
+        assert_eq!(state.best_objective(), -2.0);
+
+        // Positive worse objective should not update
+        state.set_best_objective(1.0);
+        assert_eq!(state.best_objective(), -2.0);
+
+        // Very small improvements
+        state.set_best_objective(-2.000001);
+        assert_eq!(state.best_objective(), -2.000001);
+    }
+
+    #[test]
+    /// Test iteration progression and non-sequential updates
+    fn test_stage2_iteration_progression() {
+        let mut state = Stage2State::new();
+
+        assert_eq!(state.current_iteration(), 0);
+
+        for i in 1..=10 {
+            state.set_iteration(i);
+            assert_eq!(state.current_iteration(), i);
+        }
+
+        // Test non-sequential updates
+        state.set_iteration(50);
+        assert_eq!(state.current_iteration(), 50);
+
+        state.set_iteration(25);
+        assert_eq!(state.current_iteration(), 25);
+    }
+
+    #[test]
+    /// Test solution set size updates with various values
+    fn test_stage2_solution_set_size_variations() {
+        let mut state = Stage2State::new();
+
+        assert_eq!(state.solution_set_size(), 0);
+
+        // Test various sizes
+        let sizes = vec![1, 5, 10, 0, 100, 50];
+        for &size in &sizes {
+            state.set_solution_set_size(size);
+            assert_eq!(state.solution_set_size(), size);
+        }
+    }
+
+    #[test]
+    /// Test threshold value updates including infinity
+    fn test_stage2_threshold_value_updates() {
+        let mut state = Stage2State::new();
+
+        // Initial should be infinity
+        assert_eq!(state.threshold_value(), f64::INFINITY);
+
+        // Test various threshold values
+        let thresholds = vec![10.0, 5.5, 1.0, 0.1, 0.0, -1.0];
+        for &threshold in &thresholds {
+            state.set_threshold_value(threshold);
+            assert_eq!(state.threshold_value(), threshold);
+        }
+
+        // Test infinity again
+        state.set_threshold_value(f64::INFINITY);
+        assert_eq!(state.threshold_value(), f64::INFINITY);
+    }
+
+    #[test]
+    /// Test local solver call patterns with different improvement sequences
+    fn test_stage2_local_solver_call_patterns() {
+        let mut state = Stage2State::new();
+
+        // Test alternating pattern
+        let pattern = vec![true, false, true, true, false, false, true];
+        let mut expected_improved = 0;
+
+        for &improved in &pattern {
+            state.add_local_solver_call(improved);
+            if improved {
+                expected_improved += 1;
+            }
+        }
+
+        assert_eq!(state.local_solver_calls(), pattern.len());
+        assert_eq!(state.improved_local_calls(), expected_improved);
+
+        // Test all false
+        let mut state2 = Stage2State::new();
+        for _ in 0..5 {
+            state2.add_local_solver_call(false);
+        }
+        assert_eq!(state2.local_solver_calls(), 5);
+        assert_eq!(state2.improved_local_calls(), 0);
+
+        // Test all true
+        let mut state3 = Stage2State::new();
+        for _ in 0..3 {
+            state3.add_local_solver_call(true);
+        }
+        assert_eq!(state3.local_solver_calls(), 3);
+        assert_eq!(state3.improved_local_calls(), 3);
+    }
+
+    #[test]
+    /// Test function evaluations accumulation with various increments
+    fn test_stage2_function_evaluations_accumulation() {
+        let mut state = Stage2State::new();
+
+        assert_eq!(state.function_evaluations(), 0);
+
+        // Test incremental additions
+        state.add_function_evaluations(100);
+        assert_eq!(state.function_evaluations(), 100);
+
+        state.add_function_evaluations(250);
+        assert_eq!(state.function_evaluations(), 350);
+
+        state.add_function_evaluations(0);
+        assert_eq!(state.function_evaluations(), 350);
+
+        // Large numbers
+        state.add_function_evaluations(10000);
+        assert_eq!(state.function_evaluations(), 10350);
+    }
+
+    #[test]
+    /// Test unchanged cycles tracking for convergence detection
+    fn test_stage2_unchanged_cycles_tracking() {
+        let mut state = Stage2State::new();
+
+        assert_eq!(state.unchanged_cycles(), 0);
+
+        // Test increasing cycles
+        for i in 1..=5 {
+            state.set_unchanged_cycles(i);
+            assert_eq!(state.unchanged_cycles(), i);
+        }
+
+        // Test reset to zero
+        state.set_unchanged_cycles(0);
+        assert_eq!(state.unchanged_cycles(), 0);
+
+        // Test large numbers
+        state.set_unchanged_cycles(1000);
+        assert_eq!(state.unchanged_cycles(), 1000);
+    }
+
+    #[test]
+    /// Test timing edge cases (no start, ongoing timing, end timing)
+    fn test_stage2_timing_edge_cases() {
+        let mut state = Stage2State::new();
+
+        // No timing started
+        assert!(state.total_time().is_none());
+
+        // End without start
+        state.end();
+        assert!(state.total_time().is_none());
+
+        // Start and check ongoing time
+        state.start();
+        let time1 = state.total_time().unwrap();
+        assert!(time1 >= 0.0);
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        let time2 = state.total_time().unwrap();
+        assert!(time2 > time1);
+
+        // End and check final time
+        state.end();
+        let final_time = state.total_time().unwrap();
+        assert!(final_time >= time2);
+    }
+
+    #[test]
+    /// Test that clone preserves all state correctly
+    fn test_stage2_clone_behavior() {
+        let mut state = Stage2State::new();
+        state.set_iteration(10);
+        state.set_best_objective(3.5);
+        state.set_solution_set_size(8);
+        state.set_threshold_value(2.0);
+        state.add_local_solver_call(true);
+        state.add_local_solver_call(false);
+        state.add_function_evaluations(500);
+        state.set_unchanged_cycles(2);
+
+        let cloned = state.clone();
+
+        assert_eq!(cloned.current_iteration(), 10);
+        assert_eq!(cloned.best_objective(), 3.5);
+        assert_eq!(cloned.solution_set_size(), 8);
+        assert_eq!(cloned.threshold_value(), 2.0);
+        assert_eq!(cloned.local_solver_calls(), 2);
+        assert_eq!(cloned.improved_local_calls(), 1);
+        assert_eq!(cloned.function_evaluations(), 500);
+        assert_eq!(cloned.unchanged_cycles(), 2);
+    }
+
+    #[test]
+    /// Test Default implementation creates same state as new()
+    fn test_stage2_default_implementation() {
+        let state = Stage2State::default();
+        assert!(state.best_objective().is_nan());
+        assert_eq!(state.solution_set_size(), 0);
+        assert_eq!(state.current_iteration(), 0);
+        assert_eq!(state.threshold_value(), f64::INFINITY);
+        assert_eq!(state.local_solver_calls(), 0);
+        assert_eq!(state.improved_local_calls(), 0);
+        assert_eq!(state.function_evaluations(), 0);
+        assert_eq!(state.unchanged_cycles(), 0);
+    }
+
+    #[test]
+    /// Test convergence scenario with improving then stagnant iterations
+    fn test_stage2_convergence_scenario() {
+        let mut state = Stage2State::new();
+
+        // Simulate a convergence scenario
+        state.set_best_objective(10.0);
+        state.set_solution_set_size(5);
+        state.set_threshold_value(8.0);
+
+        // Early iterations with improvements
+        for iter in 1..=5 {
+            state.set_iteration(iter);
+            state.add_local_solver_call(true);
+            state.add_function_evaluations(20);
+        }
+
+        assert_eq!(state.current_iteration(), 5);
+        assert_eq!(state.local_solver_calls(), 5);
+        assert_eq!(state.improved_local_calls(), 5);
+        assert_eq!(state.function_evaluations(), 100);
+
+        // Later iterations with no improvements (convergence)
+        for iter in 6..=10 {
+            state.set_iteration(iter);
+            state.add_local_solver_call(false);
+            state.add_function_evaluations(15);
+            state.set_unchanged_cycles(iter - 5); // Increasing unchanged cycles
+        }
+
+        assert_eq!(state.current_iteration(), 10);
+        assert_eq!(state.local_solver_calls(), 10);
+        assert_eq!(state.improved_local_calls(), 5); // Still 5 improved
+        assert_eq!(state.function_evaluations(), 100 + 5 * 15); // 175
+        assert_eq!(state.unchanged_cycles(), 5);
     }
 }

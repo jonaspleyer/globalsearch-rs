@@ -933,10 +933,12 @@ impl Default for Observer {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_observers {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
     #[test]
+    /// Test Observer creation and default configuration
     fn test_observer_creation() {
         let observer = Observer::new();
         assert!(!observer.should_observe_stage1());
@@ -945,6 +947,7 @@ mod tests {
     }
 
     #[test]
+    /// Test Observer with Stage 1 tracking enabled
     fn test_observer_with_stage1() {
         let observer = Observer::new().with_stage1_tracking();
         assert!(observer.should_observe_stage1());
@@ -952,6 +955,7 @@ mod tests {
     }
 
     #[test]
+    /// Test Observer with Stage 2 tracking enabled
     fn test_observer_with_stage2() {
         let observer = Observer::new().with_stage2_tracking();
         assert!(!observer.should_observe_stage1());
@@ -959,6 +963,7 @@ mod tests {
     }
 
     #[test]
+    /// Test Observer with both Stage 1 and Stage 2 tracking enabled
     fn test_observer_with_both_stages() {
         let observer = Observer::new().with_stage1_tracking().with_stage2_tracking();
         assert!(observer.should_observe_stage1());
@@ -966,12 +971,14 @@ mod tests {
     }
 
     #[test]
+    /// Test Observer with timing functionality enabled
     fn test_observer_with_timing() {
         let observer = Observer::new().with_timing();
         assert!(observer.is_timing_enabled());
     }
 
     #[test]
+    /// Test Observer mode restrictions and behavior
     fn test_observer_modes() {
         let observer = Observer::new()
             .with_mode(ObserverMode::Stage1Only)
@@ -996,5 +1003,339 @@ mod tests {
 
         assert!(observer.should_observe_stage1());
         assert!(observer.should_observe_stage2());
+    }
+
+    #[test]
+    /// Test Observer Stage 1 state access and lifecycle
+    fn test_observer_stage1_state_access() {
+        let mut observer = Observer::new().with_stage1_tracking();
+
+        // Initially should return Some
+        assert!(observer.stage1().is_some());
+
+        // After marking complete, should return None
+        observer.mark_stage1_complete();
+        assert!(observer.stage1().is_none());
+
+        // But stage1_final should still return Some
+        assert!(observer.stage1_final().is_some());
+    }
+
+    #[test]
+    /// Test Observer Stage 2 state access and lifecycle
+    fn test_observer_stage2_state_access() {
+        let mut observer = Observer::new().with_stage2_tracking();
+
+        // Initially should return None (not started)
+        assert!(observer.stage2().is_none());
+
+        // After marking started, should return Some
+        observer.mark_stage2_started();
+        assert!(observer.stage2().is_some());
+    }
+
+    #[test]
+    /// Test Observer timing functionality and elapsed time tracking
+    fn test_observer_timing() {
+        let mut observer = Observer::new().with_timing();
+
+        // No elapsed time initially
+        assert!(observer.elapsed_time().is_none());
+
+        observer.start_timer();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let elapsed = observer.elapsed_time();
+        assert!(elapsed.is_some());
+        assert!(elapsed.unwrap() > 0.0);
+    }
+
+    #[test]
+    /// Test Observer callback functionality and invocation
+    fn test_observer_callbacks() {
+        let callback_count = Arc::new(Mutex::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+
+        let observer = Observer::new().with_callback(move |_| {
+            let mut count = callback_count_clone.lock().unwrap();
+            *count += 1;
+        });
+
+        // Invoke callback
+        observer.invoke_callback();
+
+        assert_eq!(*callback_count.lock().unwrap(), 1);
+    }
+
+    #[test]
+    /// Test Observer callback frequency and invocation timing
+    fn test_observer_callback_frequency() {
+        let callback_count = Arc::new(Mutex::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+
+        let observer = Observer::new().with_callback_frequency(3).with_callback(move |_| {
+            let mut count = callback_count_clone.lock().unwrap();
+            *count += 1;
+        });
+
+        // Should invoke at iterations 3, 6, 9
+        assert!(!observer.should_invoke_callback(1));
+        assert!(!observer.should_invoke_callback(2));
+        assert!(observer.should_invoke_callback(3));
+        assert!(!observer.should_invoke_callback(4));
+        assert!(!observer.should_invoke_callback(5));
+        assert!(observer.should_invoke_callback(6));
+    }
+
+    #[test]
+    /// Test Observer default callback implementations
+    fn test_observer_default_callbacks() {
+        // Test that default callbacks can be created without panicking
+        let _observer1 = Observer::new().with_default_callback();
+        let _observer2 = Observer::new().with_stage1_callback();
+        let _observer3 = Observer::new().with_stage2_callback();
+    }
+
+    #[test]
+    /// Test Observer clone behavior and configuration preservation
+    fn test_observer_clone_behavior() {
+        let observer = Observer::new()
+            .with_stage1_tracking()
+            .with_stage2_tracking()
+            .with_timing()
+            .with_mode(ObserverMode::Stage1Only);
+
+        let cloned = observer.clone();
+
+        // Should have same configuration
+        assert!(cloned.should_observe_stage1());
+        assert!(!cloned.should_observe_stage2()); // Due to Stage1Only mode
+        assert!(cloned.is_timing_enabled());
+
+        // But callbacks should be None (not cloned)
+        // We can't directly test this, but the clone should work
+    }
+
+    #[test]
+    /// Test Observer default implementation and configuration
+    fn test_observer_default_implementation() {
+        let observer = Observer::default();
+        assert!(!observer.should_observe_stage1());
+        assert!(!observer.should_observe_stage2());
+        assert!(!observer.is_timing_enabled());
+    }
+
+    #[test]
+    /// Test Observer Stage 1 mutable state access and updates
+    fn test_observer_stage1_mut_access() {
+        let mut observer = Observer::new().with_stage1_tracking();
+
+        {
+            let stage1 = observer.stage1_mut().unwrap();
+            stage1.set_reference_set_size(10);
+            stage1.set_best_objective(5.0);
+        }
+
+        let stage1 = observer.stage1().unwrap();
+        assert_eq!(stage1.reference_set_size(), 10);
+        assert_eq!(stage1.best_objective(), 5.0);
+    }
+
+    #[test]
+    /// Test Observer Stage 2 mutable state access and updates
+    fn test_observer_stage2_mut_access() {
+        let mut observer = Observer::new().with_stage2_tracking();
+        observer.mark_stage2_started();
+
+        {
+            let stage2 = observer.stage2_mut().unwrap();
+            stage2.set_iteration(5);
+            stage2.set_best_objective(3.0);
+        }
+
+        let stage2 = observer.stage2().unwrap();
+        assert_eq!(stage2.current_iteration(), 5);
+        assert_eq!(stage2.best_objective(), 3.0);
+    }
+
+    #[test]
+    /// Test Observer mode restrictions and stage tracking behavior
+    fn test_observer_mode_restrictions() {
+        // Stage1Only mode
+        let observer = Observer::new()
+            .with_mode(ObserverMode::Stage1Only)
+            .with_stage1_tracking()
+            .with_stage2_tracking();
+
+        assert!(observer.should_observe_stage1());
+        assert!(!observer.should_observe_stage2());
+
+        // Stage2Only mode
+        let observer = Observer::new()
+            .with_mode(ObserverMode::Stage2Only)
+            .with_stage1_tracking()
+            .with_stage2_tracking();
+
+        assert!(!observer.should_observe_stage1());
+        assert!(observer.should_observe_stage2());
+
+        // Both mode
+        let observer = Observer::new()
+            .with_mode(ObserverMode::Both)
+            .with_stage1_tracking()
+            .with_stage2_tracking();
+
+        assert!(observer.should_observe_stage1());
+        assert!(observer.should_observe_stage2());
+    }
+
+    #[test]
+    /// Test Observer callback with frequency configuration
+    fn test_observer_callback_with_frequency() {
+        let observer = Observer::new().with_callback_frequency(5);
+
+        // Should have default callback when frequency is set without explicit callback
+        // This is tested implicitly by the fact that it doesn't panic
+        assert!(observer.callback.is_some());
+    }
+
+    #[test]
+    /// Test Observer stage transitions and state lifecycle
+    fn test_observer_stage_transitions() {
+        let mut observer = Observer::new().with_stage1_tracking().with_stage2_tracking();
+
+        // Stage 1 should be accessible initially
+        assert!(observer.stage1().is_some());
+        assert!(observer.stage2().is_none()); // Not started yet
+
+        // Mark Stage 1 complete
+        observer.mark_stage1_complete();
+        assert!(observer.stage1().is_none()); // No longer accessible
+        assert!(observer.stage1_final().is_some()); // But final is still accessible
+
+        // Mark Stage 2 started
+        observer.mark_stage2_started();
+        assert!(observer.stage2().is_some()); // Now accessible
+    }
+
+    #[test]
+    /// Test Observer behavior without any stage tracking enabled
+    fn test_observer_without_tracking() {
+        let observer = Observer::new();
+
+        // Should not observe either stage
+        assert!(!observer.should_observe_stage1());
+        assert!(!observer.should_observe_stage2());
+
+        // State access should return None
+        assert!(observer.stage1().is_none());
+        assert!(observer.stage1_final().is_none());
+        assert!(observer.stage2().is_none());
+
+        // Mutable access should return None
+        let mut observer = observer;
+        assert!(observer.stage1_mut().is_none());
+        assert!(observer.stage2_mut().is_none());
+    }
+
+    #[test]
+    /// Test Observer with simple quadratic optimization problem integration
+    fn test_observer_with_simple_optimization_problem() {
+        use crate::local_solver::builders::COBYLABuilder;
+        use crate::oqnlp::OQNLP;
+        use crate::problem::Problem;
+        use crate::types::{EvaluationError, LocalSolverType, OQNLPParams};
+        use ndarray::{Array1, Array2};
+
+        /// Simple quadratic problem: sum x_i^2 for i=1 to n
+        /// Global minimum at x = [0, 0, ..., 0] with f(x) = 0
+        #[derive(Debug, Clone)]
+        struct QuadraticSum {
+            dimension: usize,
+        }
+
+        impl QuadraticSum {
+            fn new(dimension: usize) -> Self {
+                Self { dimension }
+            }
+        }
+
+        impl Problem for QuadraticSum {
+            fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+                Ok(x.iter().map(|xi| xi * xi).sum())
+            }
+
+            fn variable_bounds(&self) -> Array2<f64> {
+                // Create bounds array: each row is [lower, upper] for each dimension
+                let mut bounds = Array2::zeros((self.dimension, 2));
+                for i in 0..self.dimension {
+                    bounds[[i, 0]] = -4.0; // lower bound
+                    bounds[[i, 1]] = 4.0; // upper bound
+                }
+                bounds
+            }
+        }
+
+        // Create a 2D quadratic problem
+        let problem = QuadraticSum::new(2);
+
+        // Optimization parameters
+        let params = OQNLPParams {
+            iterations: 100,
+            wait_cycle: 5,
+            threshold_factor: 0.5,
+            distance_factor: 0.5,
+            population_size: 150,
+            local_solver_type: LocalSolverType::COBYLA,
+            local_solver_config: COBYLABuilder::default().max_iter(25).build(),
+            seed: 0,
+        };
+
+        // Create observer with both stages tracking
+        let observer = Observer::new().with_stage1_tracking().with_stage2_tracking().with_timing();
+
+        // Run optimization
+        let mut oqnlp = OQNLP::new(problem, params).unwrap().add_observer(observer);
+        let solution_set = oqnlp.run().unwrap();
+
+        // Get the observer back
+        let observer = oqnlp.observer().unwrap();
+
+        // Test Stage 1 metrics
+        if let Some(stage1) = observer.stage1_final() {
+            assert!(stage1.function_evaluations() > 0);
+            assert!(stage1.reference_set_size() > 0);
+            assert!(!stage1.best_objective().is_nan());
+            assert!(stage1.best_objective() >= 0.0); // Quadratic sum is always >= 0
+            assert!(stage1.trial_points_generated() > 0);
+            if let Some(time) = stage1.total_time() {
+                assert!(time > 0.0);
+            }
+        }
+
+        // Test Stage 2 metrics
+        if let Some(stage2) = observer.stage2() {
+            println!("Stage 2 ran with {} function evaluations", stage2.function_evaluations());
+            // Just check that Stage 2 has valid data
+            assert!(!stage2.best_objective().is_nan());
+            assert!(stage2.best_objective() >= 0.0); // Quadratic sum is always >= 0
+            assert!(stage2.threshold_value() >= 0.0);
+            if let Some(time) = stage2.total_time() {
+                assert!(time >= 0.0);
+            }
+        } else {
+            println!("Stage 2 did not run");
+        }
+
+        // Test that we found a reasonable solution
+        // The global minimum is 0, but we expect to get close
+        let best_solution = solution_set.best_solution().unwrap();
+        let best_objective = best_solution.objective;
+        assert!(best_objective >= 0.0);
+        assert!(best_objective < 1e-3);
+
+        println!("Optimization test completed successfully!");
+        println!("Best objective found: {:.6}", best_objective);
+        println!("Solution: {:?}", best_solution.point);
     }
 }
