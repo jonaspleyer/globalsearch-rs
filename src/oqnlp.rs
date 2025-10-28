@@ -1503,7 +1503,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 self.merit_filter.update_threshold(obj);
 
                 // Only track evaluations if observer is active
-                let (local_trial, eval_count) = if let Some(ref observer) = self.observer {
+                let (local_trial, eval_count) = if let Some(ref mut observer) = self.observer {
                     if observer.should_observe_stage2() {
                         self.local_solver.solve_with_tracking(trial, true)?
                     } else {
@@ -1571,7 +1571,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             }
 
             // Invoke observer callback if set and frequency matches
-            if let Some(ref observer) = self.observer {
+            if let Some(ref mut observer) = self.observer {
                 if observer.should_invoke_callback(local_iter) {
                     observer.invoke_callback();
                 }
@@ -1680,7 +1680,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             }
 
             // Invoke observer callback if set and frequency matches
-            if let Some(ref observer) = self.observer {
+            if let Some(ref mut observer) = self.observer {
                 if observer.should_invoke_callback(local_iter) {
                     observer.invoke_callback();
                 }
@@ -1773,7 +1773,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     }
 
                     // Invoke observer callback if set and frequency matches
-                    if let Some(ref observer) = self.observer {
+                    if let Some(ref mut observer) = self.observer {
                         if observer.should_invoke_callback(local_iter) {
                             observer.invoke_callback();
                         }
@@ -1806,7 +1806,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     self.merit_filter.update_threshold(obj);
 
                     // Only track evaluations if observer is active
-                    let (local_trial, eval_count) = if let Some(ref observer) = self.observer {
+                    let (local_trial, eval_count) = if let Some(ref mut observer) = self.observer {
                         if observer.should_observe_stage2() {
                             self.local_solver.solve_with_tracking(trial, true)?
                         } else {

@@ -61,6 +61,7 @@
 //! // }
 //! ```
 
+use std::sync::Arc;
 use std::time::Instant;
 
 mod stage1;
@@ -82,9 +83,9 @@ pub enum ObserverMode {
 
 /// Callback function type for observer updates
 ///
-/// The callback receives a reference to the Observer, allowing access to
-/// all tracked metrics during optimization.
-pub type ObserverCallback = Box<dyn Fn(&Observer) + Send + Sync>;
+/// The callback receives a mutable reference to the Observer, allowing access to
+/// all tracked metrics and modification of internal state during optimization.
+pub type ObserverCallback = Arc<dyn Fn(&mut Observer) + Send + Sync>;
 
 /// Main observer struct that tracks algorithm state
 ///
@@ -233,7 +234,7 @@ impl std::fmt::Debug for Observer {
     }
 }
 
-// Manual Clone implementation since ObserverCallback cannot be cloned
+// Manual Clone implementation since ObserverCallback is now Arc (clonable)
 impl Clone for Observer {
     fn clone(&self) -> Self {
         Self {
@@ -242,7 +243,7 @@ impl Clone for Observer {
             stage2: self.stage2.clone(),
             track_timing: self.track_timing,
             start_time: self.start_time,
-            callback: None, // Callbacks cannot be cloned
+            callback: self.callback.clone(),
             callback_frequency: self.callback_frequency,
             stage1_completed: self.stage1_completed,
             stage2_started: self.stage2_started,
@@ -464,9 +465,9 @@ impl Observer {
     /// ```
     pub fn with_callback<F>(mut self, callback: F) -> Self
     where
-        F: Fn(&Observer) + Send + Sync + 'static,
+        F: Fn(&mut Observer) + Send + Sync + 'static,
     {
-        self.callback = Some(Box::new(callback));
+        self.callback = Some(Arc::new(callback));
         self
     }
 
@@ -582,41 +583,46 @@ impl Observer {
             // Stage 1 updates
             if let Some(stage1) = obs.stage1() {
                 let substage = stage1.current_substage();
-                if substage == "scatter_search_running" {
-                    eprintln!("[Stage 1] Starting Scatter Search...");
+                let message = if substage == "scatter_search_running" {
+                    "[Stage 1] Starting Scatter Search...".to_string()
                 } else if substage == "initialization_complete" {
-                    eprintln!(
+                    format!(
                         "[Stage 1] Initialization Complete | Initial Points: {}",
                         stage1.function_evaluations()
-                    );
+                    )
                 } else if substage == "diversification_complete" {
-                    eprintln!(
+                    format!(
                         "[Stage 1] Diversification Complete | Ref. Set Size: {}",
                         stage1.reference_set_size()
-                    );
+                    )
                 } else if substage == "intensification_complete" {
-                    eprintln!(
+                    format!(
                         "[Stage 1] Intensification Complete | Trial Points Generated: {} | Accepted: {}",
                         stage1.trial_points_generated(),
                         stage1.reference_set_size()
-                    );
+                    )
                 } else if substage == "scatter_search_complete" {
-                    eprintln!(
+                    format!(
                         "[Stage 1] Scatter Search Complete | Best: {:.6}",
                         stage1.best_objective()
-                    );
+                    )
                 } else if substage == "local_optimization_complete" {
-                    eprintln!(
+                    format!(
                         "[Stage 1] Local Optimization Complete | Best: {:.6} | Total Fn Evals: {}",
                         stage1.best_objective(),
                         stage1.function_evaluations()
-                    );
-                }
+                    )
+                } else {
+                    return; // No message for other substages
+                };
+
+                // Print directly for real-time output in both sequential and parallel modes
+                eprintln!("{}", message);
             }
             // Stage 2 updates (only when started)
             if let Some(stage2) = obs.stage2() {
                 if stage2.current_iteration() > 0 {
-                    eprintln!(
+                    let message = format!(
                         "[Stage 2] Iter {} | Best: {:.6} | Solutions: {} | Threshold: {:.6} | Local Solver Calls: {} | Fn Evals: {}",
                         stage2.current_iteration(),
                         stage2.best_objective(),
@@ -625,6 +631,9 @@ impl Observer {
                         stage2.local_solver_calls(),
                         stage2.function_evaluations()
                     );
+
+                    // Print directly for real-time output in both sequential and parallel modes
+                    eprintln!("{}", message);
                 }
             }
         })
@@ -902,8 +911,9 @@ impl Observer {
     /// Called internally by the OQNLP algorithm at appropriate points during
     /// optimization. The callback receives a reference to this observer,
     /// allowing access to all current metrics.
-    pub(crate) fn invoke_callback(&self) {
-        if let Some(ref callback) = self.callback {
+    pub(crate) fn invoke_callback(&mut self) {
+        if let Some(callback) = &self.callback {
+            let callback = Arc::clone(callback);
             callback(self);
         }
     }
@@ -1056,7 +1066,7 @@ mod tests_observers {
         let callback_count = Arc::new(Mutex::new(0));
         let callback_count_clone = Arc::clone(&callback_count);
 
-        let observer = Observer::new().with_callback(move |_| {
+        let mut observer = Observer::new().with_callback(move |_| {
             let mut count = callback_count_clone.lock().unwrap();
             *count += 1;
         });
