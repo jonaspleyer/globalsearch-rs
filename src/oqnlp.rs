@@ -1668,6 +1668,24 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 *unchanged_cycles = 0;
             }
 
+            // Observer: Update iteration before callback
+            if let Some(ref mut observer) = self.observer {
+                if observer.should_observe_stage2() {
+                    if let Some(stage2) = observer.stage2_mut() {
+                        stage2.set_iteration(local_iter);
+                        stage2.set_unchanged_cycles(*unchanged_cycles);
+                        stage2.set_threshold_value(self.merit_filter.threshold);
+                    }
+                }
+            }
+
+            // Invoke observer callback if set and frequency matches
+            if let Some(ref observer) = self.observer {
+                if observer.should_invoke_callback(local_iter) {
+                    observer.invoke_callback();
+                }
+            }
+
             #[cfg(feature = "checkpointing")]
             self.maybe_save_checkpoint()?;
         }
@@ -1743,6 +1761,24 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                         println!("x0 = {}", local_solution.point);
                     }
 
+                    // Observer: Update iteration before callback
+                    if let Some(ref mut observer) = self.observer {
+                        if observer.should_observe_stage2() {
+                            if let Some(stage2) = observer.stage2_mut() {
+                                stage2.set_iteration(local_iter);
+                                stage2.set_unchanged_cycles(*unchanged_cycles);
+                                stage2.set_threshold_value(self.merit_filter.threshold);
+                            }
+                        }
+                    }
+
+                    // Invoke observer callback if set and frequency matches
+                    if let Some(ref observer) = self.observer {
+                        if observer.should_invoke_callback(local_iter) {
+                            observer.invoke_callback();
+                        }
+                    }
+
                     if self.target_objective_reached() {
                         if self.verbose {
                             println!(
@@ -1798,6 +1834,22 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                                 }
                             }
                         }
+                    }
+
+                    // Observer: Update iteration before callback
+                    if let Some(ref mut observer) = self.observer {
+                        if observer.should_observe_stage2() {
+                            if let Some(stage2) = observer.stage2_mut() {
+                                stage2.set_iteration(local_iter);
+                                stage2.set_unchanged_cycles(*unchanged_cycles);
+                                stage2.set_threshold_value(self.merit_filter.threshold);
+                            }
+                        }
+                    }
+
+                    // Invoke observer callback for stage 2 progress
+                    if let Some(ref mut observer) = self.observer {
+                        observer.invoke_callback();
                     }
 
                     if self.verbose && added {
