@@ -87,6 +87,42 @@ pub enum ObserverMode {
 /// all tracked metrics and modification of internal state during optimization.
 pub type ObserverCallback = Arc<dyn Fn(&mut Observer) + Send + Sync>;
 
+/// Previous Stage 2 state for change detection
+#[derive(Debug, Clone, PartialEq)]
+struct PreviousStage2State {
+    best_objective: f64,
+    solution_set_size: usize,
+    threshold_value: f64,
+    local_solver_calls: usize,
+    improved_local_calls: usize,
+    function_evaluations: usize,
+    unchanged_cycles: usize,
+}
+
+impl PreviousStage2State {
+    fn from_stage2(stage2: &Stage2State) -> Self {
+        Self {
+            best_objective: stage2.best_objective(),
+            solution_set_size: stage2.solution_set_size(),
+            threshold_value: stage2.threshold_value(),
+            local_solver_calls: stage2.local_solver_calls(),
+            improved_local_calls: stage2.improved_local_calls(),
+            function_evaluations: stage2.function_evaluations(),
+            unchanged_cycles: stage2.unchanged_cycles(),
+        }
+    }
+
+    fn has_changed(&self, stage2: &Stage2State) -> bool {
+        self.best_objective != stage2.best_objective()
+            || self.solution_set_size != stage2.solution_set_size()
+            || self.threshold_value != stage2.threshold_value()
+            || self.local_solver_calls != stage2.local_solver_calls()
+            || self.improved_local_calls != stage2.improved_local_calls()
+            || self.function_evaluations != stage2.function_evaluations()
+            || self.unchanged_cycles != stage2.unchanged_cycles()
+    }
+}
+
 /// Main observer struct that tracks algorithm state
 ///
 /// The observer can be configured to track different metrics during
@@ -215,6 +251,12 @@ pub struct Observer {
 
     /// Flag to track if Stage 2 has started (prevents premature logging)
     stage2_started: bool,
+
+    /// Previous Stage 2 state for change detection in callbacks (using RwLock for thread-safe interior mutability)
+    previous_stage2_state: Option<std::sync::RwLock<PreviousStage2State>>,
+
+    /// Whether to filter Stage 2 callback messages to only show changes
+    filter_stage2_changes: bool,
 }
 
 // Manual Debug implementation since ObserverCallback doesn't implement Debug
@@ -247,6 +289,8 @@ impl Clone for Observer {
             callback_frequency: self.callback_frequency,
             stage1_completed: self.stage1_completed,
             stage2_started: self.stage2_started,
+            previous_stage2_state: self.previous_stage2_state.as_ref().map(|cell| std::sync::RwLock::new(cell.read().unwrap().clone())),
+            filter_stage2_changes: self.filter_stage2_changes,
         }
     }
 }
@@ -276,6 +320,8 @@ impl Observer {
             callback_frequency: 1,
             stage1_completed: false,
             stage2_started: false,
+            previous_stage2_state: None,
+            filter_stage2_changes: false,
         }
     }
 
@@ -519,6 +565,36 @@ impl Observer {
         self
     }
 
+    /// Enable filtering of Stage 2 callback messages to only show unique updates
+    ///
+    /// When enabled, Stage 2 callback messages will only be printed when
+    /// there is an actual change in the optimization state (other than just
+    /// the iteration number). This reduces log verbosity by filtering out
+    /// identical consecutive messages.
+    ///
+    /// # Changes that trigger printing:
+    /// - Best objective value changes
+    /// - Solution set size changes
+    /// - Threshold value changes
+    /// - Local solver call counts change
+    /// - Function evaluation counts change
+    /// - Unchanged cycles count changes
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use globalsearch::observers::Observer;
+    ///
+    /// let observer = Observer::new()
+    ///     .with_stage2_tracking()
+    ///     .with_default_callback()
+    ///     .unique_updates(); // Only print when state changes
+    /// ```
+    pub fn unique_updates(mut self) -> Self {
+        self.filter_stage2_changes = true;
+        self
+    }
+
     /// Use a default console logging callback for Stage 1 and Stage 2
     ///
     /// This is a convenience method that provides sensible default logging
@@ -622,18 +698,40 @@ impl Observer {
             // Stage 2 updates (only when started)
             if let Some(stage2) = obs.stage2() {
                 if stage2.current_iteration() > 0 {
-                    let message = format!(
-                        "[Stage 2] Iter {} | Best: {:.6} | Solutions: {} | Threshold: {:.6} | Local Solver Calls: {} | Fn Evals: {}",
-                        stage2.current_iteration(),
-                        stage2.best_objective(),
-                        stage2.solution_set_size(),
-                        stage2.threshold_value(),
-                        stage2.local_solver_calls(),
-                        stage2.function_evaluations()
-                    );
+                    // Extract all stage2 data first to avoid borrowing conflicts
+                    let current_iter = stage2.current_iteration();
+                    let best_obj = stage2.best_objective();
+                    let sol_size = stage2.solution_set_size();
+                    let threshold = stage2.threshold_value();
+                    let local_calls = stage2.local_solver_calls();
+                    let fn_evals = stage2.function_evaluations();
+                    
+                    // Check if we should print this iteration
+                    let should_print = if obs.filter_stage2_changes {
+                        // Use RwLock for thread-safe interior mutability to avoid borrowing conflicts
+                        let prev_state = obs.previous_stage2_state.as_ref().map(|cell| cell.read().unwrap().clone());
+                        
+                        // Check if state changed
+                        let has_changed = prev_state.as_ref().map_or(true, |prev| prev.has_changed(stage2));
+                        
+                        // Update the previous state for next comparison
+                        let current_state = PreviousStage2State::from_stage2(stage2);
+                        obs.previous_stage2_state = Some(std::sync::RwLock::new(current_state));
+                        
+                        has_changed
+                    } else {
+                        true // Always print if filtering is disabled
+                    };
 
-                    // Print directly for real-time output in both sequential and parallel modes
-                    eprintln!("{}", message);
+                    if should_print {
+                        let message = format!(
+                            "[Stage 2] Iter {} | Best: {:.6} | Solutions: {} | Threshold: {:.6} | Local Solver Calls: {} | Fn Evals: {}",
+                            current_iter, best_obj, sol_size, threshold, local_calls, fn_evals
+                        );
+
+                        // Print directly for real-time output in both sequential and parallel modes
+                        eprintln!("{}", message);
+                    }
                 }
             }
         })
@@ -1347,5 +1445,118 @@ mod tests_observers {
         println!("Optimization test completed successfully!");
         println!("Best objective found: {:.6}", best_objective);
         println!("Solution: {:?}", best_solution.point);
+    }
+
+    #[test]
+    /// Test Observer Stage 2 unique updates functionality
+    fn test_observer_stage2_unique_updates() {
+        use std::sync::{Arc, Mutex};
+        
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let messages_clone = Arc::clone(&messages);
+        
+        let mut observer = Observer::new()
+            .with_stage2_tracking()
+            .unique_updates()
+            .with_callback_frequency(1) // Invoke callback every iteration
+            .with_callback(move |obs| {
+                if let Some(stage2) = obs.stage2() {
+                    if stage2.current_iteration() > 0 {
+                        // Extract all stage2 data first to avoid borrowing conflicts
+                        let current_iter = stage2.current_iteration();
+                        let best_obj = stage2.best_objective();
+                        let sol_size = stage2.solution_set_size();
+                        let threshold = stage2.threshold_value();
+                        
+                        // Check if we should print this iteration (same logic as default callback)
+                        let should_print = if obs.filter_stage2_changes {
+                            // Use RwLock for thread-safe interior mutability to avoid borrowing conflicts
+                            let prev_state = obs.previous_stage2_state.as_ref().map(|cell| cell.read().unwrap().clone());
+                            
+                            // Check if state changed
+                            let has_changed = prev_state.as_ref().map_or(true, |prev| prev.has_changed(stage2));
+                            
+                            // Update the previous state for next comparison
+                            let current_state = PreviousStage2State::from_stage2(stage2);
+                            obs.previous_stage2_state = Some(std::sync::RwLock::new(current_state));
+                            
+                            has_changed
+                        } else {
+                            true // Always print if filtering is disabled
+                        };
+
+                        if should_print {
+                            let message = format!(
+                                "[Stage 2] Iter {} | Best: {:.6} | Solutions: {} | Threshold: {:.6}",
+                                current_iter, best_obj, sol_size, threshold
+                            );
+                            messages_clone.lock().unwrap().push(message);
+                        }
+                    }
+                }
+            });
+        
+        observer.mark_stage2_started();
+        
+        // Simulate Stage 2 iterations with some changes and some identical states
+        {
+            let stage2 = observer.stage2_mut().unwrap();
+            stage2.set_iteration(1);
+            stage2.set_best_objective(10.0);
+            stage2.set_solution_set_size(5);
+            stage2.set_threshold_value(1.0);
+        }
+        if observer.should_invoke_callback(1) {
+            observer.invoke_callback(); // Should print (first iteration)
+        }
+        
+        {
+            let stage2 = observer.stage2_mut().unwrap();
+            stage2.set_iteration(2);
+            // Same values - should not print
+        }
+        if observer.should_invoke_callback(2) {
+            observer.invoke_callback(); // Should NOT print (no change)
+        }
+        
+        {
+            let stage2 = observer.stage2_mut().unwrap();
+            stage2.set_iteration(3);
+            stage2.set_best_objective(8.0); // Changed - should print
+        }
+        if observer.should_invoke_callback(3) {
+            observer.invoke_callback(); // Should print (best objective changed)
+        }
+        
+        {
+            let stage2 = observer.stage2_mut().unwrap();
+            stage2.set_iteration(4);
+            // Same values - should not print
+        }
+        if observer.should_invoke_callback(4) {
+            observer.invoke_callback(); // Should NOT print (no change)
+        }
+        
+        {
+            let stage2 = observer.stage2_mut().unwrap();
+            stage2.set_iteration(5);
+            stage2.set_solution_set_size(6); // Changed - should print
+        }
+        if observer.should_invoke_callback(5) {
+            observer.invoke_callback(); // Should print (solution set size changed)
+        }
+        
+        let captured_messages = messages.lock().unwrap();
+        println!("Captured {} messages:", captured_messages.len());
+        for msg in captured_messages.iter() {
+            println!("  {}", msg);
+        }
+        
+        assert_eq!(captured_messages.len(), 3, "Should have 3 messages (iterations 1, 3, and 5)");
+        
+        // Verify the messages contain the expected iteration numbers
+        assert!(captured_messages[0].contains("Iter 1"));
+        assert!(captured_messages[1].contains("Iter 3"));
+        assert!(captured_messages[2].contains("Iter 5"));
     }
 }
