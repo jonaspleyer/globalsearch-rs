@@ -1456,6 +1456,34 @@ class PyObserver:
         """
         ...
 
+    def unique_updates(self) -> None:
+        """
+        Enable filtering of Stage 2 callback messages to only show unique updates.
+
+        When enabled, Stage 2 callback messages will only be printed when
+        there is an actual change in the optimization state (other than just
+        the iteration number). This reduces log verbosity by filtering out
+        identical consecutive messages.
+
+        # Changes that trigger printing:
+        - Best objective value changes
+        - Solution set size changes
+        - Threshold value changes
+        - Local solver call counts change
+        - Function evaluation counts change
+        - Unchanged cycles count changes
+
+        # Example
+
+        ```python
+        observer = PyObserver()
+        observer.with_stage2_tracking()
+        observer.with_default_callback()
+        observer.unique_updates()  # Only print when state changes
+        ```
+        """
+        ...
+
     def stage1(self) -> Optional[PyStage1State]:
         """
         Get current Stage 1 state reference.
