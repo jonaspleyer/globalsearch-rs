@@ -920,13 +920,11 @@ fn optimize(
                 // Observer updates happen in the main thread after parallel execution
                 if let Some(updated_observer) = py.detach(|| optimizer.observer().cloned()) {
                     *py_observer.inner.write().unwrap() = updated_observer;
-                }
-            } else {
-                if let Some(updated_observer) = optimizer.observer() {
+                } else if let Some(updated_observer) = optimizer.observer() {
                     *py_observer.inner.write().unwrap() = updated_observer.clone();
                 }
             }
-        } // Convert Rust SolutionSet to Python PySolutionSet
+        }
         let py_solutions: Vec<PyLocalSolution> = binding
             .solutions()
             .map(|sol| PyLocalSolution { point: sol.point.to_vec(), objective: sol.objective })
