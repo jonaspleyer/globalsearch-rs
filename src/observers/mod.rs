@@ -289,7 +289,10 @@ impl Clone for Observer {
             callback_frequency: self.callback_frequency,
             stage1_completed: self.stage1_completed,
             stage2_started: self.stage2_started,
-            previous_stage2_state: self.previous_stage2_state.as_ref().map(|cell| std::sync::RwLock::new(cell.read().unwrap().clone())),
+            previous_stage2_state: self
+                .previous_stage2_state
+                .as_ref()
+                .map(|cell| std::sync::RwLock::new(cell.read().unwrap().clone())),
             filter_stage2_changes: self.filter_stage2_changes,
         }
     }
@@ -705,19 +708,19 @@ impl Observer {
                     let threshold = stage2.threshold_value();
                     let local_calls = stage2.local_solver_calls();
                     let fn_evals = stage2.function_evaluations();
-                    
+
                     // Check if we should print this iteration
                     let should_print = if obs.filter_stage2_changes {
                         // Use RwLock for thread-safe interior mutability to avoid borrowing conflicts
                         let prev_state = obs.previous_stage2_state.as_ref().map(|cell| cell.read().unwrap().clone());
-                        
+
                         // Check if state changed
                         let has_changed = prev_state.as_ref().map_or(true, |prev| prev.has_changed(stage2));
-                        
+
                         // Update the previous state for next comparison
                         let current_state = PreviousStage2State::from_stage2(stage2);
                         obs.previous_stage2_state = Some(std::sync::RwLock::new(current_state));
-                        
+
                         has_changed
                     } else {
                         true // Always print if filtering is disabled
@@ -1451,10 +1454,10 @@ mod tests_observers {
     /// Test Observer Stage 2 unique updates functionality
     fn test_observer_stage2_unique_updates() {
         use std::sync::{Arc, Mutex};
-        
+
         let messages = Arc::new(Mutex::new(Vec::new()));
         let messages_clone = Arc::clone(&messages);
-        
+
         let mut observer = Observer::new()
             .with_stage2_tracking()
             .unique_updates()
@@ -1467,19 +1470,19 @@ mod tests_observers {
                         let best_obj = stage2.best_objective();
                         let sol_size = stage2.solution_set_size();
                         let threshold = stage2.threshold_value();
-                        
+
                         // Check if we should print this iteration (same logic as default callback)
                         let should_print = if obs.filter_stage2_changes {
                             // Use RwLock for thread-safe interior mutability to avoid borrowing conflicts
                             let prev_state = obs.previous_stage2_state.as_ref().map(|cell| cell.read().unwrap().clone());
-                            
+
                             // Check if state changed
                             let has_changed = prev_state.as_ref().map_or(true, |prev| prev.has_changed(stage2));
-                            
+
                             // Update the previous state for next comparison
                             let current_state = PreviousStage2State::from_stage2(stage2);
                             obs.previous_stage2_state = Some(std::sync::RwLock::new(current_state));
-                            
+
                             has_changed
                         } else {
                             true // Always print if filtering is disabled
@@ -1495,9 +1498,9 @@ mod tests_observers {
                     }
                 }
             });
-        
+
         observer.mark_stage2_started();
-        
+
         // Simulate Stage 2 iterations with some changes and some identical states
         {
             let stage2 = observer.stage2_mut().unwrap();
@@ -1509,7 +1512,7 @@ mod tests_observers {
         if observer.should_invoke_callback(1) {
             observer.invoke_callback(); // Should print (first iteration)
         }
-        
+
         {
             let stage2 = observer.stage2_mut().unwrap();
             stage2.set_iteration(2);
@@ -1518,7 +1521,7 @@ mod tests_observers {
         if observer.should_invoke_callback(2) {
             observer.invoke_callback(); // Should NOT print (no change)
         }
-        
+
         {
             let stage2 = observer.stage2_mut().unwrap();
             stage2.set_iteration(3);
@@ -1527,7 +1530,7 @@ mod tests_observers {
         if observer.should_invoke_callback(3) {
             observer.invoke_callback(); // Should print (best objective changed)
         }
-        
+
         {
             let stage2 = observer.stage2_mut().unwrap();
             stage2.set_iteration(4);
@@ -1536,7 +1539,7 @@ mod tests_observers {
         if observer.should_invoke_callback(4) {
             observer.invoke_callback(); // Should NOT print (no change)
         }
-        
+
         {
             let stage2 = observer.stage2_mut().unwrap();
             stage2.set_iteration(5);
@@ -1545,15 +1548,15 @@ mod tests_observers {
         if observer.should_invoke_callback(5) {
             observer.invoke_callback(); // Should print (solution set size changed)
         }
-        
+
         let captured_messages = messages.lock().unwrap();
         println!("Captured {} messages:", captured_messages.len());
         for msg in captured_messages.iter() {
             println!("  {}", msg);
         }
-        
+
         assert_eq!(captured_messages.len(), 3, "Should have 3 messages (iterations 1, 3, and 5)");
-        
+
         // Verify the messages contain the expected iteration numbers
         assert!(captured_messages[0].contains("Iter 1"));
         assert!(captured_messages[1].contains("Iter 3"));
