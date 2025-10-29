@@ -923,6 +923,11 @@ fn optimize(
                 } else if let Some(updated_observer) = optimizer.observer() {
                     *py_observer.inner.write().unwrap() = updated_observer.clone();
                 }
+            } else {
+                // For sequential execution, update observer directly
+                if let Some(updated_observer) = optimizer.observer() {
+                    *py_observer.inner.write().unwrap() = updated_observer.clone();
+                }
             }
         }
         let py_solutions: Vec<PyLocalSolution> = binding
