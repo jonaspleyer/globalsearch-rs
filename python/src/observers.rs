@@ -433,7 +433,6 @@ impl PyObserver {
     /// - Threshold value changes
     /// - Local solver call counts change
     /// - Function evaluation counts change
-    /// - Unchanged cycles count changes
     ///
     /// # Example
     ///

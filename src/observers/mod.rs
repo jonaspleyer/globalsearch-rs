@@ -119,7 +119,6 @@ impl PreviousStage2State {
             || self.local_solver_calls != stage2.local_solver_calls()
             || self.improved_local_calls != stage2.improved_local_calls()
             || self.function_evaluations != stage2.function_evaluations()
-            || self.unchanged_cycles != stage2.unchanged_cycles()
     }
 }
 
@@ -581,7 +580,6 @@ impl Observer {
     /// - Threshold value changes
     /// - Local solver call counts change
     /// - Function evaluation counts change
-    /// - Unchanged cycles count changes
     ///
     /// # Example
     ///
