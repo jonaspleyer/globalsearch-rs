@@ -78,3 +78,7 @@ def main():
         print(f"\nTotal solutions found: {len(result.solutions)}")
     else:
         print("No solution found!")
+
+
+if __name__ == "__main__":
+    main()
