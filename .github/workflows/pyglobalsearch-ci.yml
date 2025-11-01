@@ -40,7 +40,7 @@ jobs:
         run: |
           cd python
           source .venv/bin/activate
-          maturin develop
+          maturin develop --release
 
       - name: Run tests
         run: |
