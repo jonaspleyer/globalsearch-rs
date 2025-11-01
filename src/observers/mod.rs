@@ -725,7 +725,7 @@ impl Observer {
                     // Extract all stage2 data first to avoid borrowing conflicts
                     let current_iter = stage2.current_iteration();
                     let best_obj = stage2.best_objective();
-                    let last_added_coords = stage2.last_added_point().map(|p| format_coords(p));
+                    let last_added_coords = stage2.last_added_point().map(format_coords);
                     let sol_size = stage2.solution_set_size();
                     let threshold = stage2.threshold_value();
                     let local_calls = stage2.local_solver_calls();

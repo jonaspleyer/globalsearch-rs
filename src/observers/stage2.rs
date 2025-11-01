@@ -180,7 +180,7 @@ impl Stage2State {
     }
 
     /// Update the last solution added to the solution set
-    /// 
+    ///
     /// This tracks the most recently added solution, which is useful for
     /// monitoring new discoveries in multimodal optimization problems.
     pub fn set_last_added_solution(&mut self, point: &ndarray::Array1<f64>) {
@@ -786,24 +786,24 @@ mod tests_observers_stage2 {
     /// Test best_point tracking with set_best_solution
     fn test_stage2_best_point_tracking() {
         use ndarray::array;
-        
+
         let mut state = Stage2State::new();
-        
+
         // Initially no best point
         assert!(state.best_point().is_none());
         assert!(state.best_objective().is_nan());
-        
+
         // Set first solution
         state.set_best_solution(10.0, &array![1.0, 2.0]);
         assert!(state.best_point().is_some());
         assert_eq!(state.best_objective(), 10.0);
         assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0]);
-        
+
         // Better solution should update
         state.set_best_solution(5.0, &array![3.0, 4.0]);
         assert_eq!(state.best_objective(), 5.0);
         assert_eq!(state.best_point().unwrap(), &array![3.0, 4.0]);
-        
+
         // Worse solution should not update
         state.set_best_solution(8.0, &array![5.0, 6.0]);
         assert_eq!(state.best_objective(), 5.0);
@@ -814,14 +814,14 @@ mod tests_observers_stage2 {
     /// Test set_best_objective doesn't change best_point
     fn test_stage2_best_objective_independent() {
         use ndarray::array;
-        
+
         let mut state = Stage2State::new();
-        
+
         // Set solution with coordinates
         state.set_best_solution(10.0, &array![1.0, 2.0]);
         assert_eq!(state.best_objective(), 10.0);
         assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0]);
-        
+
         // Using set_best_objective should update objective but not point
         state.set_best_objective(5.0);
         assert_eq!(state.best_objective(), 5.0);

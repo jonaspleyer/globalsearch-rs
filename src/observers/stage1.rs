@@ -597,24 +597,24 @@ mod tests_observers_stage1 {
     /// Test best_point tracking with set_best_solution
     fn test_stage1_best_point_tracking() {
         use ndarray::array;
-        
+
         let mut state = Stage1State::new();
-        
+
         // Initially no best point
         assert!(state.best_point().is_none());
         assert!(state.best_objective().is_nan());
-        
+
         // Set first solution
         state.set_best_solution(10.0, &array![1.0, 2.0, 3.0]);
         assert!(state.best_point().is_some());
         assert_eq!(state.best_objective(), 10.0);
         assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0, 3.0]);
-        
+
         // Better solution should update
         state.set_best_solution(5.0, &array![4.0, 5.0, 6.0]);
         assert_eq!(state.best_objective(), 5.0);
         assert_eq!(state.best_point().unwrap(), &array![4.0, 5.0, 6.0]);
-        
+
         // Worse solution should not update
         state.set_best_solution(8.0, &array![7.0, 8.0, 9.0]);
         assert_eq!(state.best_objective(), 5.0);
@@ -625,14 +625,14 @@ mod tests_observers_stage1 {
     /// Test set_best_objective doesn't change best_point
     fn test_stage1_best_objective_independent() {
         use ndarray::array;
-        
+
         let mut state = Stage1State::new();
-        
+
         // Set solution with coordinates
         state.set_best_solution(10.0, &array![1.0, 2.0]);
         assert_eq!(state.best_objective(), 10.0);
         assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0]);
-        
+
         // Using set_best_objective should update objective but not point
         state.set_best_objective(5.0);
         assert_eq!(state.best_objective(), 5.0);
