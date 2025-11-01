@@ -55,6 +55,12 @@ pub struct Stage2State {
     /// Best objective function value found so far
     best_objective: f64,
 
+    /// Best solution coordinates found so far
+    best_point: Option<ndarray::Array1<f64>>,
+
+    /// Last solution added to the solution set (for tracking new discoveries)
+    last_added_point: Option<ndarray::Array1<f64>>,
+
     /// Current number of solutions in solution set
     solution_set_size: usize,
 
@@ -99,6 +105,8 @@ impl Stage2State {
     pub fn new() -> Self {
         Self {
             best_objective: f64::NAN,
+            best_point: None,
+            last_added_point: None,
             solution_set_size: 0,
             current_iteration: 0,
             threshold_value: f64::INFINITY,
@@ -135,6 +143,14 @@ impl Stage2State {
         }
     }
 
+    /// Update best solution with both objective and coordinates
+    pub fn set_best_solution(&mut self, objective: f64, point: &ndarray::Array1<f64>) {
+        if self.best_objective.is_nan() || objective < self.best_objective {
+            self.best_objective = objective;
+            self.best_point = Some(point.clone());
+        }
+    }
+
     /// Update solution set size
     pub fn set_solution_set_size(&mut self, size: usize) {
         self.solution_set_size = size;
@@ -161,6 +177,14 @@ impl Stage2State {
     /// Set unchanged cycles count
     pub fn set_unchanged_cycles(&mut self, count: usize) {
         self.unchanged_cycles = count;
+    }
+
+    /// Update the last solution added to the solution set
+    /// 
+    /// This tracks the most recently added solution, which is useful for
+    /// monitoring new discoveries in multimodal optimization problems.
+    pub fn set_last_added_solution(&mut self, point: &ndarray::Array1<f64>) {
+        self.last_added_point = Some(point.clone());
     }
 
     /// Get best objective value
@@ -329,6 +353,64 @@ impl Stage2State {
         } else {
             self.total_time
         }
+    }
+
+    /// Get the best solution coordinates found so far
+    ///
+    /// Returns the parameter values of the best solution found during Stage 2.
+    /// This corresponds to the point that achieved the best objective value.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&Array1<f64>)`: The coordinates of the best solution
+    /// - `None`: If no valid solution has been found yet
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use globalsearch::observers::Observer;
+    ///
+    /// let observer = Observer::new().with_stage2_tracking();
+    ///
+    /// // During or after optimization
+    /// if let Some(stage2) = observer.stage2() {
+    ///     if let Some(point) = stage2.best_point() {
+    ///         println!("Best solution coordinates: {:?}", point);
+    ///         println!("Best objective value: {}", stage2.best_objective());
+    ///     }
+    /// }
+    /// ```
+    pub fn best_point(&self) -> Option<&ndarray::Array1<f64>> {
+        self.best_point.as_ref()
+    }
+
+    /// Get the last solution added to the solution set
+    ///
+    /// Returns the parameter values of the most recently added solution.
+    /// This is particularly useful for multimodal optimization problems where
+    /// you want to track new discoveries rather than always showing the best solution.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&Array1<f64>)`: The coordinates of the last added solution
+    /// - `None`: If no solution has been added yet
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use globalsearch::observers::Observer;
+    ///
+    /// let observer = Observer::new().with_stage2_tracking();
+    ///
+    /// // During or after optimization
+    /// if let Some(stage2) = observer.stage2() {
+    ///     if let Some(point) = stage2.last_added_point() {
+    ///         println!("Last added solution coordinates: {:?}", point);
+    ///     }
+    /// }
+    /// ```
+    pub fn last_added_point(&self) -> Option<&ndarray::Array1<f64>> {
+        self.last_added_point.as_ref()
     }
 }
 
@@ -698,5 +780,51 @@ mod tests_observers_stage2 {
         assert_eq!(state.improved_local_calls(), 5); // Still 5 improved
         assert_eq!(state.function_evaluations(), 100 + 5 * 15); // 175
         assert_eq!(state.unchanged_cycles(), 5);
+    }
+
+    #[test]
+    /// Test best_point tracking with set_best_solution
+    fn test_stage2_best_point_tracking() {
+        use ndarray::array;
+        
+        let mut state = Stage2State::new();
+        
+        // Initially no best point
+        assert!(state.best_point().is_none());
+        assert!(state.best_objective().is_nan());
+        
+        // Set first solution
+        state.set_best_solution(10.0, &array![1.0, 2.0]);
+        assert!(state.best_point().is_some());
+        assert_eq!(state.best_objective(), 10.0);
+        assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0]);
+        
+        // Better solution should update
+        state.set_best_solution(5.0, &array![3.0, 4.0]);
+        assert_eq!(state.best_objective(), 5.0);
+        assert_eq!(state.best_point().unwrap(), &array![3.0, 4.0]);
+        
+        // Worse solution should not update
+        state.set_best_solution(8.0, &array![5.0, 6.0]);
+        assert_eq!(state.best_objective(), 5.0);
+        assert_eq!(state.best_point().unwrap(), &array![3.0, 4.0]);
+    }
+
+    #[test]
+    /// Test set_best_objective doesn't change best_point
+    fn test_stage2_best_objective_independent() {
+        use ndarray::array;
+        
+        let mut state = Stage2State::new();
+        
+        // Set solution with coordinates
+        state.set_best_solution(10.0, &array![1.0, 2.0]);
+        assert_eq!(state.best_objective(), 10.0);
+        assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0]);
+        
+        // Using set_best_objective should update objective but not point
+        state.set_best_objective(5.0);
+        assert_eq!(state.best_objective(), 5.0);
+        assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0]); // Point unchanged
     }
 }

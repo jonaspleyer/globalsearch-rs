@@ -1221,6 +1221,9 @@ class PyStage1State:
     trial_points_generated: int
     """Total number of trial points generated during intensification."""
 
+    best_point: Optional[List[float]]
+    """Coordinates of the best solution found so far in Stage 1, or None if no solution evaluated yet."""
+
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
 
@@ -1261,6 +1264,12 @@ class PyStage2State:
 
     total_time: Optional[float]
     """Time elapsed since Stage 2 began (seconds)."""
+
+    best_point: Optional[List[float]]
+    """Coordinates of the best solution found so far in Stage 2, or None if no solution evaluated yet."""
+
+    last_added_point: Optional[List[float]]
+    """Coordinates of the most recently added solution to the solution set, or None if no solution added yet."""
 
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...

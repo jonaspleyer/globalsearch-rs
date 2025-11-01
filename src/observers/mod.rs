@@ -656,6 +656,12 @@ impl Observer {
     ///     .with_callback_frequency(10); // Print every 10 iterations
     /// ```
     pub fn with_default_callback(self) -> Self {
+        // Helper function to format array coordinates cleanly
+        fn format_coords(arr: &ndarray::Array1<f64>) -> String {
+            let values: Vec<String> = arr.iter().map(|v| format!("{:.6}", v)).collect();
+            format!("[{}]", values.join(", "))
+        }
+
         self.with_callback(|obs| {
             // Stage 1 updates
             if let Some(stage1) = obs.stage1() {
@@ -679,16 +685,33 @@ impl Observer {
                         stage1.reference_set_size()
                     )
                 } else if substage == "scatter_search_complete" {
-                    format!(
-                        "[Stage 1] Scatter Search Complete | Best: {:.6}",
-                        stage1.best_objective()
-                    )
+                    if let Some(point) = stage1.best_point() {
+                        format!(
+                            "[Stage 1] Scatter Search Complete | Best: {:.6} at {}",
+                            stage1.best_objective(),
+                            format_coords(point)
+                        )
+                    } else {
+                        format!(
+                            "[Stage 1] Scatter Search Complete | Best: {:.6}",
+                            stage1.best_objective()
+                        )
+                    }
                 } else if substage == "local_optimization_complete" {
-                    format!(
-                        "[Stage 1] Local Optimization Complete | Best: {:.6} | Total Fn Evals: {}",
-                        stage1.best_objective(),
-                        stage1.function_evaluations()
-                    )
+                    if let Some(point) = stage1.best_point() {
+                        format!(
+                            "[Stage 1] Local Optimization Complete | Best: {:.6} at {} | Total Fn Evals: {}",
+                            stage1.best_objective(),
+                            format_coords(point),
+                            stage1.function_evaluations()
+                        )
+                    } else {
+                        format!(
+                            "[Stage 1] Local Optimization Complete | Best: {:.6} | Total Fn Evals: {}",
+                            stage1.best_objective(),
+                            stage1.function_evaluations()
+                        )
+                    }
                 } else {
                     return; // No message for other substages
                 };
@@ -702,6 +725,7 @@ impl Observer {
                     // Extract all stage2 data first to avoid borrowing conflicts
                     let current_iter = stage2.current_iteration();
                     let best_obj = stage2.best_objective();
+                    let last_added_coords = stage2.last_added_point().map(|p| format_coords(p));
                     let sol_size = stage2.solution_set_size();
                     let threshold = stage2.threshold_value();
                     let local_calls = stage2.local_solver_calls();
@@ -725,10 +749,17 @@ impl Observer {
                     };
 
                     if should_print {
-                        let message = format!(
-                            "[Stage 2] Iter {} | Best: {:.6} | Solutions: {} | Threshold: {:.6} | Local Solver Calls: {} | Fn Evals: {}",
-                            current_iter, best_obj, sol_size, threshold, local_calls, fn_evals
-                        );
+                        let message = if let Some(coords) = last_added_coords {
+                            format!(
+                                "[Stage 2] Iter {} | Best: {:.6} at {} | Solutions: {} | Threshold: {:.6} | Local Calls: {} | Fn Evals: {}",
+                                current_iter, best_obj, coords, sol_size, threshold, local_calls, fn_evals
+                            )
+                        } else {
+                            format!(
+                                "[Stage 2] Iter {} | Best: {:.6} | Solutions: {} | Threshold: {:.6} | Local Calls: {} | Fn Evals: {}",
+                                current_iter, best_obj, sol_size, threshold, local_calls, fn_evals
+                            )
+                        };
 
                         // Print directly for real-time output in both sequential and parallel modes
                         eprintln!("{}", message);
@@ -752,6 +783,12 @@ impl Observer {
     ///     .with_stage1_callback();
     /// ```
     pub fn with_stage1_callback(self) -> Self {
+        // Helper function to format array coordinates cleanly
+        fn format_coords(arr: &ndarray::Array1<f64>) -> String {
+            let values: Vec<String> = arr.iter().map(|v| format!("{:.6}", v)).collect();
+            format!("[{}]", values.join(", "))
+        }
+
         self.with_callback(|obs| {
             if let Some(stage1) = obs.stage1() {
                 let substage = stage1.current_substage();
@@ -774,16 +811,33 @@ impl Observer {
                         stage1.reference_set_size()
                     );
                 } else if substage == "scatter_search_complete" {
-                    eprintln!(
-                        "[Stage 1] Scatter Search Complete | Best: {:.6}",
-                        stage1.best_objective()
-                    );
+                    if let Some(point) = stage1.best_point() {
+                        eprintln!(
+                            "[Stage 1] Scatter Search Complete | Best: {:.6} at {}",
+                            stage1.best_objective(),
+                            format_coords(point)
+                        );
+                    } else {
+                        eprintln!(
+                            "[Stage 1] Scatter Search Complete | Best: {:.6}",
+                            stage1.best_objective()
+                        );
+                    }
                 } else if substage == "local_optimization_complete" {
-                    eprintln!(
-                        "[Stage 1] Local Optimization Complete | Best: {:.6} | TotalFnEvals: {}",
-                        stage1.best_objective(),
-                        stage1.function_evaluations()
-                    );
+                    if let Some(point) = stage1.best_point() {
+                        eprintln!(
+                            "[Stage 1] Local Optimization Complete | Best: {:.6} at {} | TotalFnEvals: {}",
+                            stage1.best_objective(),
+                            format_coords(point),
+                            stage1.function_evaluations()
+                        );
+                    } else {
+                        eprintln!(
+                            "[Stage 1] Local Optimization Complete | Best: {:.6} | TotalFnEvals: {}",
+                            stage1.best_objective(),
+                            stage1.function_evaluations()
+                        );
+                    }
                 }
                 // Don't print for "stage1_complete" - it's just an internal marker
             }
@@ -806,18 +860,37 @@ impl Observer {
     ///     .with_callback_frequency(10); // Print every 10 iterations
     /// ```
     pub fn with_stage2_callback(self) -> Self {
+        // Helper function to format array coordinates cleanly
+        fn format_coords(arr: &ndarray::Array1<f64>) -> String {
+            let values: Vec<String> = arr.iter().map(|v| format!("{:.6}", v)).collect();
+            format!("[{}]", values.join(", "))
+        }
+
         self.with_callback(|obs| {
             if let Some(stage2) = obs.stage2() {
                 if stage2.current_iteration() > 0 {
-                    eprintln!(
-                        "[Stage 2] Iter {} | Best: {:.6} | Solutions: {} | Threshold: {:.6} | Local Calls: {} | Fn Evals: {}",
-                        stage2.current_iteration(),
-                        stage2.best_objective(),
-                        stage2.solution_set_size(),
-                        stage2.threshold_value(),
-                        stage2.local_solver_calls(),
-                        stage2.function_evaluations()
-                    );
+                    if let Some(point) = stage2.last_added_point() {
+                        eprintln!(
+                            "[Stage 2] Iter {} | Best: {:.6} at {} | Solutions: {} | Threshold: {:.6} | Local Calls: {} | Fn Evals: {}",
+                            stage2.current_iteration(),
+                            stage2.best_objective(),
+                            format_coords(point),
+                            stage2.solution_set_size(),
+                            stage2.threshold_value(),
+                            stage2.local_solver_calls(),
+                            stage2.function_evaluations()
+                        );
+                    } else {
+                        eprintln!(
+                            "[Stage 2] Iter {} | Best: {:.6} | Solutions: {} | Threshold: {:.6} | Local Calls: {} | Fn Evals: {}",
+                            stage2.current_iteration(),
+                            stage2.best_objective(),
+                            stage2.solution_set_size(),
+                            stage2.threshold_value(),
+                            stage2.local_solver_calls(),
+                            stage2.function_evaluations()
+                        );
+                    }
                 }
             }
         })

@@ -67,6 +67,9 @@ pub struct Stage1State {
     /// Best objective function value found so far
     best_objective: f64,
 
+    /// Best solution coordinates found so far
+    best_point: Option<ndarray::Array1<f64>>,
+
     /// Current stage within Stage 1 (e.g., "initialization", "diversification", "trial_generation")
     current_substage: String,
 
@@ -95,6 +98,7 @@ impl Stage1State {
     /// Initializes all metrics to default values:
     /// - Reference set size: 0
     /// - Best objective: NaN (no valid solutions yet)
+    /// - Best point: None (no valid solutions yet)
     /// - Current substage: "not_started"
     /// - Function evaluations: 0
     /// - Trial points: 0
@@ -103,6 +107,7 @@ impl Stage1State {
         Self {
             reference_set_size: 0,
             best_objective: f64::NAN,
+            best_point: None,
             current_substage: "not_started".to_string(),
             substage_time: None,
             substage_start: None,
@@ -134,6 +139,14 @@ impl Stage1State {
     pub fn set_best_objective(&mut self, objective: f64) {
         if self.best_objective.is_nan() || objective < self.best_objective {
             self.best_objective = objective;
+        }
+    }
+
+    /// Update best solution with both objective and coordinates
+    pub fn set_best_solution(&mut self, objective: f64, point: &ndarray::Array1<f64>) {
+        if self.best_objective.is_nan() || objective < self.best_objective {
+            self.best_objective = objective;
+            self.best_point = Some(point.clone());
         }
     }
 
@@ -296,6 +309,35 @@ impl Stage1State {
     /// The ratio of accepted to generated trial points indicates intensification effectiveness.
     pub fn trial_points_generated(&self) -> usize {
         self.trial_points_generated
+    }
+
+    /// Get the best solution coordinates found so far
+    ///
+    /// Returns the parameter values of the best solution found during Stage 1.
+    /// This corresponds to the point that achieved the best objective value.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&Array1<f64>)`: The coordinates of the best solution
+    /// - `None`: If no valid solution has been found yet
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use globalsearch::observers::Observer;
+    ///
+    /// let observer = Observer::new().with_stage1_tracking();
+    ///
+    /// // After optimization
+    /// if let Some(stage1) = observer.stage1_final() {
+    ///     if let Some(point) = stage1.best_point() {
+    ///         println!("Best solution coordinates: {:?}", point);
+    ///         println!("Best objective value: {}", stage1.best_objective());
+    ///     }
+    /// }
+    /// ```
+    pub fn best_point(&self) -> Option<&ndarray::Array1<f64>> {
+        self.best_point.as_ref()
     }
 }
 
@@ -549,5 +591,51 @@ mod tests_observers_stage1 {
         assert_eq!(state.reference_set_size(), 0);
         assert!(state.best_objective().is_nan());
         assert_eq!(state.current_substage(), "not_started");
+    }
+
+    #[test]
+    /// Test best_point tracking with set_best_solution
+    fn test_stage1_best_point_tracking() {
+        use ndarray::array;
+        
+        let mut state = Stage1State::new();
+        
+        // Initially no best point
+        assert!(state.best_point().is_none());
+        assert!(state.best_objective().is_nan());
+        
+        // Set first solution
+        state.set_best_solution(10.0, &array![1.0, 2.0, 3.0]);
+        assert!(state.best_point().is_some());
+        assert_eq!(state.best_objective(), 10.0);
+        assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0, 3.0]);
+        
+        // Better solution should update
+        state.set_best_solution(5.0, &array![4.0, 5.0, 6.0]);
+        assert_eq!(state.best_objective(), 5.0);
+        assert_eq!(state.best_point().unwrap(), &array![4.0, 5.0, 6.0]);
+        
+        // Worse solution should not update
+        state.set_best_solution(8.0, &array![7.0, 8.0, 9.0]);
+        assert_eq!(state.best_objective(), 5.0);
+        assert_eq!(state.best_point().unwrap(), &array![4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    /// Test set_best_objective doesn't change best_point
+    fn test_stage1_best_objective_independent() {
+        use ndarray::array;
+        
+        let mut state = Stage1State::new();
+        
+        // Set solution with coordinates
+        state.set_best_solution(10.0, &array![1.0, 2.0]);
+        assert_eq!(state.best_objective(), 10.0);
+        assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0]);
+        
+        // Using set_best_objective should update objective but not point
+        state.set_best_objective(5.0);
+        assert_eq!(state.best_objective(), 5.0);
+        assert_eq!(state.best_point().unwrap(), &array![1.0, 2.0]); // Point unchanged
     }
 }

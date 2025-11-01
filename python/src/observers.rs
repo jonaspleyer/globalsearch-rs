@@ -95,6 +95,16 @@ impl PyStage1State {
         self.inner.trial_points_generated()
     }
 
+    /// Get best solution coordinates
+    ///
+    /// Returns the coordinates (decision variables) of the best solution found
+    /// so far in Stage 1, or None if no solution has been evaluated yet.
+    /// Returns a Python list of floats representing the solution point.
+    #[getter]
+    fn best_point(&self) -> Option<Vec<f64>> {
+        self.inner.best_point().map(|arr| arr.to_vec())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "PyStage1State(reference_set_size={}, best_objective={:.6}, current_substage='{}', function_evaluations={}, trial_points_generated={})",
@@ -225,6 +235,27 @@ impl PyStage2State {
     #[getter]
     fn total_time(&self) -> Option<f64> {
         self.inner.total_time()
+    }
+
+    /// Get best solution coordinates
+    ///
+    /// Returns the coordinates (decision variables) of the best solution found
+    /// so far in Stage 2, or None if no solution has been evaluated yet.
+    /// Returns a Python list of floats representing the solution point.
+    #[getter]
+    fn best_point(&self) -> Option<Vec<f64>> {
+        self.inner.best_point().map(|arr| arr.to_vec())
+    }
+
+    /// Get last added solution coordinates
+    ///
+    /// Returns the coordinates (decision variables) of the most recently added
+    /// solution to the solution set, or None if no solution has been added yet.
+    /// This is particularly useful for tracking new discoveries in multimodal
+    /// optimization problems. Returns a Python list of floats.
+    #[getter]
+    fn last_added_point(&self) -> Option<Vec<f64>> {
+        self.inner.last_added_point().map(|arr| arr.to_vec())
     }
 
     fn __repr__(&self) -> String {

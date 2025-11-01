@@ -631,10 +631,13 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     if let Some(stage1) = observer.stage1_mut() {
                         stage1.enter_substage("scatter_search_complete");
                         stage1.set_reference_set_size(ref_set.len());
-                        if let Some(&best_obj) =
-                            ref_objectives.iter().min_by(|a, b| a.partial_cmp(b).unwrap())
+                        // Find the best solution and its coordinates
+                        if let Some((best_idx, &best_obj)) = ref_objectives
+                            .iter()
+                            .enumerate()
+                            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
                         {
-                            stage1.set_best_objective(best_obj);
+                            stage1.set_best_solution(best_obj, &ref_set[best_idx]);
                         }
                     }
                 }
@@ -672,7 +675,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 if observer.should_observe_stage1() {
                     if let Some(stage1) = observer.stage1_mut() {
                         stage1.enter_substage("local_optimization_complete");
-                        stage1.set_best_objective(local_sol.objective);
+                        stage1.set_best_solution(local_sol.objective, &local_sol.point);
                         stage1.add_function_evaluations(local_fn_evals as usize);
                     }
                 }
@@ -742,7 +745,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                     stage2.start();
                     if let Some(ref sol_set) = self.solution_set {
                         if let Some(best) = sol_set.best_solution() {
-                            stage2.set_best_objective(best.objective);
+                            stage2.set_best_solution(best.objective, &best.point);
                         }
                         stage2.set_solution_set_size(sol_set.len());
                     }
@@ -993,6 +996,13 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                 Some(SolutionSet { solutions: Array1::from(vec![solution.clone()]) });
             self.merit_filter.update_threshold(solution.objective);
 
+            // Update observer with the newly added solution
+            if let Some(ref mut observer) = self.observer {
+                if let Some(stage2) = observer.stage2_mut() {
+                    stage2.set_last_added_solution(&solution.point);
+                }
+            }
+
             if self.verbose {
                 println!(
                     "New best solution found (replacing solution set): objective = {:.8}, point = {}",
@@ -1007,6 +1017,13 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
             let mut new_solutions: Vec<LocalSolution> = solutions.to_vec();
             new_solutions.push(solution.clone());
             self.solution_set = Some(SolutionSet { solutions: Array1::from(new_solutions) });
+
+            // Update observer with the newly added solution
+            if let Some(ref mut observer) = self.observer {
+                if let Some(stage2) = observer.stage2_mut() {
+                    stage2.set_last_added_solution(&solution.point);
+                }
+            }
 
             if self.verbose {
                 println!(
@@ -1525,7 +1542,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                             stage2.add_function_evaluations(eval_count as usize);
                             if let Some(ref sol_set) = self.solution_set {
                                 if let Some(best) = sol_set.best_solution() {
-                                    stage2.set_best_objective(best.objective);
+                                    stage2.set_best_solution(best.objective, &best.point);
                                 }
                                 stage2.set_solution_set_size(sol_set.len());
                             }
@@ -1745,7 +1762,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                                 stage2.add_function_evaluations(eval_count as usize);
                                 if let Some(ref sol_set) = self.solution_set {
                                     if let Some(best) = sol_set.best_solution() {
-                                        stage2.set_best_objective(best.objective);
+                                        stage2.set_best_solution(best.objective, &best.point);
                                     }
                                     stage2.set_solution_set_size(sol_set.len());
                                 }
@@ -1828,7 +1845,7 @@ impl<P: Problem + Clone + Send + Sync> OQNLP<P> {
                                 stage2.add_function_evaluations(eval_count as usize);
                                 if let Some(ref sol_set) = self.solution_set {
                                     if let Some(best) = sol_set.best_solution() {
-                                        stage2.set_best_objective(best.objective);
+                                        stage2.set_best_solution(best.objective, &best.point);
                                     }
                                     stage2.set_solution_set_size(sol_set.len());
                                 }
