@@ -5,7 +5,7 @@
         alt="GlobalSearch-rs"
     />
     <p align="center">
-        Global optimization with scatter search and local NLP solvers written in Rust
+        A multistart framework for global optimization with scatter search and local NLP solvers written in Rust
     </p>
     <p align="center">
         <a href="https://germanheim.github.io/globalsearch-rs-website/">Website</a> | <a href="https://docs.rs/globalsearch/latest/globalsearch/">Docs</a> | <a href="https://github.com/GermanHeim/globalsearch-rs/tree/main/examples">Examples</a>
