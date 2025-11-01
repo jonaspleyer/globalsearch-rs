@@ -1179,6 +1179,405 @@ class builders:
     PyTrustRegion: Type[PyTrustRegion]
     PyCOBYLA: Type[PyCOBYLA]
 
+class PyObserverMode:
+    """
+    Observer mode determines which stages to track during optimization.
+
+    This enum controls which phases of the OQNLP algorithm are monitored
+    by the observer, allowing fine-grained control over tracking scope.
+    """
+
+    Stage1Only: "PyObserverMode"
+    Stage2Only: "PyObserverMode"
+    Both: "PyObserverMode"
+
+class PyStage1State:
+    """
+    State tracker for Stage 1 of the OQNLP algorithm.
+
+    Tracks comprehensive metrics during the scatter search phase that builds
+    the initial reference set. This includes reference set construction,
+    trial point generation, function evaluations, and substage progression.
+
+    Access current Stage 1 state during optimization using observer.stage1().
+    Access final Stage 1 statistics after completion using observer.stage1_final().
+    """
+
+    reference_set_size: int
+    """Current number of solutions in the reference set."""
+
+    best_objective: float
+    """Best (lowest) objective function value found so far in Stage 1."""
+
+    current_substage: str
+    """String identifier for the current phase of Stage 1 execution."""
+
+    total_time: Optional[float]
+    """Total elapsed time since Stage 1 started (seconds)."""
+
+    function_evaluations: int
+    """Cumulative count of objective function evaluations during Stage 1."""
+
+    trial_points_generated: int
+    """Total number of trial points generated during intensification."""
+
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
+
+class PyStage2State:
+    """
+    State tracker for Stage 2 of the OQNLP algorithm.
+
+    Tracks comprehensive metrics during the iterative refinement phase that
+    improves the solution set through merit filtering and local optimization.
+    This phase focuses on intensifying search around high-quality regions.
+
+    Access current Stage 2 state during optimization using observer.stage2().
+    """
+
+    best_objective: float
+    """Best (lowest) objective function value found across all solutions."""
+
+    solution_set_size: int
+    """Current number of solutions maintained in the working solution set."""
+
+    current_iteration: int
+    """Current iteration number in Stage 2."""
+
+    threshold_value: float
+    """Current merit filter threshold value."""
+
+    local_solver_calls: int
+    """Total number of times local optimization algorithms have been invoked."""
+
+    improved_local_calls: int
+    """Number of local solver calls that successfully improved the solution set."""
+
+    function_evaluations: int
+    """Cumulative count of objective function evaluations during Stage 2."""
+
+    unchanged_cycles: int
+    """Number of consecutive iterations where the solution set has not improved."""
+
+    total_time: Optional[float]
+    """Time elapsed since Stage 2 began (seconds)."""
+
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
+
+class PyObserver:
+    """
+    Main observer struct that tracks OQNLP algorithm state.
+
+    The observer can be configured to track different metrics during
+    Stage 1 (reference set construction) and Stage 2 (iterative improvement).
+    It supports real-time monitoring through callbacks and provides detailed
+    statistics about algorithm performance and convergence.
+
+    Examples
+    --------
+    Basic observer with default logging::
+
+        >>> observer = gs.observers.Observer()
+        >>> observer.with_default_callback()
+        >>> result = gs.optimize(problem, params, observer=observer)
+
+    Observer with custom configuration::
+
+        >>> observer = gs.observers.Observer()
+        >>> observer.with_stage1_tracking()
+        >>> observer.with_stage2_tracking()
+        >>> observer.with_timing()
+        >>> observer.with_callback_frequency(5)  # Callback every 5 iterations
+        >>> result = gs.optimize(problem, params, observer=observer)
+
+    Accessing state during optimization::
+
+        >>> # In a callback function
+        >>> def my_callback(observer):
+        ...     if observer.stage1():
+        ...         print(f"Stage 1: {observer.stage1().best_objective}")
+        ...     if observer.stage2():
+        ...         print(f"Stage 2: {observer.stage2().current_iteration}")
+
+    Accessing final statistics::
+
+        >>> # After optimization completes
+        >>> stage1_final = observer.stage1_final()
+        >>> stage2_final = observer.stage2()
+        >>> print(f"Total function evaluations: {stage1_final.function_evaluations + stage2_final.function_evaluations}")
+    """
+
+    @property
+    def should_observe_stage1(self) -> bool:
+        """
+        True if Stage 1 tracking is enabled and mode allows Stage 1 observation.
+        """
+        ...
+
+    @property
+    def should_observe_stage2(self) -> bool:
+        """
+        True if Stage 2 tracking is enabled and mode allows Stage 2 observation.
+        """
+        ...
+
+    @property
+    def is_timing_enabled(self) -> bool:
+        """
+        True if the observer is configured to track timing information.
+        """
+        ...
+
+    @property
+    def elapsed_time(self) -> Optional[float]:
+        """
+        Time elapsed since timer started (seconds), or None if timing disabled.
+        """
+        ...
+
+    def __init__(self) -> None:
+        """
+        Create a new observer with no tracking enabled.
+
+        Returns a minimal observer that tracks nothing by default.
+        Use the builder methods to enable specific tracking features.
+        """
+        ...
+
+    def with_stage1_tracking(self) -> None:
+        """
+        Enable Stage 1 tracking.
+
+        Enables tracking of scatter search metrics including reference set size,
+        best objective values, function evaluation counts, trial point generation,
+        and sub-stage progression.
+
+        Stage 1 tracking is required for stage1() and stage1_final() to return data.
+        """
+        ...
+
+    def with_stage2_tracking(self) -> None:
+        """
+        Enable Stage 2 tracking.
+
+        Enables tracking of iterative refinement metrics including current iteration,
+        solution set size, best objective values, local solver statistics,
+        function evaluations, threshold values, and convergence metrics.
+
+        Stage 2 tracking is required for stage2() to return data.
+        """
+        ...
+
+    def with_timing(self) -> None:
+        """
+        Enable timing tracking for stages.
+
+        When enabled, tracks elapsed time for total Stage 1 and Stage 2 duration.
+        Timing data is accessible via the total_time properties on state objects.
+        """
+        ...
+
+    def with_mode(self, mode: PyObserverMode) -> None:
+        """
+        Set observer mode.
+
+        Controls which stages of the optimization algorithm are monitored.
+        This allows fine-grained control over tracking scope and performance.
+
+        :param mode: The observer mode determining which stages to track
+        :type mode: PyObserverMode
+        """
+        ...
+
+    def with_callback_frequency(self, frequency: int) -> None:
+        """
+        Set the frequency for callback invocation.
+
+        Controls how often the callback is invoked during Stage 2.
+        For example, a frequency of 10 means the callback is called every 10 iterations.
+
+        :param frequency: Number of iterations between callback calls
+        :type frequency: int
+        """
+        ...
+
+    def with_callback(
+        self,
+        callback: Callable[[Optional[PyStage1State], Optional[PyStage2State]], None],
+    ) -> None:
+        """
+        Set a custom callback function for monitoring optimization progress.
+
+        The callback function will be called during optimization with the current
+        stage states. This allows real-time monitoring and custom logging.
+
+        The callback receives the current Stage 1 and Stage 2 states, which may be None
+        if the corresponding stage is not active or tracking is disabled.
+
+        Examples
+        --------
+            >>> def my_callback(stage1, stage2):
+            ...     if stage1:
+            ...         print(f"Stage 1: {stage1.function_evaluations} evaluations")
+            ...     if stage2:
+            ...         print(f"Stage 2: Iteration {stage2.current_iteration}")
+            >>> observer.with_callback(my_callback)
+
+        :param callback: Function to call during optimization progress
+        :type callback: Callable[[Optional[PyStage1State], Optional[PyStage2State]], None]
+        """
+        ...
+
+    def with_default_callback(self) -> None:
+        """
+        Use a default console logging callback for both Stage 1 and Stage 2.
+
+        This is a convenience method that provides sensible default logging
+        for both stages of the optimization. The default callback prints progress
+        information to stderr.
+        """
+        ...
+
+    def with_stage1_callback(self) -> None:
+        """
+        Use a default console logging callback for Stage 1 only.
+
+        This prints updates during scatter search and local optimization in Stage 1.
+        """
+        ...
+
+    def with_stage2_callback(self) -> None:
+        """
+        Use a default console logging callback for Stage 2 only.
+
+        This prints iteration progress during Stage 2. Use with_callback_frequency()
+        to control how often updates are printed.
+        """
+        ...
+
+    def unique_updates(self) -> None:
+        """
+        Enable filtering of Stage 2 callback messages to only show unique updates.
+
+        When enabled, Stage 2 callback messages will only be printed when
+        there is an actual change in the optimization state (other than just
+        the iteration number). This reduces log verbosity by filtering out
+        identical consecutive messages.
+
+        # Changes that trigger printing:
+        - Best objective value changes
+        - Solution set size changes
+        - Threshold value changes
+        - Local solver call counts change
+        - Function evaluation counts change
+
+        # Example
+
+        ```python
+        observer = PyObserver()
+        observer.with_stage2_tracking()
+        observer.with_default_callback()
+        observer.unique_updates()  # Only print when state changes
+        ```
+        """
+        ...
+
+    def stage1(self) -> Optional[PyStage1State]:
+        """
+        Get current Stage 1 state reference.
+
+        Returns the current Stage 1 state if Stage 1 tracking is enabled and
+        Stage 1 is still active. Returns None after Stage 1 completes.
+
+        For final Stage 1 statistics after completion, use stage1_final().
+        """
+        ...
+
+    def stage1_final(self) -> Optional[PyStage1State]:
+        """
+        Get Stage 1 state reference even after completion.
+
+        Returns the final Stage 1 state regardless of whether Stage 1 is still
+        active. This method should be used for accessing final statistics after
+        optimization completes.
+        """
+        ...
+
+    def stage2(self) -> Optional[PyStage2State]:
+        """
+        Get current Stage 2 state reference.
+
+        Returns the current Stage 2 state if Stage 2 tracking is enabled and
+        Stage 2 has started. Returns None before Stage 2 begins.
+        """
+        ...
+
+    def flush_messages(self) -> List[str]:
+        """
+        Get and clear all buffered messages.
+
+        Returns all messages that have been buffered since the last flush.
+        The buffer is cleared after this call.
+
+        This is useful in parallel mode where default callbacks buffer messages
+        instead of printing them directly. However, the default callback now
+        prints messages directly in parallel mode for real-time output, so this
+        method may return an empty list.
+
+        :return: A list of buffered messages
+        :rtype: List[str]
+        """
+        ...
+
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
+
+class observers:
+    """
+    Observers module for monitoring OQNLP optimization progress.
+
+    This module provides classes for tracking and monitoring the progress
+    of global optimization algorithms. It allows real-time observation of
+    algorithm state, performance metrics, and convergence behavior.
+
+    The main components are:
+
+    - Observer: Main class for configuring and accessing optimization state
+    - ObserverMode: Enum controlling which optimization stages to monitor
+    - Stage1State: Metrics from the scatter search phase (reference set construction)
+    - Stage2State: Metrics from the iterative refinement phase
+
+    Examples
+    --------
+    Basic usage with default logging::
+
+        >>> import pyglobalsearch as gs
+        >>> observer = gs.observers.Observer()
+        >>> observer.with_default_callback()
+        >>> result = gs.optimize(problem, params, observer=observer)
+
+    Custom observer configuration::
+
+        >>> observer = gs.observers.Observer()
+        >>> observer.with_stage1_tracking()
+        >>> observer.with_stage2_tracking()
+        >>> observer.with_timing()
+        >>> observer.with_mode(gs.observers.ObserverMode.Both)
+        >>> result = gs.optimize(problem, params, observer=observer)
+
+    Accessing final statistics::
+
+        >>> stage1_stats = observer.stage1_final()
+        >>> stage2_stats = observer.stage2()
+        >>> print(f"Total evaluations: {stage1_stats.function_evaluations + stage2_stats.function_evaluations}")
+    """
+
+    Observer: Type[PyObserver]
+    ObserverMode: Type[PyObserverMode]
+    Stage1State: Type[PyStage1State]
+    Stage2State: Type[PyStage2State]
+
 def optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
@@ -1199,6 +1598,7 @@ def optimize(
     verbose: Optional[bool] = False,
     exclude_out_of_bounds: Optional[bool] = False,
     parallel: Optional[bool] = False,
+    observer: Optional[PyObserver] = None,
 ) -> PySolutionSet:
     """
     Perform global optimization on the given problem.
@@ -1225,6 +1625,12 @@ def optimize(
         >>> result = gs.optimize(problem, params,
         ...                     local_solver="COBYLA",
         ...                     local_solver_config=cobyla_config)
+
+    With observer for progress monitoring::
+
+        >>> observer = gs.observers.Observer()
+        >>> observer.with_default_callback()
+        >>> result = gs.optimize(problem, params, observer=observer)
 
     With early stopping::
 
@@ -1254,6 +1660,8 @@ def optimize(
     :type exclude_out_of_bounds: bool
     :param parallel: Enable parallel processing using rayon (False by default)
     :type parallel: bool
+    :param observer: Observer for monitoring optimization progress and metrics (None by default = no observation)
+    :type observer: Optional[PyObserver]
     :return: A set of local solutions found during optimization
     :rtype: PySolutionSet
     :raises ValueError: If solver configuration doesn't match the specified solver type,

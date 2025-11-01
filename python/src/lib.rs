@@ -1,5 +1,7 @@
 mod builders;
+mod observers;
 
+use crate::observers::PyObserver;
 use globalsearch::local_solver::builders::{
     COBYLABuilder, LBFGSBuilder, NelderMeadBuilder, NewtonCGBuilder, SteepestDescentBuilder,
     TrustRegionBuilder,
@@ -21,10 +23,17 @@ type ConstraintRegistry = Arc<Mutex<HashMap<usize, Vec<Py<pyo3::PyAny>>>>>;
 static CONSTRAINT_REGISTRY: std::sync::OnceLock<ConstraintRegistry> = std::sync::OnceLock::new();
 static PROBLEM_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+// Global mutex to serialize Python calls from parallel threads
+static PYTHON_CALL_MUTEX: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
+
 // Thread-local storage for current problem ID and constraint index during evaluation
 thread_local! {
     static CURRENT_PROBLEM_ID: Cell<usize> = const { Cell::new(0) };
     static CURRENT_CONSTRAINT_INDEX: Cell<usize> = const { Cell::new(0) };
+}
+
+fn get_python_call_mutex() -> &'static Mutex<()> {
+    PYTHON_CALL_MUTEX.get_or_init(|| Mutex::new(()))
 }
 
 fn get_constraint_registry() -> &'static ConstraintRegistry {
@@ -538,6 +547,8 @@ impl PyProblem {
 
 impl Problem for PyProblem {
     fn objective(&self, x: &Array1<f64>) -> Result<f64, EvaluationError> {
+        // Serialize Python calls from parallel threads to avoid GIL deadlocks
+        let _guard = get_python_call_mutex().lock().unwrap();
         Python::attach(|py| {
             let x_py = x
                 .to_vec()
@@ -673,6 +684,8 @@ impl Problem for PyProblem {
 /// :type problem: PyProblem
 /// :param params: Parameters controlling the optimization algorithm behavior
 /// :type params: PyOQNLPParams
+/// :param observer: Optional observer for tracking algorithm progress and metrics
+/// :type observer: PyObserver, optional
 /// :param local_solver: Local optimization algorithm ("COBYLA", "LBFGS", "NewtonCG", "TrustRegion", "NelderMead", "SteepestDescent")
 /// :type local_solver: str, optional
 /// :param local_solver_config: Custom configuration for the local solver (must match solver type)
@@ -700,6 +713,11 @@ impl Problem for PyProblem {
 /// >>> result = gs.optimize(problem, params)
 /// >>> best = result.best_solution()
 ///
+/// With observer for progress tracking:
+///
+/// >>> observer = gs.observers.Observer().with_stage1_tracking().with_stage2_tracking().with_default_callback()
+/// >>> result = gs.optimize(problem, params, observer=observer)
+///
 /// With custom solver configuration:
 ///
 /// >>> cobyla_config = gs.builders.cobyla(max_iter=1000)
@@ -722,6 +740,7 @@ impl Problem for PyProblem {
 #[pyo3(signature = (
     problem,
     params,
+    observer = None,
     local_solver = None,
     local_solver_config = None,
     seed = None,
@@ -734,6 +753,7 @@ impl Problem for PyProblem {
 fn optimize(
     problem: PyProblem,
     params: PyOQNLPParams,
+    observer: Option<&PyObserver>,
     local_solver: Option<&str>,
     local_solver_config: Option<Py<pyo3::PyAny>>,
     seed: Option<u64>,
@@ -838,36 +858,78 @@ fn optimize(
             local_solver_config,
         };
 
-        let mut optimizer =
+        let optimizer =
             OQNLP::new(problem, params).map_err(|e| PyValueError::new_err(e.to_string()))?;
 
+        let parallel_enabled = parallel.unwrap_or(false);
+
+        // For Python problems with parallel processing, we need special GIL handling
+        // When parallel=True, we allow threads during parallel computation but ensure
+        // Python calls are serialized with the mutex
+        let should_detach_gil = !parallel_enabled;
+
+        // Add observer if provided
+        let optimizer = if let Some(py_observer) = observer {
+            let cloned_observer = py_observer.clone_inner();
+            optimizer.add_observer(cloned_observer)
+        } else {
+            optimizer
+        };
+
         // Set parallel mode
-        // Default to false unless explicitly enabled by user
-        optimizer = optimizer.parallel(parallel.unwrap_or(false));
+        let optimizer = optimizer.parallel(parallel_enabled);
 
         // Apply optional configurations
-        if let Some(target) = target_objective {
-            optimizer = optimizer.target_objective(target);
-        }
+        let optimizer = if let Some(target) = target_objective {
+            optimizer.target_objective(target)
+        } else {
+            optimizer
+        };
 
-        if let Some(max_secs) = max_time {
-            optimizer = optimizer.max_time(max_secs);
-        }
+        let optimizer =
+            if let Some(max_secs) = max_time { optimizer.max_time(max_secs) } else { optimizer };
 
-        if verbose.unwrap_or(false) {
-            optimizer = optimizer.verbose();
-        }
+        let optimizer = if verbose.unwrap_or(false) { optimizer.verbose() } else { optimizer };
 
-        if exclude_out_of_bounds.unwrap_or(false) {
-            optimizer = optimizer.exclude_out_of_bounds();
-        }
+        let mut optimizer = if exclude_out_of_bounds.unwrap_or(false) {
+            optimizer.exclude_out_of_bounds()
+        } else {
+            optimizer
+        };
 
-        // Release the GIL to allow Rust threads (rayon) to run without blocking
-        let solution_set = py.detach(|| optimizer.run());
+        // For parallel execution, we need to allow threads to run without the GIL
+        // but ensure Python calls are properly synchronized
+        let solution_set = if parallel_enabled {
+            // Allow threads during parallel computation
+            py.detach(|| optimizer.run())
+        } else {
+            // For serial execution, detach GIL as before
+            if should_detach_gil {
+                py.detach(|| optimizer.run())
+            } else {
+                optimizer.run()
+            }
+        };
 
         let binding = solution_set.map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        // Convert Rust SolutionSet to Python PySolutionSet
+        // Update the observer in place if provided
+        if let Some(py_observer) = observer {
+            // For parallel execution, we need to handle observer updates carefully
+            if parallel_enabled {
+                // Observer updates happen in the main thread after parallel execution
+                if let Some(updated_observer) = py.detach(|| optimizer.observer().cloned()) {
+                    *py_observer.inner.write().unwrap() = updated_observer;
+                } else if let Some(updated_observer) = optimizer.observer() {
+                    *py_observer.inner.write().unwrap() = updated_observer.clone();
+                }
+            } else {
+                // For sequential execution, update observer directly
+                if let Some(updated_observer) = optimizer.observer() {
+                    *py_observer.inner.write().unwrap() = updated_observer.clone();
+                }
+            }
+        }
         let py_solutions: Vec<PyLocalSolution> = binding
             .solutions()
             .map(|sol| PyLocalSolution { point: sol.point.to_vec(), objective: sol.objective })
@@ -943,6 +1005,11 @@ fn pyglobalsearch(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let builders = PyModule::new(_py, "builders")?;
     crate::builders::init_module(_py, &builders)?;
     m.add_submodule(&builders)?;
+
+    // Observers submodule
+    let observers = PyModule::new(_py, "observers")?;
+    crate::observers::init_module(_py, &observers)?;
+    m.add_submodule(&observers)?;
 
     Ok(())
 }
