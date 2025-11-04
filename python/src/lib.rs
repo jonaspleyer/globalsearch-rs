@@ -558,7 +558,7 @@ impl Problem for PyProblem {
                 .objective
                 .call1(py, (x_py,))
                 .map_err(|e| EvaluationError::InvalidInput(e.to_string()))?;
-            result.extract(py).map_err(|e| EvaluationError::InvalidInput(e.to_string()))
+            result.extract(py).map_err(|e: PyErr| EvaluationError::InvalidInput(e.to_string()))
         })
     }
 
@@ -596,8 +596,9 @@ impl Problem for PyProblem {
                     .call1(py, (x_py,))
                     .map_err(|e| EvaluationError::InvalidInput(e.to_string()))?;
 
-                let grad_vec: Vec<f64> =
-                    result.extract(py).map_err(|e| EvaluationError::InvalidInput(e.to_string()))?;
+                let grad_vec: Vec<f64> = result
+                    .extract(py)
+                    .map_err(|e: PyErr| EvaluationError::InvalidInput(e.to_string()))?;
 
                 Ok(Array1::from(grad_vec))
             })
@@ -617,8 +618,9 @@ impl Problem for PyProblem {
                     .call1(py, (x_py,))
                     .map_err(|e| EvaluationError::InvalidInput(e.to_string()))?;
 
-                let hess_vec: Vec<Vec<f64>> =
-                    result.extract(py).map_err(|e| EvaluationError::InvalidInput(e.to_string()))?;
+                let hess_vec: Vec<Vec<f64>> = result
+                    .extract(py)
+                    .map_err(|e: PyErr| EvaluationError::InvalidInput(e.to_string()))?;
 
                 let size = hess_vec.len();
                 let flat_hess: Vec<f64> = hess_vec.into_iter().flatten().collect();
@@ -640,17 +642,16 @@ impl Problem for PyProblem {
 
             Python::attach(|py| {
                 // Extract individual constraint functions from the Python list/tuple
-                let constraint_list: Vec<Py<pyo3::PyAny>> =
-                    if let Ok(list) = constraint_funcs.downcast_bound::<pyo3::types::PyList>(py) {
-                        list.iter().map(|item| item.unbind()).collect()
-                    } else if let Ok(tuple) =
-                        constraint_funcs.downcast_bound::<pyo3::types::PyTuple>(py)
-                    {
-                        tuple.iter().map(|item| item.unbind()).collect()
-                    } else {
-                        // Single constraint function
-                        vec![constraint_funcs.clone_ref(py)]
-                    };
+                let constraint_list: Vec<Py<pyo3::PyAny>> = if let Ok(list) =
+                    constraint_funcs.cast_bound::<pyo3::types::PyList>(py)
+                {
+                    list.iter().map(|item| item.unbind()).collect()
+                } else if let Ok(tuple) = constraint_funcs.cast_bound::<pyo3::types::PyTuple>(py) {
+                    tuple.iter().map(|item| item.unbind()).collect()
+                } else {
+                    // Single constraint function
+                    vec![constraint_funcs.clone_ref(py)]
+                };
 
                 let num_constraints = constraint_list.len();
                 registry_lock.insert(self.problem_id, constraint_list);
